@@ -33,10 +33,10 @@ logger = logging.getLogger(__name__)
 TESSLATE_OFFICIAL_ID = uuid.UUID("00000000-0000-0000-0000-000000000001")
 LOCAL_SOURCE_ID = uuid.UUID("00000000-0000-0000-0000-000000000002")
 
-# The stable system handle and UUID remain upstream-compatible. VibeLab starts
-# with a local, intentionally empty official catalog; an approved internal hub
-# can be opted in through the deployment environment without a migration.
-DEFAULT_LEGRAND_OFFICIAL_URL = "local://legrand-official"
+# The stable system handle and UUID remain upstream-compatible. The service
+# name is shared by the Docker Compose and Kubernetes internal networks; a
+# deployment may still override it without changing a persisted source row.
+DEFAULT_LEGRAND_OFFICIAL_URL = "http://marketplace:8800"
 
 SYSTEM_SOURCES = [
     {
