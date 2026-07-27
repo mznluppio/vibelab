@@ -659,7 +659,7 @@ function EmbedShareBlock({ instanceId }: { instanceId: string }) {
       </div>
       <div className="text-[10px] text-[var(--text-subtle)] leading-relaxed">
         Drop this URL into an <code className="font-mono">&lt;iframe&gt;</code> to embed the app.
-        Cross-origin hosts need the Tesslate deployment to allowlist their origin
+        Cross-origin hosts need the VibeLab deployment to allowlist their origin
         (frame-ancestors CSP).
       </div>
     </div>

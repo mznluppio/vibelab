@@ -88,7 +88,7 @@ export default function ProjectOverview() {
       {
         icon: <FileText className="w-5 h-5" />,
         title: 'Documentation',
-        onClick: () => window.open('https://docs.tesslate.com', '_blank'),
+        onClick: () => navigate('/feedback'),
       },
     ],
     right: [

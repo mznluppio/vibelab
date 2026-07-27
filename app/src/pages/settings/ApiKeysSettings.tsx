@@ -480,7 +480,7 @@ export default function ApiKeysSettings() {
 
   return (
     <>
-      <SettingsSection title="API Keys" description="Manage API keys for the Tesslate SDK">
+      <SettingsSection title="API Keys" description="Manage API keys for approved integrations">
         {/* Info box */}
         <div className="p-4 bg-blue-500/10 border border-blue-500/20 rounded-xl">
           <div className="flex items-start gap-3">
@@ -757,7 +757,7 @@ export default function ApiKeysSettings() {
               </div>
               <h3 className="text-sm font-semibold text-[var(--text)] mb-2">No API keys yet</h3>
               <p className="text-xs text-[var(--text-subtle)] mb-4 max-w-sm mx-auto">
-                Create an API key to authenticate requests from the Tesslate SDK in your
+                Create an API key to authenticate requests from approved integrations in your
                 applications.
               </p>
               <button

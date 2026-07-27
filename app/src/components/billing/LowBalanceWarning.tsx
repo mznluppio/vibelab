@@ -9,7 +9,7 @@ interface LowBalanceWarningProps {
   showUpgradeOption?: boolean;
 }
 
-export function LowBalanceWarning({ onDismiss, showUpgradeOption = true }: LowBalanceWarningProps) {
+export function LowBalanceWarning({ onDismiss }: LowBalanceWarningProps) {
   const [status, setStatus] = useState<CreditStatusResponse | null>(null);
   const [dismissed, setDismissed] = useState(false);
 
@@ -41,9 +41,9 @@ export function LowBalanceWarning({ onDismiss, showUpgradeOption = true }: LowBa
       <div className="flex items-start gap-3">
         <AlertTriangle className="w-5 h-5 text-[var(--status-warning)] flex-shrink-0 mt-0.5" />
         <div className="flex-1">
-          <h4 className="text-sm font-medium text-[var(--text)]">Low Credits Balance</h4>
+          <h4 className="text-sm font-medium text-[var(--text)]">Low available capacity</h4>
           <p className="text-sm text-[var(--text)]/60 mt-1">
-            You have {status.total_credits.toLocaleString()} credits remaining (
+            You have {status.total_credits.toLocaleString()} capacity units remaining (
             {Math.round((status.total_credits / status.monthly_allowance) * 100)}% of your monthly
             allowance).
           </p>
@@ -52,16 +52,8 @@ export function LowBalanceWarning({ onDismiss, showUpgradeOption = true }: LowBa
               to="/settings/billing"
               className="px-3 py-1.5 bg-[var(--primary)] text-white text-sm font-medium rounded-lg hover:bg-[var(--primary-hover)] transition-colors"
             >
-              Add Credits
+              Request additional quota
             </Link>
-            {showUpgradeOption && status.tier !== 'ultra' && (
-              <Link
-                to="/settings/billing"
-                className="px-3 py-1.5 bg-white/5 border border-white/10 text-[var(--text)] text-sm font-medium rounded-lg hover:bg-white/10 transition-colors"
-              >
-                Upgrade Plan
-              </Link>
-            )}
           </div>
         </div>
         {onDismiss && (

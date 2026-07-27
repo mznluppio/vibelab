@@ -6,13 +6,8 @@ import {
   FileText,
   Settings,
   Keyboard,
-  ExternalLink,
   ChevronRight,
-  Users,
-  Smartphone,
-  Activity,
 } from 'lucide-react';
-import { DiscordLogo } from '@phosphor-icons/react';
 import { modKey } from '../../lib/keyboard-registry';
 
 interface HelpMenuProps {
@@ -92,9 +87,9 @@ export function HelpMenu({ isOpen, onClose, onOpenShortcuts, anchorRef }: HelpMe
   const menuItems = [
     {
       icon: Search,
-      label: 'Search for help...',
+      label: 'Get help',
       onClick: () => {
-        window.open('https://docs.tesslate.com', '_blank');
+        navigate('/feedback');
         onClose();
       },
     },
@@ -108,10 +103,9 @@ export function HelpMenu({ isOpen, onClose, onOpenShortcuts, anchorRef }: HelpMe
     },
     {
       icon: FileText,
-      label: 'Docs',
-      external: true,
+      label: 'Help and feedback',
       onClick: () => {
-        window.open('https://docs.tesslate.com', '_blank');
+        navigate('/feedback');
         onClose();
       },
     },
@@ -126,14 +120,6 @@ export function HelpMenu({ isOpen, onClose, onOpenShortcuts, anchorRef }: HelpMe
     },
   ];
 
-  const discordItem = {
-    label: 'Discord Support',
-    onClick: () => {
-      window.open('https://discord.gg/WgXabcN2r2', '_blank');
-      onClose();
-    },
-  };
-
   const moreMenuItems = [
     {
       icon: Keyboard,
@@ -143,46 +129,6 @@ export function HelpMenu({ isOpen, onClose, onOpenShortcuts, anchorRef }: HelpMe
         onOpenShortcuts();
         onClose();
       },
-    },
-    {
-      icon: Users,
-      label: 'Community',
-      external: true,
-      onClick: () => {
-        window.open('https://discord.gg/WgXabcN2r2', '_blank');
-        onClose();
-      },
-    },
-    {
-      icon: Smartphone,
-      label: 'Mobile App',
-      external: true,
-      onClick: () => {
-        window.open('https://tesslate.com/mobile', '_blank');
-        onClose();
-      },
-    },
-    {
-      icon: Activity,
-      label: 'System status',
-      external: true,
-      onClick: () => {
-        window.open('https://status.tesslate.com', '_blank');
-        onClose();
-      },
-    },
-  ];
-
-  const whatsNew = [
-    {
-      label: 'News',
-      external: true,
-      url: 'https://tesslate.com/news',
-    },
-    {
-      label: 'Full changelog',
-      external: true,
-      url: 'https://tesslate.com/changelog',
     },
   ];
 
@@ -204,24 +150,11 @@ export function HelpMenu({ isOpen, onClose, onOpenShortcuts, anchorRef }: HelpMe
             >
               <item.icon size={16} className="text-[var(--text)]/50" />
               <span className="flex-1 text-left">{item.label}</span>
-              {item.external && <ExternalLink size={12} className="text-[var(--text)]/40" />}
               {item.shortcut && (
                 <span className="text-xs text-[var(--text)]/40 font-mono">{item.shortcut}</span>
               )}
             </button>
           ))}
-        </div>
-
-        {/* Discord Support */}
-        <div className="border-t border-[var(--sidebar-border)] p-1">
-          <button
-            onClick={discordItem.onClick}
-            className="w-full flex items-center gap-3 px-3 py-2 text-sm text-[#5865F2] hover:text-white hover:bg-[#5865F2]/20 rounded-md transition-colors"
-          >
-            <DiscordLogo size={16} weight="fill" />
-            <span className="flex-1 text-left">{discordItem.label}</span>
-            <ExternalLink size={12} className="text-[var(--text)]/40" />
-          </button>
         </div>
 
         {/* More Section */}
@@ -242,30 +175,6 @@ export function HelpMenu({ isOpen, onClose, onOpenShortcuts, anchorRef }: HelpMe
           </button>
         </div>
 
-        {/* What's New Section */}
-        <div className="border-t border-[var(--sidebar-border)]">
-          <div className="px-3 py-2">
-            <span className="text-xs text-[var(--text)]/40 font-medium">What's new</span>
-          </div>
-          <div className="p-1 pt-0">
-            {whatsNew.map((item, index) => (
-              <button
-                key={index}
-                onClick={() => {
-                  window.open(item.url, '_blank');
-                  onClose();
-                }}
-                className="w-full flex items-center gap-3 px-3 py-2 text-sm text-[var(--text)]/80 hover:text-[var(--text)] hover:bg-[var(--sidebar-hover)] rounded-md transition-colors"
-              >
-                <span className="w-4 h-4 flex items-center justify-center text-[var(--text)]/30">
-                  •
-                </span>
-                <span className="flex-1 text-left">{item.label}</span>
-                {item.external && <ExternalLink size={12} className="text-[var(--text)]/40" />}
-              </button>
-            ))}
-          </div>
-        </div>
       </div>
 
       {/* More Submenu */}
@@ -285,7 +194,6 @@ export function HelpMenu({ isOpen, onClose, onOpenShortcuts, anchorRef }: HelpMe
               >
                 <item.icon size={16} className="text-[var(--text)]/50" />
                 <span className="flex-1 text-left">{item.label}</span>
-                {item.external && <ExternalLink size={12} className="text-[var(--text)]/40" />}
                 {item.shortcut && (
                   <span className="text-xs text-[var(--text)]/40 font-mono">{item.shortcut}</span>
                 )}

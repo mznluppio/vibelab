@@ -600,7 +600,7 @@ export default function Dashboard() {
       {
         icon: <Article className="w-5 h-5" weight="fill" />,
         title: 'Documentation',
-        onClick: () => window.open('https://docs.tesslate.com', '_blank'),
+        onClick: () => navigate('/feedback'),
       },
     ],
     right: [

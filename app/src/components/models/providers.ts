@@ -27,7 +27,7 @@ const simpleicons = (slug: string) => `https://cdn.simpleicons.org/${slug}`;
 const dataUri = (svg: string) =>
   `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
 
-const TESSLATE_ICON = dataUri(
+const INTERNAL_PROVIDER_ICON = dataUri(
   '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="black">' +
     '<path d="M3 4h18v3H14.5v13h-5V7H3z"/>' +
     '</svg>'
@@ -88,10 +88,9 @@ const CUSTOM_ICON = dataUri(
 export const PROVIDER_META: ProviderMeta[] = [
   {
     key: 'internal',
-    name: 'Tesslate',
-    brandColor: '#f89521',
-    iconUrl: TESSLATE_ICON,
-    website: 'https://tesslate.com',
+    name: 'VibeLab Default',
+    brandColor: '#0055A4',
+    iconUrl: INTERNAL_PROVIDER_ICON,
   },
   {
     key: 'openai',
