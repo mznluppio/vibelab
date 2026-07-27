@@ -1528,6 +1528,7 @@ async def handle_agent_approval(
 
     approval_id = approval_data.get("approval_id")
     response = approval_data.get("response")  # 'allow_once', 'allow_all', 'stop'
+    comment = approval_data.get("comment")
 
     if not approval_id or not response:
         raise HTTPException(status_code=400, detail="approval_id and response are required")
@@ -1536,10 +1537,11 @@ async def handle_agent_approval(
 
     # Try local first (in-process agent execution / same pod)
     approval_mgr = get_approval_manager()
-    approval_mgr.respond_to_approval(approval_id, response)
+    delivered_response = {"response": response, "comment": comment} if comment else response
+    approval_mgr.respond_to_approval(approval_id, delivered_response)
 
     # Also publish to Redis so workers on other pods receive the approval
-    await publish_approval_response(approval_id, response)
+    await publish_approval_response(approval_id, delivered_response)
 
     return {"success": True, "message": "Approval response processed"}
 

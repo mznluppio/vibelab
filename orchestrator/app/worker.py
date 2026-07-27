@@ -244,7 +244,12 @@ async def _contract_gate_hook(tool_name, parameters, context, tool):
     context) so chat sessions are unaffected, or a tool-result envelope
     when the gate denies the call (same shape as the in-tree path).
     """
+    from .services.assist_to_build import block_pre_build_tool
     from .agent.tools.registry import check_contract_gate
+
+    assist_result = block_pre_build_tool(tool_name, context)
+    if assist_result is not None:
+        return assist_result
 
     return await check_contract_gate(
         tool_name=tool_name,
@@ -254,7 +259,7 @@ async def _contract_gate_hook(tool_name, parameters, context, tool):
     )
 
 
-def _build_submodule_registry(in_tree_registry, approval_handler=None):
+def _build_submodule_registry(in_tree_registry, approval_handler=None, agent_slug: str | None = None):
     """Transfer tools from an in-tree ToolRegistry to a submodule ToolRegistry.
 
     Both registries store tools in a ``_tools`` dict keyed by tool name. The
@@ -275,9 +280,22 @@ def _build_submodule_registry(in_tree_registry, approval_handler=None):
     try:
         from tesslate_agent.agent.tools.registry import ToolRegistry as SubmoduleRegistry
 
+        async def _pre_execute_hook(tool_name, parameters, context, tool):
+            # The registry is constructed before every execution context, so
+            # capture the selected official agent here. This protects both
+            # queued worker runs and the no-Redis inline chat fallback.
+            if agent_slug == "assist-to-build" and not context.get("assist_to_build_workflow"):
+                context["assist_to_build_workflow"] = {
+                    "workflow": "assist_to_build",
+                    "stage": "discovery",
+                    "as_is_approved": False,
+                    "to_be_approved": False,
+                }
+            return await _contract_gate_hook(tool_name, parameters, context, tool)
+
         sub = SubmoduleRegistry(
             approval_handler=approval_handler,
-            pre_execute_hook=_contract_gate_hook,
+            pre_execute_hook=_pre_execute_hook,
         )
         for tool in in_tree_registry._tools.values():
             sub.register(tool)
@@ -298,12 +316,14 @@ async def _create_agent_runner(
     from .services.tesslate_agent_adapter import TesslateAgentAdapter
 
     if tools_override is not None:
-        sub_registry = _build_submodule_registry(tools_override, approval_handler=approval_handler)
+        sub_registry = _build_submodule_registry(
+            tools_override, approval_handler=approval_handler, agent_slug=getattr(agent_model, "slug", None)
+        )
     else:
         from .agent.tools.registry import get_tool_registry
 
         sub_registry = _build_submodule_registry(
-            get_tool_registry(), approval_handler=approval_handler
+            get_tool_registry(), approval_handler=approval_handler, agent_slug=getattr(agent_model, "slug", None)
         )
 
     if sub_registry is None:
@@ -1229,6 +1249,11 @@ async def execute_agent_task(ctx: dict, payload_dict: dict):
             }
             _agent_slug = getattr(agent_model, "slug", None)
             _admin_scopes = _BUILTIN_AGENT_SCOPES.get(_agent_slug)
+            _assist_to_build_workflow = (
+                {"workflow": "assist_to_build", "stage": "discovery", "as_is_approved": False, "to_be_approved": False}
+                if _agent_slug == "assist-to-build"
+                else None
+            )
 
             context = {
                 "user_id": UUID(payload.user_id),
@@ -1289,6 +1314,7 @@ async def execute_agent_task(ctx: dict, payload_dict: dict):
                 "mention_mcp_config_ids": list(payload.mention_mcp_config_ids or []),
                 "mention_app_instance_ids": list(payload.mention_app_instance_ids or []),
                 "parent_task_id": payload.parent_task_id,
+                "assist_to_build_workflow": _assist_to_build_workflow,
             }
 
             # Inject MCP server configs so adapter executors can connect per-call
@@ -1324,12 +1350,18 @@ async def execute_agent_task(ctx: dict, payload_dict: dict):
                     "completion_reason": "in_progress",
                     "executed_by": "worker",
                     "task_id": task_id,
+                    **(
+                        {"assist_to_build_workflow": _assist_to_build_workflow}
+                        if _assist_to_build_workflow
+                        else {}
+                    ),
                 },
             )
             db.add(assistant_message)
             await db.commit()
             await db.refresh(assistant_message)
             message_id = assistant_message.id
+            context["assistant_message_id"] = message_id
 
             # Back-fill ticket → message FK so the AgentTask row points to
             # the assistant Message created above.
