@@ -40,6 +40,13 @@ export interface LibraryAgent {
   creator_avatar_url?: string | null;
   created_by_user_id?: string | null;
   forked_by_user_id?: string | null;
+  is_system?: boolean;
+  is_builtin?: boolean;
+  is_official?: boolean;
+  source_handle?: string | null;
+  source_trust_level?: string | null;
+  /** Calculated by the API; installing an agent never grants edit rights. */
+  can_edit?: boolean;
 }
 
 export interface SubagentItem {

@@ -631,7 +631,7 @@ function McpServerCard({
     }
   };
 
-  const enabledAgents = agents.filter((a) => a.is_enabled !== false);
+  const enabledAgents = agents.filter((a) => a.is_enabled !== false && a.can_edit === true);
   const hasEnvVars = server.env_vars && server.env_vars.length > 0;
 
   return (

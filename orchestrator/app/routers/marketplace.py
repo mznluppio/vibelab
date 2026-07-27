@@ -35,6 +35,10 @@ from ..models import (
 from ..schemas import BaseSubmitRequest, BaseUpdateRequest, SkillInstallRequest
 from ..services.cache_service import cache
 from ..services.marketplace_constants import LOCAL_SOURCE_ID
+from ..services.agent_edit_permissions import (
+    can_edit_agent,
+    require_agent_mutation_access as _require_agent_mutation_access,
+)
 from ..services.marketplace_federation import install_guard
 from ..services.marketplace_source_cache import (
     bulk_load_sources as _bulk_load_sources,
@@ -62,10 +66,10 @@ def _resolve_display_name(user: User) -> str:
     return resolve_display_name(user.name, user.username, user.email)
 
 
-def _reject_if_builtin(agent: MarketplaceAgent) -> None:
-    """Guard — refuse to mutate built-in skill rows via user/admin endpoints.
+def _reject_if_builtin(agent: MarketplaceAgent, current_user: User) -> None:
+    """Guard — refuse non-administrative mutation of built-in rows.
 
-    Built-in skills (``is_builtin=True``) are managed by the upstream
+    Built-in rows (``is_builtin=True``) are managed by the upstream
     marketplace service (after Wave 10 the orchestrator's catalog rows are
     the cached output of ``services/marketplace_sync.py`` pulling from
     ``packages/tesslate-marketplace/app/seeds/skills_*.json``). Any edit to
@@ -73,12 +77,11 @@ def _reject_if_builtin(agent: MarketplaceAgent) -> None:
     next federation sync poll, or (b) drift the deployed state away from
     the canonical seed.
 
-    Callers that allow forking (which creates a NEW row with
-    ``is_builtin=False``) should still call this on the *source* row before
-    the user-owned path — the fork endpoint itself already handles this
-    correctly by not mutating the parent.
+    Global administrators are allowed through to manage protected catalog
+    rows from the existing administrative surfaces. Standard users are
+    rejected before this guard by ``require_agent_mutation_access``.
     """
-    if getattr(agent, "is_builtin", False):
+    if getattr(agent, "is_builtin", False) and not getattr(current_user, "is_superuser", False):
         raise HTTPException(
             status_code=403,
             detail=(
@@ -1763,6 +1766,7 @@ async def fork_agent(
         is_forkable=False,  # Forked agents can't be forked again
         parent_agent_id=parent_agent.id,
         forked_by_user_id=current_user.id,
+        created_by_user_id=current_user.id,
         config={},  # User can customize this later
         icon=parent_agent.icon,
         preview_image=parent_agent.preview_image,
@@ -1885,6 +1889,7 @@ async def create_custom_agent(
         is_forkable=False,
         parent_agent_id=None,
         forked_by_user_id=current_user.id,
+        created_by_user_id=current_user.id,
         config={},
         icon="🤖",
         preview_image=None,
@@ -1978,108 +1983,11 @@ async def update_custom_agent(
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
 
-    # Built-in skills are immutable via the UI — edits live in seed code.
-    _reject_if_builtin(agent)
+    await _require_agent_mutation_access(db, agent, current_user)
+    _reject_if_builtin(agent, current_user)
 
-    # Check if user owns this agent (created/forked by them)
-    is_owner = agent.forked_by_user_id == current_user.id
-
-    # Check if agent is open source and user has it in library
-    if not is_owner:
-        # Check if user has purchased this agent
-        purchase_result = await db.execute(
-            select(UserPurchasedAgent).where(
-                UserPurchasedAgent.user_id == current_user.id,
-                UserPurchasedAgent.agent_id == agent_id,
-                UserPurchasedAgent.is_active,
-            )
-        )
-        has_agent = purchase_result.scalar_one_or_none() is not None
-
-        if not has_agent:
-            raise HTTPException(status_code=403, detail="You don't have this agent in your library")
-
-        # If agent is open source but not owned by user, create a fork instead
-        if agent.source_type == "open":
-            # Create a forked copy with the updates
-            forked_slug = f"{agent.slug}-fork-{current_user.id}-{datetime.now(UTC).timestamp()}"
-
-            forked_agent = MarketplaceAgent(
-                name=update_data.get("name", agent.name),
-                slug=forked_slug,
-                description=update_data.get("description", agent.description),
-                long_description=agent.long_description,
-                category=agent.category,
-                item_type=agent.item_type,
-                system_prompt=update_data.get("system_prompt", agent.system_prompt),
-                mode=agent.mode,
-                agent_type=agent.agent_type,
-                tools=update_data.get("tools", agent.tools),
-                tool_configs=update_data.get("tool_configs", agent.tool_configs),
-                model=update_data.get("model", agent.model),
-                is_forkable=False,
-                parent_agent_id=agent.id,
-                forked_by_user_id=current_user.id,
-                config=update_data.get("config", agent.config or {}),
-                icon=agent.icon,
-                avatar_url=update_data.get("avatar_url", agent.avatar_url),
-                preview_image=agent.preview_image,
-                pricing_type="free",
-                price=0,
-                source_type="open",
-                source_id=LOCAL_SOURCE_ID,
-                requires_user_keys=agent.requires_user_keys,
-                downloads=0,
-                rating=5.0,
-                reviews_count=0,
-                features=agent.features,
-                required_models=[update_data.get("model", agent.model)],
-                tags=agent.tags,
-                is_featured=False,
-                is_active=True,
-                is_published=False,
-                is_builtin=False,  # Forks are never built-ins; built-ins are seed-only
-            )
-
-            db.add(forked_agent)
-            await db.flush()  # Get the ID
-
-            # Add to user's library
-            purchase = UserPurchasedAgent(
-                user_id=current_user.id,
-                agent_id=forked_agent.id,
-                purchase_type="free",
-                is_active=True,
-            )
-            db.add(purchase)
-
-            # Remove original from every team-scoped library this user has —
-            # forking should hide the upstream agent everywhere, not just in
-            # whichever row sqlalchemy happens to return first.
-            original_purchase_result = await db.execute(
-                select(UserPurchasedAgent).where(
-                    UserPurchasedAgent.user_id == current_user.id,
-                    UserPurchasedAgent.agent_id == agent_id,
-                )
-            )
-            for original_purchase in original_purchase_result.scalars().all():
-                original_purchase.is_active = False
-
-            await db.commit()
-
-            return {
-                "message": "Created a custom fork with your changes",
-                "agent_id": forked_agent.id,
-                "forked": True,
-                "success": True,
-            }
-        else:
-            raise HTTPException(
-                status_code=403,
-                detail="You can only edit open source agents or your own custom agents",
-            )
-
-    # User owns this agent, update it directly
+    # Direct edits are reserved for the creator. Forking remains an explicit
+    # action through /agents/{agent_id}/fork; PATCH never forks implicitly.
     if update_data.get("name"):
         agent.name = update_data["name"]
     if update_data.get("description"):
@@ -2256,6 +2164,14 @@ async def get_user_agents(
                 else None,
                 "is_admin_disabled": not agent.is_active,
                 "is_system": agent.is_system,
+                "is_builtin": agent.is_builtin,
+                "is_official": _is_official_source(agent_source),
+                "source_handle": agent_source.handle if agent_source else None,
+                "source_trust_level": agent_source.trust_level if agent_source else None,
+                # The standard Library intentionally stays read-only for
+                # official/system rows, including for administrators who use
+                # the dedicated Admin surface for those changes.
+                "can_edit": can_edit_agent(agent, agent_source, current_user),
             }
         )
 
@@ -2427,6 +2343,11 @@ async def create_subagent(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=f"Invalid agent_id: {agent_id}") from exc
 
+    parent_agent = await db.get(MarketplaceAgent, agent_uuid)
+    if parent_agent is None:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    await _require_agent_mutation_access(db, parent_agent, current_user)
+
     subagent = MarketplaceAgent(
         name=name,
         slug=f"subagent-{name.lower().replace(' ', '-')}-{current_user.id}-{datetime.now(UTC).timestamp()}",
@@ -2441,6 +2362,7 @@ async def create_subagent(
         config={"model": data.get("model", "inherit")},
         parent_agent_id=agent_uuid,
         forked_by_user_id=current_user.id,
+        created_by_user_id=current_user.id,
         pricing_type="free",
         price=0,
         source_type="open",
@@ -2491,6 +2413,11 @@ async def update_subagent(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=f"Invalid agent_id: {agent_id}") from exc
 
+    parent_agent = await db.get(MarketplaceAgent, agent_uuid)
+    if parent_agent is None:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    await _require_agent_mutation_access(db, parent_agent, current_user)
+
     if subagent_id in builtins:
         # Fork the built-in: create a custom DB subagent with the user's edits
         builtin = builtins[subagent_id]
@@ -2508,6 +2435,7 @@ async def update_subagent(
             config={"model": data.get("model", "inherit")},
             parent_agent_id=agent_uuid,
             forked_by_user_id=current_user.id,
+            created_by_user_id=current_user.id,
             pricing_type="free",
             price=0,
             source_type="open",
@@ -2544,6 +2472,7 @@ async def update_subagent(
         select(MarketplaceAgent).where(
             MarketplaceAgent.id == subagent_uuid,
             MarketplaceAgent.item_type == "subagent",
+            MarketplaceAgent.parent_agent_id == agent_uuid,
             MarketplaceAgent.forked_by_user_id == current_user.id,
         )
     )
@@ -2580,9 +2509,15 @@ async def delete_subagent(
     Delete a custom subagent from the user's library.
     """
     try:
+        agent_uuid = UUID(agent_id)
         subagent_uuid = UUID(subagent_id)
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=f"Invalid subagent_id: {subagent_id}") from exc
+        raise HTTPException(status_code=400, detail="Invalid agent or subagent identifier") from exc
+
+    parent_agent = await db.get(MarketplaceAgent, agent_uuid)
+    if parent_agent is None:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    await _require_agent_mutation_access(db, parent_agent, current_user)
 
     # Remove purchase
     purchase_result = await db.execute(
@@ -2600,6 +2535,7 @@ async def delete_subagent(
         select(MarketplaceAgent).where(
             MarketplaceAgent.id == subagent_uuid,
             MarketplaceAgent.item_type == "subagent",
+            MarketplaceAgent.parent_agent_id == agent_uuid,
             MarketplaceAgent.forked_by_user_id == current_user.id,
         )
     )
@@ -2681,6 +2617,8 @@ async def select_agent_model(
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
 
+    await _require_agent_mutation_access(db, agent, current_user)
+
     # Check if agent is open source or custom
     if agent.source_type != "open" and agent.forked_by_user_id != current_user.id:
         raise HTTPException(
@@ -2753,9 +2691,7 @@ async def publish_agent(
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
 
-    # Verify ownership
-    if agent.forked_by_user_id != current_user.id:
-        raise HTTPException(status_code=403, detail="You can only publish your own custom agents")
+    await _require_agent_mutation_access(db, agent, current_user)
 
     # Check if user has this agent in library
     purchase_result = await db.execute(
@@ -2798,9 +2734,7 @@ async def unpublish_agent(
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
 
-    # Verify ownership
-    if agent.forked_by_user_id != current_user.id:
-        raise HTTPException(status_code=403, detail="You can only unpublish your own agents")
+    await _require_agent_mutation_access(db, agent, current_user)
 
     # Unpublish the agent
     agent.is_published = False
@@ -2826,12 +2760,8 @@ async def delete_custom_agent(
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
 
-    # Built-ins are seed-managed; refuse deletion regardless of ownership.
-    _reject_if_builtin(agent)
-
-    # Verify ownership
-    if agent.forked_by_user_id != current_user.id:
-        raise HTTPException(status_code=403, detail="You can only delete your own custom agents")
+    await _require_agent_mutation_access(db, agent, current_user)
+    _reject_if_builtin(agent, current_user)
 
     # Must unpublish before deleting
     if agent.is_published:
@@ -5817,8 +5747,10 @@ async def install_skill_on_agent(
             MarketplaceAgent.is_active.is_(True),
         )
     )
-    if not agent_result.scalar_one_or_none():
+    target_agent = agent_result.scalar_one_or_none()
+    if target_agent is None:
         raise HTTPException(status_code=404, detail="Agent not found")
+    await _require_agent_mutation_access(db, target_agent, current_user)
 
     # Check for existing assignment
     existing_result = await db.execute(
@@ -5861,6 +5793,11 @@ async def uninstall_skill_from_agent(
     """
     Detach a skill from an agent.
     """
+    target_agent = await db.get(MarketplaceAgent, agent_id)
+    if target_agent is None:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    await _require_agent_mutation_access(db, target_agent, current_user)
+
     # Resolve active team for ownership scoping
     team_id = current_user.default_team_id
     ownership_filter = (

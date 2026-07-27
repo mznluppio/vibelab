@@ -33,6 +33,7 @@ from ..schemas import (
     McpTestResponse,
 )
 from ..services.channels.registry import decrypt_credentials, encrypt_credentials
+from ..services.agent_edit_permissions import require_agent_mutation_access
 from ..services.marketplace_federation import install_guard, mcp_install_prompt
 from ..services.mcp.client import connect_mcp
 from ..users import current_active_user
@@ -734,6 +735,7 @@ async def assign_mcp_to_agent(
     agent = agent_result.scalar_one_or_none()
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
+    await require_agent_mutation_access(db, agent, user)
 
     # Check for existing assignment — use OR-based ownership matching
     # _get_owned_config to show both personal and team assignments.
@@ -814,6 +816,11 @@ async def unassign_mcp_from_agent(
     db: AsyncSession = Depends(get_db),
 ):
     """Remove an MCP server from a specific agent."""
+    agent = await db.get(MarketplaceAgent, agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    await require_agent_mutation_access(db, agent, user)
+
     # Resolve active team for ownership scoping — OR-based to match
     # _get_owned_config and avoid hiding personal assignments.
     from sqlalchemy import or_ as _or
