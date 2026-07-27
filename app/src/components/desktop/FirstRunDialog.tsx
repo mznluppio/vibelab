@@ -1,9 +1,9 @@
 /**
  * First-run setup choice (desktop shell only).
  *
- * Tesslate Studio desktop auto-provisions a local account, so the app is
+ * VibeLab desktop auto-provisions a local account, so the app is
  * usable immediately — but the user still has to tell it how to reach an LLM.
- * This dialog surfaces that choice exactly once: sign in to Tesslate Cloud,
+ * This dialog surfaces that choice exactly once: use VibeLab allocation,
  * bring your own provider keys, or skip. The "completed" flag is persisted by
  * the sidecar (`/api/desktop/first-run`) so it never reappears.
  *
@@ -63,11 +63,11 @@ export function FirstRunDialog() {
       className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 p-6"
       role="dialog"
       aria-modal="true"
-      aria-label="Welcome to Tesslate Studio"
+      aria-label="Welcome to VibeLab"
     >
       <div className="w-full max-w-md p-6 bg-[var(--surface)] border border-[var(--border)] rounded-2xl">
         <h1 className="text-base font-semibold text-[var(--text)] mb-1">
-          Welcome to Tesslate Studio
+          Welcome to VibeLab
         </h1>
         <p className="text-sm text-[var(--text-subtle)] mb-5">
           You’re ready to build — pick how the AI should connect. You can change this any time in
@@ -85,10 +85,10 @@ export function FirstRunDialog() {
             </div>
             <div className="flex-1 min-w-0">
               <div className="text-sm font-semibold text-[var(--text)]">
-                Sign in to Tesslate Cloud
+                Use VibeLab allocation
               </div>
               <div className="text-xs text-[var(--text-subtle)]">
-                Use your account credits, marketplace, and sync.
+                Use the allocation and marketplace configured for your workspace.
               </div>
             </div>
             <ArrowRight size={15} className="text-[var(--text-subtle)] flex-shrink-0" />

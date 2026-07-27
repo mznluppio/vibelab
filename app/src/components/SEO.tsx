@@ -42,7 +42,7 @@ export function SEO({
     const managedKeys: string[] = [];
 
     // Update document title
-    const fullTitle = title.includes('Tesslate') ? title : `${title} | Tesslate Marketplace`;
+    const fullTitle = title.includes('VibeLab') ? title : `${title} | VibeLab`;
     manager.setTitle(fullTitle);
 
     // Basic meta tags
@@ -63,7 +63,7 @@ export function SEO({
     manager.setMeta('og:title', fullTitle, true);
     manager.setMeta('og:description', description, true);
     manager.setMeta('og:type', type, true);
-    manager.setMeta('og:site_name', 'Tesslate Marketplace', true);
+    manager.setMeta('og:site_name', 'VibeLab by Legrand', true);
     managedKeys.push('og:title', 'og:description', 'og:type', 'og:site_name');
 
     if (url) {
@@ -152,7 +152,7 @@ export function generateProductStructuredData(item: {
   avatar_url?: string;
   category?: string;
 }) {
-  const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'https://tesslate.com';
+  const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'http://localhost';
 
   return {
     '@context': 'https://schema.org',
@@ -212,12 +212,12 @@ export function generateBreadcrumbStructuredData(items: { name: string; url: str
  */
 // eslint-disable-next-line react-refresh/only-export-components
 export function generateMarketplaceStructuredData() {
-  const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'https://tesslate.com';
+  const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'http://localhost';
 
   return {
     '@context': 'https://schema.org',
     '@type': 'WebSite',
-    name: 'Tesslate Marketplace',
+    name: 'VibeLab Marketplace',
     description:
       'Discover AI-powered coding agents, project templates, and developer tools. Build faster with pre-built solutions.',
     url: `${baseUrl}/marketplace`,

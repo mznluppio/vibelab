@@ -551,7 +551,7 @@ export default function Home() {
           {/* Welcome header + plan line */}
           <header className="flex flex-col items-center gap-2 text-center">
             <h1 className="text-xl font-semibold tracking-tight text-[var(--text)] sm:text-2xl">
-              Welcome to OpenSail, {greetingName}
+              Welcome to VibeLab, {greetingName}
             </h1>
             <p className="flex items-center gap-1.5 text-xs text-[var(--text-muted)] sm:text-sm">
               <span>{tierLabel} Plan</span>
