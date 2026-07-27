@@ -92,14 +92,14 @@ export default function DesktopPairPage() {
             </div>
             <h1 className="text-base font-semibold text-[var(--text)] mb-2">Device authorized</h1>
             <p className="text-sm text-[var(--text-subtle)] mb-5">
-              Return to Tesslate Studio — it should now be signed in. If it didn’t reopen
+              Return to VibeLab — it should now be signed in. If it didn’t reopen
               automatically, use the button below.
             </p>
             <button
               onClick={() => deepLink && launchDeepLink(deepLink)}
               className="btn btn-filled w-full"
             >
-              Reopen Tesslate Studio
+              Reopen VibeLab
             </button>
           </div>
         ) : (
@@ -110,7 +110,7 @@ export default function DesktopPairPage() {
               </div>
               <div>
                 <h1 className="text-base font-semibold text-[var(--text)]">
-                  Pair Tesslate Studio Desktop
+                  Pair VibeLab Desktop
                 </h1>
                 <p className="text-xs text-[var(--text-subtle)]">
                   Authorizing as {user?.email ?? 'your account'}

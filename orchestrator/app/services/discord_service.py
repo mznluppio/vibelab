@@ -39,7 +39,7 @@ class DiscordWebhookService:
                 {"name": "User ID", "value": str(user_id), "inline": False},
             ],
             "timestamp": datetime.utcnow().isoformat(),
-            "footer": {"text": "OpenSail"},  # overridden in _send_webhook with source
+            "footer": {"text": "VibeLab"},  # overridden in _send_webhook with source
         }
 
         await self._send_webhook(embeds=[embed])
@@ -63,7 +63,7 @@ class DiscordWebhookService:
             "color": 0x0099FF,  # Blue
             "fields": fields,
             "timestamp": datetime.utcnow().isoformat(),
-            "footer": {"text": "OpenSail"},  # overridden in _send_webhook with source
+            "footer": {"text": "VibeLab"},  # overridden in _send_webhook with source
         }
 
         await self._send_webhook(embeds=[embed])
@@ -82,7 +82,7 @@ class DiscordWebhookService:
             "color": 0x00FF00,  # Green
             "fields": fields,
             "timestamp": datetime.utcnow().isoformat(),
-            "footer": {"text": "OpenSail"},  # overridden in _send_webhook with source
+            "footer": {"text": "VibeLab"},  # overridden in _send_webhook with source
         }
 
         await self._send_webhook(embeds=[embed])
@@ -107,7 +107,7 @@ class DiscordWebhookService:
                 {"name": "User ID", "value": str(user_id), "inline": False},
             ],
             "timestamp": datetime.utcnow().isoformat(),
-            "footer": {"text": "OpenSail"},  # overridden in _send_webhook with source
+            "footer": {"text": "VibeLab"},  # overridden in _send_webhook with source
         }
 
         await self._send_webhook(embeds=[embed])
@@ -120,7 +120,7 @@ class DiscordWebhookService:
 
         source = self._source
         for embed in embeds:
-            embed["footer"] = {"text": f"OpenSail • {source}"}
+            embed["footer"] = {"text": f"VibeLab • {source}"}
 
         payload = {"embeds": embeds}
 
