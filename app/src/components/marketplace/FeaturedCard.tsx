@@ -153,11 +153,7 @@ export function FeaturedCard({ item, onInstall, isAuthenticated = true }: Featur
                 disabled={!item.is_active}
                 className={`btn ${item.is_active ? 'btn-filled' : ''}`}
               >
-                {item.is_active
-                  ? item.pricing_type === 'free'
-                    ? 'Install'
-                    : `$${item.price}/mo`
-                  : 'Coming Soon'}
+                {item.is_active ? 'Add to library' : 'Coming Soon'}
               </button>
             )}
           </div>

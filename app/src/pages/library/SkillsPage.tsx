@@ -103,7 +103,7 @@ void SKILL_CATEGORY_ICONS;
 // ─── Sort config ────────────────────────────────────────────────────
 type SortField = 'name' | 'category' | 'downloads';
 type SortDir = 'asc' | 'desc';
-type FilterTab = 'all' | 'open' | 'free';
+type FilterTab = 'all' | 'open';
 type ViewMode = 'cards' | 'list';
 
 const sortLabels: Record<SortField, string> = {
@@ -155,7 +155,6 @@ export default function SkillsPage({
   const filtered = skills
     .filter((s) => {
       if (filterTab === 'open' && s.source_type !== 'open') return false;
-      if (filterTab === 'free' && s.pricing_type !== 'free') return false;
       return true;
     })
     .filter((s) => {
@@ -176,7 +175,6 @@ export default function SkillsPage({
     });
 
   const openSourceCount = skills.filter((s) => s.source_type === 'open').length;
-  const freeCount = skills.filter((s) => s.pricing_type === 'free').length;
 
   if (loading) {
     return (
@@ -196,9 +194,6 @@ export default function SkillsPage({
           </button>
           <button onClick={() => setFilterTab('open')} className={`btn ${filterTab === 'open' ? 'btn-tab-active' : 'btn-tab'} shrink-0`}>
             Open Source <span className="text-[10px] opacity-50 ml-0.5">{openSourceCount}</span>
-          </button>
-          <button onClick={() => setFilterTab('free')} className={`btn ${filterTab === 'free' ? 'btn-tab-active' : 'btn-tab'} shrink-0`}>
-            Free <span className="text-[10px] opacity-50 ml-0.5">{freeCount}</span>
           </button>
         </div>
 
@@ -448,7 +443,6 @@ function SkillDetailPanel({
               ) : (
                 <Badge intent="accent" icon={<LockKey size={11} />}>Closed</Badge>
               )}
-              {d.pricing_type === 'free' && <Badge intent="success">Free</Badge>}
             </div>
           </div>
         </div>
@@ -669,9 +663,6 @@ function SkillListRow({
         ) : (
           <Badge intent="accent" icon={<LockKey size={11} />}>Closed</Badge>
         )}
-        {skill.pricing_type === 'free' && (
-          <Badge intent="success">Free</Badge>
-        )}
       </div>
       <div ref={dropdownRef} className="relative shrink-0" onClick={(e) => e.stopPropagation()}>
         <button
@@ -792,9 +783,6 @@ function SkillCard({
           <Badge intent="success" icon={<LockSimpleOpen size={11} />}>Open</Badge>
         ) : (
           <Badge intent="accent" icon={<LockKey size={11} />}>Closed</Badge>
-        )}
-        {skill.pricing_type === 'free' && (
-          <Badge intent="success">Free</Badge>
         )}
         {skill.features && skill.features.length > 0 && (
           <>

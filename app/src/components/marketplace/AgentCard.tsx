@@ -171,27 +171,6 @@ export function AgentCard({ item, onInstall, isAuthenticated = true }: AgentCard
       ? `@${item.creator_username}`
       : item.creator_name || 'Unknown';
 
-  // Federated source chip + trust dot (Wave 5). Only rendered for rows
-  // synced from a non-default source — items without source_handle are
-  // implicitly tesslate-official and would just clutter the card.
-  const showSourceChip = Boolean(item.source_handle) && item.source_handle !== 'tesslate-official';
-  const trustDotColor = (() => {
-    switch (item.source_trust_level) {
-      case 'official':
-        return 'var(--status-success)';
-      case 'admin_trusted':
-        return 'var(--status-info)';
-      case 'local':
-        return 'var(--text-subtle)';
-      case 'private':
-        return 'var(--status-warning)';
-      case 'untrusted':
-        return 'var(--status-error)';
-      default:
-        return 'var(--text-subtle)';
-    }
-  })();
-
   return (
     <CardSurface onClick={handleClick} isDisabled={!item.is_active}>
       {/* Header: Icon + Name + Creator */}
@@ -229,21 +208,6 @@ export function AgentCard({ item, onInstall, isAuthenticated = true }: AgentCard
 
       {/* Metadata Pills */}
       <div className="flex flex-wrap gap-1.5 mb-3">
-        {showSourceChip && (
-          <Badge
-            intent="muted"
-            icon={
-              <span
-                aria-hidden="true"
-                className="inline-block w-1.5 h-1.5 rounded-full"
-                style={{ backgroundColor: trustDotColor }}
-              />
-            }
-            className="font-mono"
-          >
-            {item.source_handle}
-          </Badge>
-        )}
         {(item.source_type === 'open' || (item.source_type === 'git' && item.git_repo_url)) && (
           <Badge intent="success" icon={<GitFork size={10} weight="bold" />}>Open Source</Badge>
         )}
@@ -271,14 +235,6 @@ export function AgentCard({ item, onInstall, isAuthenticated = true }: AgentCard
 
       {/* Footer: Action Buttons */}
       <CardActions className="flex items-center justify-between">
-        <div>
-          {item.pricing_type === 'free' && !item.is_purchased && (
-            <span className="text-xs text-[var(--text-subtle)]">
-              Free
-            </span>
-          )}
-        </div>
-
         <div className="flex items-center gap-1.5 ml-auto">
           {item.is_purchased &&
             isAuthenticated &&
@@ -312,11 +268,7 @@ export function AgentCard({ item, onInstall, isAuthenticated = true }: AgentCard
               disabled={!item.is_active}
               className={`btn ${item.is_active ? 'btn-filled' : ''}`}
             >
-              {item.is_active
-                ? item.pricing_type === 'free'
-                  ? 'Install'
-                  : `$${item.price}/mo`
-                : 'Soon'}
+              {item.is_active ? 'Add to library' : 'Soon'}
             </button>
           )}
         </div>

@@ -214,9 +214,6 @@ export function NavigationSidebar({
   });
   const { activeTeam, teams, switchTeam, refreshTeams, can, teamSwitchKey } = useTeam();
   const canChat = can('chat.send');
-  const subscriptionTier = activeTeam?.subscription_tier || 'free';
-  const isPaidPlan = subscriptionTier !== 'free';
-  const tierLabel = subscriptionTier.charAt(0).toUpperCase() + subscriptionTier.slice(1);
   const [showUserDropdown, setShowUserDropdown] = useState(false);
   const [creditBalance, setCreditBalance] = useState<CreditBalanceResponse | null>(null);
   const [imgError, setImgError] = useState(false);
@@ -941,7 +938,7 @@ export function NavigationSidebar({
 
         <div className="h-px bg-[var(--sidebar-border)] my-1.5 mx-3 flex-shrink-0" />
 
-        {/* Help Button and Plan Badge */}
+        {/* Help Button and Allocation Badge */}
         {isExpanded ? (
           <div className="flex items-center gap-2 py-1 flex-shrink-0">
             <button
@@ -957,14 +954,10 @@ export function NavigationSidebar({
             </button>
             <button
               onClick={() => navigate('/settings/billing')}
-              className={`flex-1 h-7 rounded-full text-xs font-medium transition-colors flex items-center justify-center gap-1.5 ${
-                isPaidPlan
-                  ? 'bg-orange-500/20 hover:bg-orange-500/30 text-orange-400 hover:text-orange-300'
-                  : 'bg-[var(--sidebar-hover)] hover:bg-[var(--sidebar-active)] text-[var(--text-muted)] hover:text-[var(--sidebar-text)]'
-              }`}
+              className="flex-1 h-7 rounded-full text-xs font-medium transition-colors flex items-center justify-center gap-1.5 bg-[var(--sidebar-hover)] hover:bg-[var(--sidebar-active)] text-[var(--text-muted)] hover:text-[var(--sidebar-text)]"
             >
               <ArrowUp size={12} strokeWidth={2} />
-              {tierLabel} Plan
+              Standard allocation
             </button>
           </div>
         ) : (

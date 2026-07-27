@@ -19,7 +19,6 @@ import {
   ChatCircleDots,
   Article,
   X,
-  Funnel,
   Lightning,
   SquaresFour,
   Cloud,
@@ -183,11 +182,10 @@ export default function Marketplace() {
   const [sortBy, setSortBy] = useState<SortOption>(
     (searchParams.get('sort') as SortOption) || 'featured'
   );
-  const [pricingFilter, setPricingFilter] = useState<PricingFilter>(
-    (searchParams.get('pricing') as PricingFilter) || 'all'
-  );
+  // Pricing remains an API compatibility field only; the corporate catalog
+  // intentionally does not expose commercial filters in the interface.
+  const [pricingFilter] = useState<PricingFilter>('all');
   const [showSortDropdown, setShowSortDropdown] = useState(false);
-  const [showFilterDropdown, setShowFilterDropdown] = useState(false);
 
   // State - Data
   const [items, setItems] = useState<MarketplaceItem[]>([]);
@@ -296,16 +294,7 @@ export default function Marketplace() {
     { id: 'newest', label: 'Recently Added' },
     { id: 'name', label: 'Name A-Z' },
     { id: 'rating', label: 'Highest Rated' },
-    { id: 'price_asc', label: 'Price: Low to High' },
-    { id: 'price_desc', label: 'Price: High to Low' },
   ];
-
-  const pricingOptions: { id: PricingFilter; label: string }[] = [
-    { id: 'all', label: 'All Prices' },
-    { id: 'free', label: 'Free Only' },
-    { id: 'paid', label: 'Paid Only' },
-  ];
-
   // Load items with server-side filtering
   const loadItems = useCallback(
     async (params: {
@@ -605,7 +594,7 @@ export default function Marketplace() {
   const featuredItems = sortedByRating.slice(0, 3);
 
   // Check if any filters are active
-  const hasActiveFilters = pricingFilter !== 'all' || searchQuery !== '';
+  const hasActiveFilters = searchQuery !== '';
 
   return (
     <>
@@ -711,8 +700,12 @@ export default function Marketplace() {
                     <Cloud size={14} />
                     <span className="hidden sm:inline text-xs">
                       {selectedSource
-                        ? (federatedSources.find((s) => s.handle === selectedSource)
-                            ?.display_name ?? selectedSource)
+                        ? (() => {
+                            const source = federatedSources.find((s) => s.handle === selectedSource);
+                            return source?.handle === 'tesslate-official'
+                              ? 'Legrand Official'
+                              : source?.display_name ?? 'Source';
+                          })()
                         : 'All sources'}
                     </span>
                     <CaretDown className="w-3 h-3 opacity-50" />
@@ -773,9 +766,10 @@ export default function Marketplace() {
                               }`}
                               data-testid={`marketplace-source-option-${source.handle}`}
                             >
-                              <span className="truncate flex-1">{source.display_name}</span>
-                              <span className="text-[10px] text-[var(--text-subtle)] font-mono">
-                                {source.handle}
+                              <span className="truncate flex-1">
+                                {source.handle === 'tesslate-official'
+                                  ? 'Legrand Official'
+                                  : source.display_name}
                               </span>
                               {selectedSource === source.handle && (
                                 <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 16 16">
@@ -789,75 +783,6 @@ export default function Marketplace() {
                   )}
                 </div>
               )}
-
-              {/* Filter Dropdown */}
-              <div className="relative">
-                <button
-                  onClick={() => setShowFilterDropdown(!showFilterDropdown)}
-                  className={`btn btn-icon ${hasActiveFilters ? 'btn-active' : ''}`}
-                  aria-label="Filter"
-                >
-                  <Funnel size={16} weight={hasActiveFilters ? 'fill' : 'regular'} />
-                </button>
-
-                {showFilterDropdown && (
-                  <>
-                    <div
-                      className="fixed inset-0 z-40"
-                      onClick={() => setShowFilterDropdown(false)}
-                    />
-                    <div
-                      className="absolute right-0 top-full mt-1 z-50 min-w-[200px] py-1 rounded-[var(--radius-medium)] border bg-[var(--surface)] shadow-xl"
-                      style={{
-                        borderWidth: 'var(--border-width)',
-                        borderColor: 'var(--border-hover)',
-                      }}
-                    >
-                      <div className="px-3 py-1.5 text-[10px] font-semibold text-[var(--text-subtle)] uppercase tracking-wider">
-                        Price
-                      </div>
-                      {pricingOptions.map((option) => (
-                        <button
-                          key={option.id}
-                          onClick={() => setPricingFilter(option.id)}
-                          className={`w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 transition-colors ${
-                            pricingFilter === option.id
-                              ? 'text-[var(--text)] bg-[var(--surface-hover)]'
-                              : 'text-[var(--text-muted)] hover:bg-[var(--surface-hover)] hover:text-[var(--text)]'
-                          }`}
-                        >
-                          {option.label}
-                          {pricingFilter === option.id && (
-                            <svg
-                              className="w-3 h-3 ml-auto"
-                              fill="currentColor"
-                              viewBox="0 0 16 16"
-                            >
-                              <path d="M13.78 4.22a.75.75 0 010 1.06l-7.25 7.25a.75.75 0 01-1.06 0L2.22 9.28a.75.75 0 011.06-1.06L6 10.94l6.72-6.72a.75.75 0 011.06 0z" />
-                            </svg>
-                          )}
-                        </button>
-                      ))}
-
-                      {hasActiveFilters && (
-                        <>
-                          <div className="my-1 border-t" style={{ borderColor: 'var(--border)' }} />
-                          <button
-                            onClick={() => {
-                              setPricingFilter('all');
-                              setSearchQuery('');
-                              setShowFilterDropdown(false);
-                            }}
-                            className="w-full text-left px-3 py-1.5 text-xs text-[var(--status-error)] hover:bg-[var(--surface-hover)] transition-colors"
-                          >
-                            Clear all filters
-                          </button>
-                        </>
-                      )}
-                    </div>
-                  </>
-                )}
-              </div>
 
               {/* Sort Dropdown */}
               <div className="relative">
@@ -1103,7 +1028,6 @@ export default function Marketplace() {
                       {hasActiveFilters && (
                         <button
                           onClick={() => {
-                            setPricingFilter('all');
                             setSearchQuery('');
                           }}
                           className="btn btn-sm mt-3"

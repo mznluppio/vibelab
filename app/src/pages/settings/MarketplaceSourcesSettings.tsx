@@ -111,6 +111,12 @@ function trustBadgeStyle(level: MarketplaceSourceTrustLevel): TrustBadgeStyle {
   }
 }
 
+function marketplaceSourceLabel(source: Pick<MarketplaceSourceResponse, 'handle' | 'is_system' | 'display_name'>): string {
+  return source.is_system && source.handle === 'tesslate-official'
+    ? 'Legrand Official'
+    : source.display_name;
+}
+
 function extractDetail(err: unknown, fallback: string): string {
   const e = err as { response?: { data?: { detail?: unknown } }; message?: string };
   const detail = e?.response?.data?.detail;
@@ -322,6 +328,7 @@ function SourceRow({
   onDelete,
   onPromote,
 }: SourceRowProps) {
+  const displayName = marketplaceSourceLabel(source);
   const trust = trustBadgeStyle(source.trust_level);
   const isUntrusted = source.trust_level === 'untrusted';
   const visibleCaps = source.capabilities.slice(0, 4);
@@ -339,7 +346,7 @@ function SourceRow({
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap mb-1">
-              <h4 className="font-semibold text-sm text-[var(--text)]">{source.display_name}</h4>
+              <h4 className="font-semibold text-sm text-[var(--text)]">{displayName}</h4>
               <span className={trust.className}>{trust.label}</span>
               {source.is_system && (
                 <span className="px-2 py-0.5 bg-white/5 text-[var(--text-subtle)] rounded text-[10px] font-medium flex items-center gap-1">
@@ -355,7 +362,9 @@ function SourceRow({
               {source.last_sync_error && (
                 <span
                   className="px-2 py-0.5 bg-red-500/10 text-red-400 rounded text-[10px] font-medium flex items-center gap-1"
-                  title={source.last_sync_error}
+                  title={source.handle === 'tesslate-official'
+                    ? 'The system source requires administrator attention. See the marketplace audit for the current diagnosis.'
+                    : source.last_sync_error}
                 >
                   <Warning size={9} weight="fill" />
                   Sync error
@@ -364,19 +373,23 @@ function SourceRow({
               {isUntrusted && (
                 <span
                   className="px-2 py-0.5 bg-red-500/10 text-red-400 rounded text-[10px] font-medium flex items-center gap-1"
-                  title="MCP servers and marketplace apps cannot be installed from untrusted sources. Add a bearer token to upgrade to private trust."
+                  title="MCP servers and marketplace apps cannot be installed from untrusted sources. Add a bearer token to mark the source private."
                 >
                   <XCircle size={9} weight="fill" />
                   MCP &amp; app installs blocked
                 </span>
               )}
             </div>
-            <code className="text-xs font-mono text-[var(--text-subtle)] bg-[var(--bg)] px-2 py-0.5 rounded">
-              {source.handle}
-            </code>
-            <p className="text-[11px] text-[var(--text-subtle)] mt-1 truncate" title={source.base_url}>
-              {source.base_url}
-            </p>
+            {!source.is_system && (
+              <>
+                <code className="text-xs font-mono text-[var(--text-subtle)] bg-[var(--bg)] px-2 py-0.5 rounded">
+                  {source.handle}
+                </code>
+                <p className="text-[11px] text-[var(--text-subtle)] mt-1 truncate" title={source.base_url}>
+                  {source.base_url}
+                </p>
+              </>
+            )}
 
             {visibleCaps.length > 0 && (
               <div className="flex flex-wrap gap-1 mt-2">
@@ -589,7 +602,7 @@ export default function MarketplaceSourcesSettings() {
       const created = await marketplaceSourcesApi.create(payload);
       setSources((prev) => [...prev, created]);
       setShowAddForm(false);
-      toast.success(`Added ${created.display_name}`);
+      toast.success(`Added ${marketplaceSourceLabel(created)}`);
     } catch (err) {
       toast.error(extractDetail(err, 'Failed to add marketplace source'));
     } finally {
@@ -662,7 +675,7 @@ export default function MarketplaceSourcesSettings() {
       const result = await marketplaceSourcesApi.test(source.id);
       const pinNote = result.pinned_hub_id_changed ? ' (hub identity pinned)' : '';
       toast.success(
-        `Connected to ${result.display_name ?? source.display_name}${pinNote} - ${result.capabilities.length} capability${result.capabilities.length === 1 ? '' : 'ies'}`
+        `Connected to ${result.display_name ?? marketplaceSourceLabel(source)}${pinNote} - ${result.capabilities.length} capability${result.capabilities.length === 1 ? '' : 'ies'}`
       );
       // Refresh the row from the server so capabilities/policies update too.
       void loadSources();
@@ -685,7 +698,7 @@ export default function MarketplaceSourcesSettings() {
       } else {
         const upserts = result.items_upserted;
         toast.success(
-          `Synced ${source.display_name} - ${result.events_processed} event${result.events_processed === 1 ? '' : 's'} (${upserts} upsert${upserts === 1 ? '' : 's'})`
+          `Synced ${marketplaceSourceLabel(source)} - ${result.events_processed} event${result.events_processed === 1 ? '' : 's'} (${upserts} upsert${upserts === 1 ? '' : 's'})`
         );
       }
       void loadSources();
@@ -699,7 +712,7 @@ export default function MarketplaceSourcesSettings() {
   const handleDelete = (source: MarketplaceSourceResponse) => {
     setConfirmDialog({
       isOpen: true,
-      title: `Delete "${source.display_name}"`,
+      title: `Delete "${marketplaceSourceLabel(source)}"`,
       message:
         'This source will be disabled and hidden from the marketplace dropdown. ' +
         'Items already installed from this source remain in your library, but new installs are blocked. ' +
@@ -717,7 +730,7 @@ export default function MarketplaceSourcesSettings() {
           setSources((prev) =>
             prev.map((s) => (s.id === source.id ? { ...s, is_active: false } : s))
           );
-          toast.success(`Disabled ${source.display_name}`);
+          toast.success(`Disabled ${marketplaceSourceLabel(source)}`);
         } catch (err) {
           toast.error(extractDetail(err, 'Failed to delete source'));
         } finally {
@@ -730,7 +743,7 @@ export default function MarketplaceSourcesSettings() {
   const handlePromote = (source: MarketplaceSourceResponse) => {
     setConfirmDialog({
       isOpen: true,
-      title: `Promote "${source.display_name}" to admin_trusted`,
+      title: `Promote "${marketplaceSourceLabel(source)}" to admin_trusted`,
       message:
         'Admin-trusted sources skip the per-install confirmation prompt for MCP servers and marketplace apps. ' +
         'Only promote sources you have personally vetted — this affects every user who can see this source.',
@@ -772,10 +785,8 @@ export default function MarketplaceSourcesSettings() {
             <div className="text-sm text-blue-400">
               <p className="font-semibold mb-1">Federated marketplaces</p>
               <p className="text-xs opacity-80">
-                Sources you add appear as filter options in the Marketplace. The system rows
-                (<code className="font-mono">tesslate-official</code> and{' '}
-                <code className="font-mono">local</code>) are always visible and cannot be
-                edited. Anonymous sources without a bearer token are classified as untrusted —
+                Sources you add appear as filter options in the Marketplace. System sources are
+                always visible and cannot be edited. Anonymous sources without a bearer token are classified as untrusted —
                 MCP server and marketplace app installs from untrusted sources are blocked by the
                 install gate.
               </p>

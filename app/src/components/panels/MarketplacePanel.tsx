@@ -12,7 +12,7 @@ interface MarketplaceItem {
   id: string;
   title: string;
   description: string;
-  price?: string;
+  availability?: string;
   badge?: string;
   gradient: string;
 }
@@ -33,16 +33,16 @@ export function MarketplacePanel({ projectId: _projectId, onLockToggle }: Market
       {
         id: '1',
         title: 'SaaS Starter',
-        description: 'Full auth, billing, dashboard',
-        price: '$49',
+        description: 'Authentication, workspace controls, dashboard',
+        availability: 'Available',
         badge: 'Owned',
         gradient: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
       },
       {
         id: '2',
         title: 'E-commerce Kit',
-        description: 'Cart, checkout, products',
-        price: '$79',
+        description: 'Catalog, product and order workflows',
+        availability: 'Available',
         gradient: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
       },
     ],
@@ -51,15 +51,15 @@ export function MarketplacePanel({ projectId: _projectId, onLockToggle }: Market
         id: '3',
         title: 'Google APIs',
         description: 'Drive, Calendar, Gmail',
-        price: 'Free',
+        availability: 'Included',
         badge: 'Installed',
         gradient: 'linear-gradient(135deg, #4285f4 0%, #34a853 100%)',
       },
       {
         id: '4',
-        title: 'Stripe',
-        description: 'Payments & billing',
-        price: 'Free',
+        title: 'Service integration',
+        description: 'Managed external service integration',
+        availability: 'Included',
         gradient: 'linear-gradient(135deg, #635bff 0%, #1a1f71 100%)',
       },
     ],
@@ -67,15 +67,15 @@ export function MarketplacePanel({ projectId: _projectId, onLockToggle }: Market
       {
         id: '5',
         title: 'Security Scan',
-        description: 'Pro agent • $9/mo',
-        price: 'Subscription',
+        description: 'Workspace security review',
+        availability: 'Available',
         gradient: 'linear-gradient(135deg, rgba(255,107,0,0.3), rgba(255,107,0,0.1))',
       },
       {
         id: '6',
         title: 'DB Optimizer',
-        description: 'Open source • Free',
-        price: 'Free',
+        description: 'Open-source database optimization',
+        availability: 'Included',
         badge: 'Active',
         gradient: 'linear-gradient(135deg, rgba(0,217,255,0.3), rgba(0,217,255,0.1))',
       },
@@ -85,7 +85,7 @@ export function MarketplacePanel({ projectId: _projectId, onLockToggle }: Market
         id: '7',
         title: 'Dashboard UI',
         description: '20+ components',
-        price: '$29',
+        availability: 'Available',
         badge: 'In Library',
         gradient: 'linear-gradient(135deg, #84fab0 0%, #8fd3f4 100%)',
       },
@@ -93,7 +93,7 @@ export function MarketplacePanel({ projectId: _projectId, onLockToggle }: Market
         id: '8',
         title: 'Form Builder',
         description: '15+ form components',
-        price: '$19',
+        availability: 'Available',
         gradient: 'linear-gradient(135deg, #a1c4fd 0%, #c2e9fb 100%)',
       },
     ],
@@ -138,7 +138,7 @@ export function MarketplacePanel({ projectId: _projectId, onLockToggle }: Market
             <div className="font-semibold text-sm text-white mb-1">{item.title}</div>
             <div className="text-xs text-gray-500 mb-2">{item.description}</div>
             <div className="flex items-center justify-between">
-              {item.price && <span className="text-xs text-gray-500">{item.price}</span>}
+              {item.availability && <span className="text-xs text-gray-500">{item.availability}</span>}
               {item.badge && (
                 <span className="text-xs px-2 py-1 bg-green-500/20 text-green-400 rounded">
                   {item.badge}

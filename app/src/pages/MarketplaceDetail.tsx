@@ -647,9 +647,7 @@ export default function MarketplaceDetail() {
                     ) : item.is_active ? (
                       <>
                         <Download size={18} weight="bold" />
-                        {item.pricing_type === 'free'
-                          ? 'Install Extension'
-                          : `Subscribe for $${item.price}/mo`}
+                        Add to library
                       </>
                     ) : (
                       'Coming Soon'
@@ -677,10 +675,6 @@ export default function MarketplaceDetail() {
                     </button>
                   )}
 
-                {/* Price Badge */}
-                {item.pricing_type === 'free' && (
-                  <span className="text-xs text-[var(--text-subtle)]">Free</span>
-                )}
               </div>
             </div>
           </div>

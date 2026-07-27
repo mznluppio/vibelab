@@ -42,7 +42,7 @@ export function ProviderTile({
   onClick,
 }: ProviderTileProps) {
   const ctaLabel =
-    status === 'connected' || status === 'builtin' ? 'Manage' : status === 'locked' ? 'Upgrade' : 'Connect';
+    status === 'connected' || status === 'builtin' ? 'Manage' : status === 'locked' ? 'Request access' : 'Connect';
 
   return (
     <button
@@ -120,7 +120,7 @@ export function ProviderTile({
                 </div>
               ) : (
                 <div className="mt-auto text-[10.5px] font-mono text-[var(--text-subtle)]">
-                  Free with subscription
+                  Included with workspace allocation
                 </div>
               )}
             </>

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback, useRef, type ReactNode } from 'react';
+import { useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
@@ -402,13 +402,7 @@ export default function Home() {
   const [showImportDialog, setShowImportDialog] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
 
-  // Subscription / plan line — mirrors NavigationSidebar.tsx:133-135
-  const subscriptionTier = activeTeam?.subscription_tier || 'free';
-  const tierLabel = useMemo(
-    () => subscriptionTier.charAt(0).toUpperCase() + subscriptionTier.slice(1),
-    [subscriptionTier]
-  );
-  const isPaidPlan = subscriptionTier !== 'free';
+  // Allocation line intentionally avoids exposing technical plan identifiers.
 
   // Load recent projects — mirror NavigationSidebar.tsx:231-268 fetch pattern
   useEffect(() => {
@@ -541,32 +535,28 @@ export default function Home() {
     [isCreating, navigate]
   );
 
-  const handleUpgrade = () => navigate('/settings/team/billing');
+  const handleAllocationRequest = () => navigate('/settings/team/billing');
   const handleOpenProject = (slug: string) => navigate(`/project/${slug}`);
 
   return (
     <div className="h-full w-full overflow-y-auto">
       <div className="flex min-h-full items-center justify-center">
         <div className="flex w-full max-w-[560px] flex-col gap-6 px-4 py-8 sm:px-6 sm:py-12 lg:px-8 lg:py-16">
-          {/* Welcome header + plan line */}
+          {/* Welcome header + allocation line */}
           <header className="flex flex-col items-center gap-2 text-center">
             <h1 className="text-xl font-semibold tracking-tight text-[var(--text)] sm:text-2xl">
               Welcome to VibeLab, {greetingName}
             </h1>
             <p className="flex items-center gap-1.5 text-xs text-[var(--text-muted)] sm:text-sm">
-              <span>{tierLabel} Plan</span>
-              {!isPaidPlan && (
-                <>
-                  <span aria-hidden="true">·</span>
-                  <button
-                    type="button"
-                    onClick={handleUpgrade}
-                    className="text-[var(--primary)] hover:underline focus-visible:outline-none focus-visible:underline"
-                  >
-                    Upgrade
-                  </button>
-                </>
-              )}
+              <span>Standard allocation</span>
+              <span aria-hidden="true">·</span>
+              <button
+                type="button"
+                onClick={handleAllocationRequest}
+                className="text-[var(--primary)] hover:underline focus-visible:outline-none focus-visible:underline"
+              >
+                Request additional quota
+              </button>
             </p>
           </header>
 

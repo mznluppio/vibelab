@@ -16,12 +16,12 @@ export default function MarketplaceSuccess() {
 
       if (!sessionId) {
         setStatus('error');
-        setMessage('No session ID found. Please contact support if you were charged.');
+        setMessage('No installation session was found. Please contact support.');
         return;
       }
 
       try {
-        // Verify the Stripe checkout session and add to library
+        // Verify the installation session and add to library.
         const response = await marketplaceApi.verifyPurchase(sessionId, agentSlug ?? undefined);
 
         if (response.success) {
@@ -33,15 +33,15 @@ export default function MarketplaceSuccess() {
           }, 2000);
         } else {
           setStatus('error');
-          setMessage('Failed to verify purchase. Please contact support.');
+          setMessage('We could not complete the library update. Please contact support.');
         }
       } catch (error: unknown) {
-        console.error('Failed to verify purchase:', error);
+        console.error('Failed to verify marketplace session:', error);
         const err = error as { response?: { data?: { detail?: string } } };
         setStatus('error');
         setMessage(
           err.response?.data?.detail ||
-            'Failed to verify purchase. Please contact support if you were charged.'
+            'We could not complete the library update. Please contact support.'
         );
       }
     };
@@ -74,15 +74,15 @@ export default function MarketplaceSuccess() {
 
         {/* Title */}
         <h2 className="text-2xl font-bold mb-3" style={{ color: 'var(--text)' }}>
-          {status === 'loading' && 'Verifying Your Purchase...'}
-          {status === 'success' && 'Payment Successful!'}
-          {status === 'error' && 'Payment Issue'}
+          {status === 'loading' && 'Preparing your library...'}
+          {status === 'success' && 'Added to your library'}
+          {status === 'error' && 'Library update issue'}
         </h2>
 
         {/* Message */}
         <p className="mb-6" style={{ color: 'var(--text)' }}>
           {status === 'loading' &&
-            'Please wait while we confirm your payment and add the agent to your library.'}
+            'Please wait while we add the item to your library.'}
           {status === 'success' && message}
           {status === 'error' && message}
         </p>
