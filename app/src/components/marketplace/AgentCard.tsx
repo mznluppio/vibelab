@@ -162,11 +162,11 @@ export function AgentCard({ item, onInstall, isAuthenticated = true }: AgentCard
   ) : item.git_repo_url && parseGitHubRepo(item.git_repo_url) ? (
     <GithubLogo size={24} weight="fill" className="text-[var(--text-muted)]" />
   ) : (
-    <img src="/favicon.svg" alt="Tesslate" className="w-6 h-6" />
+    <img src="/favicon.svg" alt="VibeLab" className="w-6 h-6" />
   );
 
   const creatorLabel = item.creator_type === 'official'
-    ? 'Tesslate'
+    ? 'Legrand Official'
     : item.creator_username
       ? `@${item.creator_username}`
       : item.creator_name || 'Unknown';

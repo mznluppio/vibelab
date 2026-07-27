@@ -264,15 +264,15 @@ export default function CreatorStudioPage() {
       <div className="p-8 max-w-xl mx-auto text-center">
         <h1 className="text-2xl font-semibold text-[var(--text)] mb-3">Become a creator</h1>
         <p className="text-[var(--text-muted)] mb-6">
-          Publish apps to the Tesslate marketplace and earn revenue. Set up Stripe Connect to
-          continue.
+          App publication is managed through the Legrand Official catalog. Contact an
+          administrator to request access.
         </p>
         <button
           onClick={() => navigate('/settings')}
           className="px-4 py-2 rounded bg-[var(--accent)] text-white"
           type="button"
         >
-          Go to Settings
+          Contact an administrator
         </button>
       </div>
     );
@@ -414,4 +414,3 @@ export default function CreatorStudioPage() {
     </div>
   );
 }
-

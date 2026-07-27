@@ -141,7 +141,7 @@ export default function AppsMarketplacePage() {
     <div className="flex-1 overflow-y-auto bg-[var(--bg)]">
       <div className="sticky top-0 z-30 bg-[var(--bg)] border-b border-[var(--border)]">
         <div className="flex items-center gap-3 p-3">
-          <h1 className="text-sm font-semibold text-[var(--text)]">Tesslate Apps</h1>
+          <h1 className="text-sm font-semibold text-[var(--text)]">VibeLab Apps</h1>
           <span className="text-[10px] text-[var(--text-subtle)]">{total} results</span>
           <div className="flex-1" />
           <div className="relative">

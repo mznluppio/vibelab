@@ -364,7 +364,7 @@ function SourceRow({
               {isUntrusted && (
                 <span
                   className="px-2 py-0.5 bg-red-500/10 text-red-400 rounded text-[10px] font-medium flex items-center gap-1"
-                  title="MCP servers and Tesslate Apps cannot be installed from untrusted sources. Add a bearer token to upgrade to private trust."
+                  title="MCP servers and marketplace apps cannot be installed from untrusted sources. Add a bearer token to upgrade to private trust."
                 >
                   <XCircle size={9} weight="fill" />
                   MCP &amp; app installs blocked
@@ -732,7 +732,7 @@ export default function MarketplaceSourcesSettings() {
       isOpen: true,
       title: `Promote "${source.display_name}" to admin_trusted`,
       message:
-        'Admin-trusted sources skip the per-install confirmation prompt for MCP servers and Tesslate Apps. ' +
+        'Admin-trusted sources skip the per-install confirmation prompt for MCP servers and marketplace apps. ' +
         'Only promote sources you have personally vetted — this affects every user who can see this source.',
       confirmText: 'Promote',
       variant: 'warning',
@@ -764,7 +764,7 @@ export default function MarketplaceSourcesSettings() {
     <>
       <SettingsSection
         title="Marketplace Sources"
-        description="Add federated marketplace hubs to install agents, apps, themes, and connectors from beyond the Tesslate official catalog."
+        description="Add federated marketplace hubs to install agents, apps, themes, and connectors beyond the Legrand Official catalog."
       >
         <div className="p-4 bg-blue-500/10 border border-blue-500/20 rounded-xl">
           <div className="flex items-start gap-3">
@@ -776,7 +776,7 @@ export default function MarketplaceSourcesSettings() {
                 (<code className="font-mono">tesslate-official</code> and{' '}
                 <code className="font-mono">local</code>) are always visible and cannot be
                 edited. Anonymous sources without a bearer token are classified as untrusted —
-                MCP server and Tesslate App installs from untrusted sources are blocked by the
+                MCP server and marketplace app installs from untrusted sources are blocked by the
                 install gate.
               </p>
             </div>
@@ -858,7 +858,7 @@ export default function MarketplaceSourcesSettings() {
                 No marketplace sources yet
               </h3>
               <p className="text-xs text-[var(--text-subtle)] mb-4 max-w-sm mx-auto">
-                Add a federated marketplace hub to expand the catalog beyond Tesslate Official.
+                Add a federated marketplace hub to expand the catalog beyond Legrand Official.
               </p>
               {!showAddForm && (
                 <button

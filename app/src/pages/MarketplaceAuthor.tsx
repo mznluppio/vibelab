@@ -117,7 +117,7 @@ export default function MarketplaceAuthor() {
   }
 
   // Generate SEO data
-  const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'https://tesslate.com';
+  const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'http://localhost';
   const breadcrumbData = generateBreadcrumbStructuredData([
     { name: 'Marketplace', url: `${baseUrl}/marketplace` },
     { name: creator.name || creator.username, url: `${baseUrl}/marketplace/creator/${userId}` },
@@ -129,13 +129,13 @@ export default function MarketplaceAuthor() {
         title={`${creator.name || creator.username} - Creator Profile`}
         description={
           creator.bio ||
-          `View ${creator.name || creator.username}'s AI agents and templates on Tesslate Marketplace. ${creator.stats.extensions_count} extensions with ${formatInstalls(creator.stats.total_downloads)} total installs.`
+          `View ${creator.name || creator.username}'s AI agents and templates in VibeLab. ${creator.stats.extensions_count} extensions with ${formatInstalls(creator.stats.total_downloads)} total installs.`
         }
         keywords={[
           creator.name || '',
           creator.username,
           'AI agent creator',
-          'Tesslate',
+          'VibeLab',
           'developer',
         ]}
         image={creator.avatar_url || undefined}
