@@ -1,8 +1,8 @@
 /**
  * Tesslate Cloud settings (desktop shell only).
  *
- * Tesslate Studio desktop runs fully offline with a local account — no login
- * required. Signing in to a Tesslate Cloud account is optional and unlocks:
+ * VibeLab desktop runs fully offline with a local account — no login
+ * required. Connecting to approved workspace services is optional and unlocks:
  *   - LLM calls billed to the account's credits (proxied through the cloud
  *     backend; the internal LiteLLM is never exposed to the desktop)
  *   - the cloud marketplace catalog
@@ -101,7 +101,7 @@ export default function CloudSettings() {
       await desktopApi.signOut();
       pollingRef.current = false;
       await refresh(false);
-      toast.success('Signed out of Tesslate Cloud');
+      toast.success('Disconnected from workspace services');
     } catch (err) {
       toast.error(extractDetail(err, 'Sign-out failed'));
     } finally {
@@ -154,8 +154,8 @@ export default function CloudSettings() {
   return (
     <>
       <SettingsSection
-        title="Tesslate Cloud"
-        description="Tesslate Studio works fully offline with a local account. Sign in to a Tesslate Cloud account only when you want to use your account credits for AI, the cloud marketplace, or project sync."
+        title="Workspace services"
+        description="VibeLab works fully offline with a local account. Connect approved workspace services only when you need centrally managed allocation, the marketplace, or project sync."
       >
         {/* Pairing status */}
         <div className="p-4 bg-[var(--surface)] border border-[var(--border)] rounded-xl">
@@ -174,7 +174,7 @@ export default function CloudSettings() {
               </div>
               <div className="min-w-0">
                 <h3 className="text-sm font-semibold text-[var(--text)]">
-                  {paired ? 'Connected to Tesslate Cloud' : 'Not connected'}
+                  {paired ? 'Connected to workspace services' : 'Not connected'}
                 </h3>
                 <p className="text-xs text-[var(--text-subtle)] mt-0.5">
                   {paired
@@ -210,7 +210,7 @@ export default function CloudSettings() {
         {!paired && (
           <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-xl">
             <p className="text-xs text-blue-400">
-              No account? Tesslate Studio still works — add a provider key under{' '}
+              VibeLab still works without a connected account — add a provider key under{' '}
               <span className="font-semibold">Library → API Keys</span> or set{' '}
               <code className="font-mono">OPENAI_API_KEY</code> in your environment to bring your
               own LLM.
@@ -225,7 +225,7 @@ export default function CloudSettings() {
             Cloud endpoint
           </h3>
           <p className="text-[11px] text-[var(--text-subtle)] mb-3">
-            The Tesslate Cloud server the desktop pairs with. Leave the default unless you run a
+            The workspace service endpoint that the desktop pairs with. Leave the default unless you run a
             self-hosted cloud.
           </p>
           <div className="flex items-center gap-2">
@@ -267,7 +267,7 @@ export default function CloudSettings() {
         isOpen={confirmSignOut}
         onClose={() => setConfirmSignOut(false)}
         onConfirm={handleSignOut}
-        title="Sign out of Tesslate Cloud"
+        title="Disconnect workspace services"
         message="The desktop will stop using your account credits and cloud marketplace. Your local projects and settings are unaffected. You can sign in again at any time."
         confirmText="Sign out"
         variant="warning"

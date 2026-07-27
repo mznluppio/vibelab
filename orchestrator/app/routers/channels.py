@@ -858,7 +858,7 @@ async def test_channel_config(
         raise HTTPException(status_code=500, detail="Internal configuration error") from e
 
     channel = get_channel(config.channel_type, credentials)
-    test_text = "Hello from OpenSail! Your channel is configured correctly."
+    test_text = "Hello from VibeLab! Your channel is configured correctly."
 
     try:
         result = await channel.send_message(payload.jid, test_text)
