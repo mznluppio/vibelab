@@ -443,7 +443,7 @@ export default function MarketplaceDetail() {
   }
 
   // Generate SEO structured data
-  const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'https://tesslate.com';
+  const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'http://localhost';
   const productStructuredData = generateProductStructuredData({
     name: item.name,
     description: item.description,
@@ -472,14 +472,14 @@ export default function MarketplaceDetail() {
         title={`${item.name} - AI ${item.item_type === 'base' ? 'Template' : 'Agent'}`}
         description={
           item.description ||
-          `${item.name} is an AI-powered ${item.item_type === 'base' ? 'project template' : 'coding agent'} on Tesslate Marketplace.`
+          `${item.name} is an AI-powered ${item.item_type === 'base' ? 'project template' : 'coding agent'} in the VibeLab marketplace.`
         }
         keywords={[
           item.name,
           item.category || '',
           item.item_type || 'agent',
           'AI agent',
-          'Tesslate',
+          'VibeLab',
           ...(item.tags || []),
         ].filter(Boolean)}
         image={(item.avatar_url || item.preview_image) ?? undefined}
@@ -523,7 +523,7 @@ export default function MarketplaceDetail() {
                 ) : item.git_repo_url && parseGitHubRepo(item.git_repo_url) ? (
                   <GithubLogo size={48} weight="fill" className="text-[var(--text-muted)]" />
                 ) : (
-                  <img src="/favicon.svg" alt="Tesslate" className="w-10 h-10" />
+                  <img src="/favicon.svg" alt="VibeLab" className="w-10 h-10" />
                 )}
               </div>
             </div>
@@ -587,14 +587,14 @@ export default function MarketplaceDetail() {
                     </div>
                     <span>
                       {item.creator_type === 'official'
-                        ? 'Tesslate'
+                        ? 'Legrand Official'
                         : item.creator_username
                           ? `@${item.creator_username}`
                           : item.creator_name || 'Unknown'}
                     </span>
                   </Link>
                 ) : (
-                  <span className="text-[11px] text-[var(--text-muted)]">By Tesslate</span>
+                  <span className="text-[11px] text-[var(--text-muted)]">By Legrand Official</span>
                 )}
               </div>
 

@@ -426,7 +426,7 @@ export default function MarketplaceBrowse() {
     selectedCategory !== 'all' || pricingFilter !== 'all' || searchQuery !== '';
 
   // Generate SEO data
-  const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'https://tesslate.com';
+  const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'http://localhost';
   const itemTypeLabel = itemTypeLabels[itemType];
   const breadcrumbData = generateBreadcrumbStructuredData([
     { name: 'Marketplace', url: `${baseUrl}/marketplace` },
@@ -436,15 +436,15 @@ export default function MarketplaceBrowse() {
   return (
     <>
       <SEO
-        title={`Browse All ${itemTypeLabel} - Tesslate Marketplace`}
-        description={`Discover and browse all ${itemTypeLabel.toLowerCase()} available on Tesslate Marketplace. Filter by category, price, and more to find the perfect AI-powered tools for your projects.`}
+        title={`Browse All ${itemTypeLabel} - VibeLab Marketplace`}
+        description={`Discover approved ${itemTypeLabel.toLowerCase()} available in VibeLab. Filter by category and find AI-powered tools for your projects.`}
         keywords={[
           itemTypeLabel,
           'AI agents',
           'coding agents',
           'project templates',
           'developer tools',
-          'Tesslate',
+          'VibeLab',
           'browse marketplace',
         ]}
         url={`${baseUrl}/marketplace/browse/${itemType}`}

@@ -73,11 +73,11 @@ _SYSTEM_INTERNAL_SOURCE_ID: UUID = UUID("00000000-0000-0000-0000-000000000003")
 #: Every field the pseudo-row in ``marketplace_agents`` carries. Boot
 #: seeder writes these verbatim. ``None`` means "leave NULL".
 SYSTEM_DEFAULT_AGENT_FIELDS: dict[str, object | None] = {
-    "name": "System Default Agent",
+    "name": "VibeLab Default",
     "slug": SYSTEM_DEFAULT_AGENT_SLUG,
-    "description": "The built-in coding assistant. Always available to every user.",
+    "description": "The built-in VibeLab coding assistant. Always available to every user.",
     "long_description": (
-        "OpenSail's general-purpose autonomous coding agent. Reads, writes, "
+        "VibeLab's general-purpose autonomous coding agent. Reads, writes, "
         "and patches files; executes shell commands; plans multi-step tasks; "
         "delegates to specialist sub-agents. Backed by the TesslateAgent "
         "runtime — same engine the Tesslate Agent uses, baked into the "
@@ -186,7 +186,7 @@ def get_system_default_listing_dict(
         "is_published": False,  # browse listing already hides it; consistent here
         "usage_count": 0,
         "creator_type": "official",
-        "creator_name": "Tesslate",
+        "creator_name": "Legrand Official",
         "creator_username": None,
         "creator_avatar_url": None,
         "created_by_user_id": None,

@@ -258,7 +258,7 @@ export default function Marketplace() {
       {
         icon: <Article className="w-5 h-5" weight="fill" />,
         title: 'Documentation',
-        onClick: () => window.open('https://docs.tesslate.com', '_blank'),
+        onClick: () => navigate('/feedback'),
       },
     ],
     right: [
@@ -611,7 +611,7 @@ export default function Marketplace() {
     <>
       <SEO
         title="AI Agents & Templates Marketplace"
-        description="Discover AI-powered coding agents, project templates, and developer tools. Build faster with pre-built solutions from the Tesslate Marketplace."
+        description="Discover approved AI agents, project templates, and developer tools for VibeLab workspaces."
         keywords={[
           'AI agents',
           'coding agents',
@@ -619,7 +619,7 @@ export default function Marketplace() {
           'developer tools',
           'code generation',
           'web development',
-          'Tesslate',
+          'VibeLab',
         ]}
         url={typeof window !== 'undefined' ? window.location.href : undefined}
         structuredData={generateMarketplaceStructuredData()}

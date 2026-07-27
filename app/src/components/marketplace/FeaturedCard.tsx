@@ -51,7 +51,7 @@ export function FeaturedCard({ item, onInstall, isAuthenticated = true }: Featur
             {item.avatar_url ? (
               <img src={item.avatar_url} alt={item.name} className="w-full h-full object-cover" />
             ) : (
-              <img src="/favicon.svg" alt="Tesslate" className="w-8 h-8 sm:w-12 sm:h-12" />
+              <img src="/favicon.svg" alt="VibeLab" className="w-8 h-8 sm:w-12 sm:h-12" />
             )}
           </div>
         </div>
@@ -84,7 +84,7 @@ export function FeaturedCard({ item, onInstall, isAuthenticated = true }: Featur
               </div>
               <span>
                 {item.creator_type === 'official'
-                  ? 'Tesslate'
+                  ? 'Legrand Official'
                   : item.creator_username
                     ? `@${item.creator_username}`
                     : item.creator_name || 'Unknown'}

@@ -33,20 +33,18 @@ logger = logging.getLogger(__name__)
 TESSLATE_OFFICIAL_ID = uuid.UUID("00000000-0000-0000-0000-000000000001")
 LOCAL_SOURCE_ID = uuid.UUID("00000000-0000-0000-0000-000000000002")
 
-# Tesslate Official's hub URL is mutable per-deployment so a self-hosted
-# install (or a minikube/dev cluster running its own marketplace pod) can
-# point the federated reads at an in-cluster service. The seed runs on every
-# boot and refreshes ``base_url`` from this env var, so flipping it does
-# not require a manual SQL UPDATE.
-DEFAULT_TESSLATE_OFFICIAL_URL = "https://marketplace.tesslate.com"
+# The stable system handle and UUID remain upstream-compatible. VibeLab starts
+# with a local, intentionally empty official catalog; an approved internal hub
+# can be opted in through the deployment environment without a migration.
+DEFAULT_LEGRAND_OFFICIAL_URL = "local://legrand-official"
 
 SYSTEM_SOURCES = [
     {
         "id": TESSLATE_OFFICIAL_ID,
         "handle": "tesslate-official",
-        "display_name": "Tesslate Official",
+        "display_name": "Legrand Official",
         "base_url": os.environ.get(
-            "TESSLATE_OFFICIAL_BASE_URL", DEFAULT_TESSLATE_OFFICIAL_URL
+            "LEGRAND_OFFICIAL_BASE_URL", DEFAULT_LEGRAND_OFFICIAL_URL
         ),
         "scope": "system",
         "trust_level": "official",
