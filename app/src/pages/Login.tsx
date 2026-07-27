@@ -4,7 +4,7 @@ import { authApi, revokeServerSession } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 import { PulsingGridSpinner } from '../components/PulsingGridSpinner';
 import { MiniAsteroids } from '../components/MiniAsteroids';
-import { TesslateLogo } from '../components/ui/TesslateLogo';
+import { VibeLabBrand } from '../components/ui/VibeLabBrand';
 import { useTheme } from '../theme/ThemeContext';
 import { useFeatureFlag } from '../contexts/useFeatureFlag';
 import toast from 'react-hot-toast';
@@ -315,7 +315,7 @@ export default function Login() {
           {/* Logo */}
           <div className="mb-8">
             <div className="w-12 h-12 flex items-center justify-center">
-              <TesslateLogo width={48} height={38} className="text-black" />
+              <VibeLabBrand className="text-2xl text-[#0055A4]" />
             </div>
           </div>
 

@@ -146,7 +146,7 @@ export function TitleBar() {
         pointerEvents: 'none',
       }}
     >
-      OpenSail
+      VibeLab
     </span>
   );
 

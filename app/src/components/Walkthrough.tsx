@@ -17,9 +17,9 @@ interface WalkthroughStep {
 const WALKTHROUGH_STEPS: WalkthroughStep[] = [
   {
     id: 'welcome',
-    title: 'Welcome to OpenSail! 👋',
+    title: 'Welcome to VibeLab! 👋',
     description:
-      "Hey there! I'm excited to show you around. OpenSail is where you build software with AI agents. Let me give you a quick tour!",
+      "VibeLab is Legrand's workspace for building software with AI assistance. Let’s take a quick tour!",
     position: 'center',
     showContinueButton: true,
   },
@@ -36,7 +36,7 @@ const WALKTHROUGH_STEPS: WalkthroughStep[] = [
     id: 'marketplace-agents',
     title: 'Pick a Stream Builder Agent',
     description:
-      'Here in OpenSail, you can pick or make your own agents! Look for a "Stream Builder" type agent - try the "Full Stack Agent" (it\'s free). Click "Install" to add it to your library.',
+      'In VibeLab, you can choose or create agents for your workspace. Select an approved agent and install it to your library when needed.',
     position: 'center',
     route: '/marketplace',
     showContinueButton: true,

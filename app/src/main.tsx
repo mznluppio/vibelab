@@ -8,7 +8,8 @@ import App from './App.tsx'
 // Initialize PostHog once at app startup (singleton pattern)
 const posthogClient = initPostHog()
 
-// Easter egg for curious developers
+// Legacy upstream console message is disabled unless explicitly enabled for migration diagnostics.
+if (import.meta.env.VITE_SHOW_UPSTREAM_CONSOLE === 'true') {
 console.log(
   '%c' +
   '\n' +
@@ -39,6 +40,7 @@ console.log(
 );
 
 // Render app - PostHogProvider uses the already initialized client (singleton)
+}
 createRoot(document.getElementById('root')!).render(
   posthogClient ? (
     <PostHogProvider client={posthogClient}>

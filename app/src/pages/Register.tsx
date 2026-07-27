@@ -196,37 +196,18 @@ export default function Register() {
         <div className="w-full max-w-md">
           {/* Logo */}
           <div className="mb-8">
-            <div className="w-12 h-12 flex items-center justify-center">
-              <svg width="48" height="38" viewBox="0 0 161.9 126.66">
-                <g>
-                  <path
-                    d="m13.45,46.48h54.06c10.21,0,16.68-10.94,11.77-19.89l-9.19-16.75c-2.36-4.3-6.87-6.97-11.77-6.97H22.41c-4.95,0-9.5,2.73-11.84,7.09L1.61,26.71c-4.79,8.95,1.69,19.77,11.84,19.77Z"
-                    fill="#000000"
-                    strokeWidth="0"
-                  />
-                  <path
-                    d="m61.05,119.93l26.95-46.86c5.09-8.85-1.17-19.91-11.37-20.12l-19.11-.38c-4.9-.1-9.47,2.48-11.91,6.73l-17.89,31.12c-2.47,4.29-2.37,9.6.25,13.8l10.05,16.13c5.37,8.61,17.98,8.39,23.04-.41Z"
-                    fill="#000000"
-                    strokeWidth="0"
-                  />
-                  <path
-                    d="m148.46,0h-54.06c-10.21,0-16.68,10.94-11.77,19.89l9.19,16.75c2.36,4.3,6.87,6.97,11.77,6.97h35.9c4.95,0,9.5-2.73,11.84-7.09l8.97-16.75C165.08,10.82,158.6,0,148.46,0Z"
-                    fill="#000000"
-                    strokeWidth="0"
-                  />
-                </g>
-              </svg>
+            <div className="h-12 flex items-center">
+              <span className="text-2xl font-semibold tracking-tight text-[#0055A4]">VibeLab <span className="text-sm font-medium text-gray-500">by Legrand</span></span>
             </div>
           </div>
 
           {/* Heading */}
           <div className="mb-8">
             <h1 className="text-3xl sm:text-4xl font-bold text-gray-900 mb-3">
-              Start building today
+              Build with your team
             </h1>
             <p className="text-gray-600 text-sm leading-relaxed">
-              Create your account and join thousands of developers shipping production-ready
-              applications in minutes.
+              Create your VibeLab account to build and manage internal applications.
             </p>
           </div>
 

@@ -48,7 +48,7 @@ class SEOManager {
       scripts: new Set(),
     };
     this.originalTitle =
-      typeof document !== 'undefined' ? document.title : 'Tesslate';
+      typeof document !== 'undefined' ? document.title : 'VibeLab';
   }
 
   /**
@@ -300,9 +300,9 @@ export function setPageSEO(options: {
   const manager = getSEOManager();
   const managedKeys: string[] = [];
 
-  const fullTitle = options.title.includes('Tesslate')
+  const fullTitle = options.title.includes('VibeLab')
     ? options.title
-    : `${options.title} | Tesslate`;
+    : `${options.title} | VibeLab`;
 
   manager.setTitle(fullTitle);
 
@@ -324,7 +324,7 @@ export function setPageSEO(options: {
   manager.setMeta('og:title', fullTitle, true);
   manager.setMeta('og:description', options.description, true);
   manager.setMeta('og:type', options.type || 'website', true);
-  manager.setMeta('og:site_name', 'Tesslate', true);
+  manager.setMeta('og:site_name', 'VibeLab by Legrand', true);
   managedKeys.push('og:title', 'og:description', 'og:type', 'og:site_name');
 
   if (options.url) {

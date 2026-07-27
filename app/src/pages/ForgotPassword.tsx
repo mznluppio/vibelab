@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { authApi } from '../lib/api';
 import { PulsingGridSpinner } from '../components/PulsingGridSpinner';
-import { TesslateLogo } from '../components/ui/TesslateLogo';
+import { VibeLabBrand } from '../components/ui/VibeLabBrand';
 
 export default function ForgotPassword() {
   const [email, setEmail] = useState('');
@@ -31,9 +31,7 @@ export default function ForgotPassword() {
         <div className="w-full max-w-md">
           {/* Logo */}
           <div className="mb-8">
-            <div className="w-12 h-12 flex items-center justify-center">
-              <TesslateLogo width={48} height={38} className="text-black" />
-            </div>
+            <div className="h-12 flex items-center"><VibeLabBrand className="text-2xl text-[#0055A4]" /></div>
           </div>
 
           {/* Heading */}

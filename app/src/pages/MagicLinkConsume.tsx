@@ -4,7 +4,7 @@ import { authApi } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../theme/ThemeContext';
 import { PulsingGridSpinner } from '../components/PulsingGridSpinner';
-import { TesslateLogo } from '../components/ui/TesslateLogo';
+import { VibeLabBrand } from '../components/ui/VibeLabBrand';
 import toast from 'react-hot-toast';
 
 /**
@@ -72,13 +72,13 @@ export default function MagicLinkConsume() {
     <div className="min-h-screen flex items-center justify-center bg-white p-6">
       <div className="w-full max-w-md text-center">
         <div className="mb-8 flex justify-center">
-          <TesslateLogo width={48} height={38} className="text-black" />
+          <VibeLabBrand className="text-2xl text-[#0055A4]" />
         </div>
 
         {status === 'idle' && (
           <div className="space-y-6">
             <div className="space-y-2">
-              <h1 className="text-2xl font-bold text-gray-900">Sign in to Tesslate</h1>
+              <h1 className="text-2xl font-bold text-gray-900">Sign in to VibeLab</h1>
               <p className="text-gray-600 text-sm">
                 You requested a sign-in link. Click the button below to continue.
               </p>

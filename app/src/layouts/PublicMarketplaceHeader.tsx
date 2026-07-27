@@ -7,6 +7,7 @@ import {
 } from '@phosphor-icons/react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useState } from 'react';
+import { VibeLabBrand } from '../components/ui/VibeLabBrand';
 
 interface PublicMarketplaceHeaderProps {
   isLoading?: boolean;
@@ -42,14 +43,7 @@ export function PublicMarketplaceHeader({ isLoading = false }: PublicMarketplace
               onClick={() => navigate('/marketplace')}
               className="flex items-center gap-2.5 group"
             >
-              <svg className="w-6 h-6 text-[var(--primary)] flex-shrink-0" viewBox="0 0 161.9 126.66">
-                <path d="m13.45,46.48h54.06c10.21,0,16.68-10.94,11.77-19.89l-9.19-16.75c-2.36-4.3-6.87-6.97-11.77-6.97H22.41c-4.95,0-9.5,2.73-11.84,7.09L1.61,26.71c-4.79,8.95,1.69,19.77,11.84,19.77Z" fill="currentColor" />
-                <path d="m61.05,119.93l26.95-46.86c5.09-8.85-1.17-19.91-11.37-20.12l-19.11-.38c-4.9-.1-9.47,2.48-11.91,6.73l-17.89,31.12c-2.47,4.29-2.37,9.6.25,13.8l10.05,16.13c5.37,8.61,17.98,8.39,23.04-.41Z" fill="currentColor" />
-                <path d="m148.46,0h-54.06c-10.21,0-16.68,10.94-11.77,19.89l9.19,16.75c2.36,4.3,6.87,6.97,11.77,6.97h35.9c4.95,0,9.5-2.73,11.84-7.09l8.97-16.75C165.08,10.82,158.6,0,148.46,0Z" fill="currentColor" />
-              </svg>
-              <span className="text-sm font-bold text-[var(--text)] hidden sm:block">
-                Tesslate
-              </span>
+              <VibeLabBrand className="text-sm text-[var(--text)]" />
             </button>
 
             {/* Desktop Nav — pill buttons */}
@@ -83,7 +77,7 @@ export function PublicMarketplaceHeader({ isLoading = false }: PublicMarketplace
                   className="btn btn-filled"
                 >
                   <UserPlus size={14} />
-                  <span className="hidden sm:inline">Sign Up Free</span>
+                  <span className="hidden sm:inline">Create account</span>
                   <span className="sm:hidden">Sign Up</span>
                 </button>
               </>

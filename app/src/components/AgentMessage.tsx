@@ -41,7 +41,7 @@ export default function AgentMessage({
           />
         ) : (
           <div className="w-8 h-8 rounded-full bg-[var(--surface)] border border-[var(--border-color)] flex items-center justify-center p-1.5">
-            <img src="/favicon.svg" alt="Tesslate" className="w-full h-full" />
+<img src="/favicon.svg" alt="VibeLab" className="w-full h-full" />
           </div>
         )}
       </div>

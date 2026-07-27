@@ -1,9 +1,9 @@
 :root {
   /* Brand Colors */
-  --primary: #f89521;
-  --primary-hover: #fa9f35;
-  --primary-rgb: 248, 149, 33;
-  --accent: #00d9ff;
+  --primary: #0055a4;
+  --primary-hover: #004580;
+  --primary-rgb: 0, 85, 164;
+  --accent: #00a3e0;
 
   /* Backgrounds */
   --bg-dark: #111113;
@@ -14,8 +14,8 @@
   /* Status Colors */
   --status-purple: #a855f7;
   --status-purple-rgb: 168, 85, 247;
-  --status-yellow: #f89521;
-  --status-yellow-rgb: 248, 149, 33;
+  --status-yellow: #e6a700;
+  --status-yellow-rgb: 230, 167, 0;
   --status-green: #22c55e;
   --status-green-rgb: 34, 197, 94;
   --status-blue: #3b82f6;

@@ -61,7 +61,7 @@ export function GitHubConnectModal({ isOpen, onClose }: GitHubConnectModalProps)
             </div>
             <div>
               <h2 className="font-heading text-2xl font-bold text-[var(--text)]">Connect GitHub</h2>
-              <p className="text-sm text-gray-500">Authorize OpenSail</p>
+              <p className="text-sm text-gray-500">Authorize VibeLab</p>
             </div>
           </div>
           {!isConnecting && (
