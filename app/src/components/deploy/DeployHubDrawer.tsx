@@ -224,7 +224,7 @@ export function DeployHubDrawer({
                     Deploy as a Tesslate App
                   </h3>
                   <p className="mt-1 text-xs text-[var(--text-muted)]">
-                    Publish to the Tesslate marketplace and turn this project into a
+                    Publish to the VibeLab Marketplace and turn this project into a
                     distributable, agent-callable app.
                   </p>
                   <ul className="mt-3 space-y-1.5 text-[11px] text-[var(--text-muted)]">

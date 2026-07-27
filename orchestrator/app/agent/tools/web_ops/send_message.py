@@ -86,7 +86,7 @@ async def send_message_executor(params: dict[str, Any], context: dict[str, Any])
                 "description": message[:4000],  # Discord embed limit
                 "color": 0x7C3AED,  # Purple (Tesslate brand)
                 "timestamp": datetime.now(UTC).isoformat(),
-                "footer": {"text": "Tesslate Agent"},
+                "footer": {"text": "VibeLab Default"},
             }
             await discord._send_webhook(embeds=[embed])
 

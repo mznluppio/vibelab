@@ -1,22 +1,22 @@
 openapi: 3.0.3
 info:
-  title: Tesslate Federated Marketplace `/v1`
+  title: VibeLab Marketplace `/v1`
   version: v1
   description: |
-    Federated marketplace wire protocol for OpenSail / Tesslate Studio.
+    VibeLab by Legrand federated marketplace wire protocol.
 
     Every response includes `X-Tesslate-Hub-Id` and
     `X-Tesslate-Hub-Api-Version: v1` headers. Endpoints whose capability
     isn't advertised in `/v1/manifest.capabilities[]` return a typed
     `501 unsupported_capability` JSON envelope.
   contact:
-    name: Tesslate
-    email: marketplace@tesslate.com
+    name: Legrand Official
+    email: marketplace@vibelab.local
 servers:
   - url: http://localhost:8800
     description: Local dev
-  - url: https://marketplace.tesslate.com
-    description: Tesslate Official
+  - url: https://marketplace.vibelab.local
+    description: Legrand Official
 tags:
   - name: manifest
   - name: items

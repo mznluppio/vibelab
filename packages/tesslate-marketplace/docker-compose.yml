@@ -29,7 +29,7 @@ services:
       BUNDLE_STORAGE_DIR: /data/bundles
       BUNDLE_BASE_URL: http://localhost:8800
       OPENSAIL_ENV: dev
-      HUB_DISPLAY_NAME: "Tesslate Marketplace (local)"
+      HUB_DISPLAY_NAME: "Legrand Official"
     ports:
       - "8800:8800"
     volumes:

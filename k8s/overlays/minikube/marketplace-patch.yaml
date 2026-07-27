@@ -32,6 +32,6 @@ spec:
         imagePullPolicy: Never
         env:
         - name: HUB_DISPLAY_NAME
-          value: "Tesslate Official (Minikube)"
+          value: "Legrand Official"
         - name: BUILD_REVISION
           value: "minikube-dev"

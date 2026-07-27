@@ -70,8 +70,8 @@ async def get_manifest(
         ),
         contact=HubContact(
             email=settings.contact_email,
-            homepage="https://tesslate.com",
-            support_url="https://tesslate.com/support",
+            homepage="https://vibelab.local",
+            support_url="https://vibelab.local/support",
         ),
         terms_url=settings.terms_url,
         attestation_keys=attestation_keys,

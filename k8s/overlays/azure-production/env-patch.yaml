@@ -45,7 +45,7 @@ spec:
             - name: OPENSAIL_ENV
               value: "prod"
             - name: HUB_DISPLAY_NAME
-              value: "Tesslate Official"
+              value: "Legrand Official"
             - name: MARKETPLACE_LOAD_SEEDS_ON_STARTUP
               value: "false"
       initContainers:

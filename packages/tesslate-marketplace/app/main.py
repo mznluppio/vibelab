@@ -88,10 +88,10 @@ async def lifespan(app: FastAPI):
 def create_app() -> FastAPI:
     settings = get_settings()
     app = FastAPI(
-        title="Tesslate Federated Marketplace",
+        title="VibeLab Marketplace",
         version=settings.hub_api_version,
         description=(
-            "Reference implementation of the Tesslate federated marketplace `/v1` "
+            "Legrand Official hub for the VibeLab Marketplace `/v1` "
             "wire protocol. Hosts agents, skills, MCP servers, bases, themes, "
             "workflow templates, and apps."
         ),
