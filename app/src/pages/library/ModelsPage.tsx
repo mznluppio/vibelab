@@ -74,19 +74,19 @@ interface ModelsPageProps {
   onReloadModels: () => void;
 }
 
-// ─── Synthetic Tesslate provider ──────────────────────────────────────
+// ─── Synthetic internal provider ──────────────────────────────────────
 //
-// The Tesslate (system) tile isn't returned by /api/secrets/providers
+// The internal system tile isn't returned by /api/secrets/providers
 // because it doesn't accept a key — we synthesize one so it gets the
 // same tile treatment as built-ins.
 
 const TESSLATE_PROVIDER: Provider = {
   id: 'internal',
-  name: 'Tesslate',
+  name: 'VibeLab Default',
   description:
-    'Frontier and open-source models metered against your subscription credits. No setup required.',
+    'Approved models available through your workspace allocation. No setup required.',
   auth_type: 'none',
-  website: 'https://tesslate.com',
+  website: '',
   requires_key: false,
 };
 
@@ -110,7 +110,7 @@ export default function ModelsPage({
   const [search, setSearch] = useState('');
   const [filterProvider, setFilterProvider] = useState<string | null>(null);
 
-  // Build the tile-grid entries: Tesslate first, then built-ins, then custom providers.
+  // Build the tile-grid entries: internal provider first, then built-ins, then custom providers.
   const tileEntries = useMemo<TileEntry[]>(() => {
     const builtIn: TileEntry[] = [TESSLATE_PROVIDER, ...providers].map((p) => ({ provider: p }));
     const custom: TileEntry[] = customProviders.map((cp) => ({
@@ -267,7 +267,7 @@ export default function ModelsPage({
           <h1 className="text-lg font-semibold text-[var(--text)]">Models</h1>
           <p className="mt-1 max-w-2xl text-[12.5px] leading-relaxed text-[var(--text-muted)]">
             Choose which models power your agents. Bring your own provider keys for direct access,
-            or run with the bundled Tesslate models metered against your subscription credits.
+            or use the VibeLab Default model available through your workspace allocation.
           </p>
         </header>
 
@@ -279,11 +279,11 @@ export default function ModelsPage({
             </div>
             <div className="min-w-0 flex-1">
               <div className="text-sm font-medium text-[var(--text)]">
-                Bring your own keys is on paid plans
+                Bring your own keys is restricted
               </div>
               <p className="text-[11.5px] text-[var(--text-muted)]">
-                Use the bundled Tesslate models below. Upgrade to connect OpenAI, Anthropic, and
-                custom endpoints with your own keys.
+                Use VibeLab Default, or contact an administrator to request access to approved
+                provider keys and custom endpoints.
               </p>
             </div>
             <button
@@ -291,7 +291,7 @@ export default function ModelsPage({
               className="btn btn-filled btn-sm flex-shrink-0"
             >
               <Rocket size={12} />
-              Upgrade
+              View allocation
             </button>
           </div>
         )}

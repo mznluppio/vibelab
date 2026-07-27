@@ -48,7 +48,7 @@ function formatCredits(usdPer1M: number): string {
 function getProviderLabel(provider: string, providerName?: string): string {
   if (providerName) return providerName;
   const labels: Record<string, string> = {
-    internal: 'Tesslate',
+    internal: 'VibeLab Default',
     openai: 'OpenAI',
     anthropic: 'Anthropic',
     groq: 'Groq',

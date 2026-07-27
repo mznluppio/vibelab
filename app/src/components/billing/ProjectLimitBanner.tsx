@@ -97,7 +97,7 @@ const ProjectLimitBanner: React.FC<ProjectLimitBannerProps> = ({
             to="/settings/billing"
             className="text-[var(--primary)] hover:text-[var(--primary-hover)] font-medium text-xs"
           >
-            Upgrade
+            Request quota
           </Link>
         )}
       </div>
@@ -171,8 +171,8 @@ const ProjectLimitBanner: React.FC<ProjectLimitBannerProps> = ({
               }`}
             >
               You're using {currentProjectCount} of {maxProjects} projects
-              {isAtLimit && ' - delete a project or upgrade to create more'}
-              {isNearLimit && !isAtLimit && ' - consider upgrading for more capacity'}
+              {isAtLimit && ' - archive a project or contact an administrator to request more capacity'}
+              {isNearLimit && !isAtLimit && ' - contact an administrator if you need more capacity'}
             </p>
 
             {/* Progress Bar */}
@@ -196,7 +196,7 @@ const ProjectLimitBanner: React.FC<ProjectLimitBannerProps> = ({
                 : 'bg-[var(--primary)] text-white hover:bg-[var(--primary-hover)]'
             }`}
           >
-            Upgrade
+            Request quota
           </Link>
         )}
       </div>
@@ -211,7 +211,7 @@ const ProjectLimitBanner: React.FC<ProjectLimitBannerProps> = ({
         </div>
       )}
 
-      {/* Upgrade info for users who can upgrade */}
+      {/* Allocation guidance */}
       {canUpgrade && nextTier && (
         <div
           className={`mt-3 pt-3 ${
@@ -230,7 +230,7 @@ const ProjectLimitBanner: React.FC<ProjectLimitBannerProps> = ({
                   : 'text-yellow-400 hover:text-yellow-300'
               }`}
             >
-              Learn More →
+              View allocation →
             </Link>
           </div>
         </div>

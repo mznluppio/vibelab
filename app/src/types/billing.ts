@@ -282,17 +282,17 @@ export interface BillingError {
  * Consider fetching dynamically from /api/billing/config if packages change frequently.
  */
 export const CREDIT_PACKAGE_LABELS: Record<CreditPackage, string> = {
-  small: '500 Credits ($5)',
-  medium: '2,500 Credits ($25)',
-  large: '10,000 Credits ($100)',
-  team: '50,000 Credits ($500)',
+  small: '500 capacity units',
+  medium: '2,500 capacity units',
+  large: '10,000 capacity units',
+  team: '50,000 capacity units',
 };
 
 export const SUBSCRIPTION_TIER_LABELS: Record<SubscriptionTier, string> = {
-  free: 'Free',
-  basic: 'Basic',
-  pro: 'Pro',
-  ultra: 'Ultra',
+  free: 'Standard allocation',
+  basic: 'Team allocation',
+  pro: 'Expanded allocation',
+  ultra: 'Enterprise allocation',
 };
 
 /** SYNC REQUIREMENT: Must match tier_price_* values in orchestrator/app/config.py (in dollars, not cents). */

@@ -48,7 +48,7 @@ export function SettingsLayout() {
   const teamSubTabs = [
     { label: 'General', path: '/settings/team' },
     { label: 'Members', path: '/settings/team/members' },
-    ...(can('billing.view') ? [{ label: 'Billing', path: '/settings/team/billing' }] : []),
+    ...(can('billing.view') ? [{ label: 'Allocation', path: '/settings/team/billing' }] : []),
     ...(can('audit.view') ? [{ label: 'Audit Log', path: '/settings/team/audit-log' }] : []),
   ];
 

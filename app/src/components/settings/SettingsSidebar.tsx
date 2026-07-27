@@ -49,7 +49,7 @@ const navSections: NavSection[] = [
     items: [
       { label: 'General', path: '/settings/team', icon: Users },
       { label: 'Members', path: '/settings/team/members', icon: User },
-      { label: 'Team Billing', path: '/settings/team/billing', icon: Coins },
+      { label: 'Team allocation', path: '/settings/team/billing', icon: Coins },
       { label: 'Audit Log', path: '/settings/team/audit-log', icon: FileText },
     ],
   },
@@ -61,8 +61,8 @@ const navSections: NavSection[] = [
     ],
   },
   {
-    title: 'BILLING',
-    items: [{ label: 'Subscription', path: '/settings/billing', icon: CreditCard }],
+    title: 'ALLOCATION',
+    items: [{ label: 'Usage quota', path: '/settings/billing', icon: CreditCard }],
   },
 ];
 

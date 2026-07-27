@@ -105,12 +105,12 @@ const SubscriptionStatus: React.FC<SubscriptionStatusProps> = ({
   return (
     <div className="bg-[var(--surface)] rounded-xl border border-white/10 p-4">
       <div className="flex items-center justify-between mb-3">
-        <h3 className="text-lg font-semibold text-[var(--text)]">Subscription</h3>
+        <h3 className="text-lg font-semibold text-[var(--text)]">Allocation</h3>
         <Link
           to="/settings/billing"
           className="text-sm text-[var(--primary)] hover:text-[var(--primary-hover)] font-medium"
         >
-          Manage
+          View allocation
         </Link>
       </div>
 
@@ -159,7 +159,7 @@ const SubscriptionStatus: React.FC<SubscriptionStatusProps> = ({
         {showCredits && credits && (
           <div className="border-t border-white/10 pt-3">
             <div className="flex items-center justify-between">
-              <span className="text-sm text-[var(--text)]/60">Credits</span>
+              <span className="text-sm text-[var(--text)]/60">Available capacity</span>
               <span className="text-lg font-semibold text-[var(--text)]">
                 {totalCredits.toLocaleString()}
               </span>
@@ -168,20 +168,11 @@ const SubscriptionStatus: React.FC<SubscriptionStatusProps> = ({
               to="/settings/billing"
               className="mt-2 block text-center text-sm text-[var(--primary)] hover:text-[var(--primary-hover)] font-medium"
             >
-              Add Credits
+              Request additional quota
             </Link>
           </div>
         )}
 
-        {/* Upgrade CTA */}
-        {!isPaid && (
-          <Link
-            to="/settings/billing"
-            className="block w-full py-2 px-4 bg-[var(--primary)] text-white text-center rounded-lg hover:bg-[var(--primary-hover)] transition font-medium text-sm"
-          >
-            Upgrade Plan
-          </Link>
-        )}
       </div>
     </div>
   );
