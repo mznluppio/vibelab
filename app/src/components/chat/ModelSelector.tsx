@@ -588,11 +588,11 @@ function ModelRow({
             {isFree ? (
               <span className="text-[var(--status-success)] inline-flex items-center gap-0.5">
                 <Lightning size={9} weight="fill" />
-                Free
+                Included
               </span>
             ) : (
               <span className="text-[var(--text-subtle)]">
-                {formatCredits(model.pricing.input)} / {formatCredits(model.pricing.output)} credits
+                {formatCredits(model.pricing.input)} / {formatCredits(model.pricing.output)} capacity units
                 per 1M
               </span>
             )}

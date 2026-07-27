@@ -221,12 +221,12 @@ function AgentConfigPanel({
                       {isFree ? (
                         <span className="text-green-400/70 inline-flex items-center gap-0.5">
                           <Lightning size={9} weight="fill" />
-                          Free
+                          Included
                         </span>
                       ) : (
                         <span className="text-white/30">
                           {formatCredits(model.pricing.input)} /{' '}
-                          {formatCredits(model.pricing.output)} credits per 1M
+                          {formatCredits(model.pricing.output)} capacity units per 1M
                         </span>
                       )}
                     </div>

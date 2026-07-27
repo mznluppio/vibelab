@@ -85,9 +85,9 @@ export default function MarketplaceBrowse() {
   const [sortBy, setSortBy] = useState<SortOption>(
     (searchParams.get('sort') as SortOption) || 'popular'
   );
-  const [pricingFilter, setPricingFilter] = useState<PricingFilter>(
-    (searchParams.get('pricing') as PricingFilter) || 'all'
-  );
+  // Retained solely for backend request compatibility; commercial filtering
+  // is deliberately not exposed in the catalog UI.
+  const [pricingFilter] = useState<PricingFilter>('all');
 
   // State - Data
   const [items, setItems] = useState<MarketplaceItem[]>([]);
@@ -104,7 +104,6 @@ export default function MarketplaceBrowse() {
 
   // State - Mobile filter dropdowns
   const [_showMobileCategoryDropdown, setShowMobileCategoryDropdown] = useState(false);
-  const [showMobilePriceDropdown, setShowMobilePriceDropdown] = useState(false);
   const [showMobileSortDropdown, setShowMobileSortDropdown] = useState(false);
 
   // "/" keyboard shortcut to focus search
@@ -130,16 +129,7 @@ export default function MarketplaceBrowse() {
     { id: 'rating', label: 'Highest Rated' },
     { id: 'newest', label: 'Recently Added' },
     { id: 'name', label: 'Name A-Z' },
-    { id: 'price_asc', label: 'Price: Low to High' },
-    { id: 'price_desc', label: 'Price: High to Low' },
   ];
-
-  const pricingOptions: { id: PricingFilter; label: string }[] = [
-    { id: 'all', label: 'All Prices' },
-    { id: 'free', label: 'Free' },
-    { id: 'paid', label: 'Paid' },
-  ];
-
   // Load items with server-side filtering and pagination
   const loadItems = useCallback(
     async (params: {
@@ -422,8 +412,7 @@ export default function MarketplaceBrowse() {
     }
   };
 
-  const hasActiveFilters =
-    selectedCategory !== 'all' || pricingFilter !== 'all' || searchQuery !== '';
+  const hasActiveFilters = selectedCategory !== 'all' || searchQuery !== '';
 
   // Generate SEO data
   const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'http://localhost';
@@ -533,61 +522,16 @@ export default function MarketplaceBrowse() {
         {/* Main Content with Sidebar */}
         <div className="px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex flex-col lg:flex-row gap-6">
-            {/* Sidebar Filters — price/sort pills on mobile, vertical on desktop */}
+            {/* Sidebar filters — sort pills on mobile, vertical on desktop */}
             <aside className="lg:w-48 flex-shrink-0 lg:border-r lg:border-[var(--border)] lg:pr-5">
-              {/* Mobile/Tablet: Price + Sort pill row */}
+              {/* Mobile/Tablet: sort pill row */}
               <div className="flex gap-1.5 lg:hidden mb-4 overflow-x-auto scrollbar-none pb-1">
-                {/* Price Dropdown */}
-                <div className="relative">
-                  <button
-                    onClick={() => {
-                      setShowMobilePriceDropdown(!showMobilePriceDropdown);
-                      setShowMobileCategoryDropdown(false);
-                      setShowMobileSortDropdown(false);
-                    }}
-                    className={`btn ${pricingFilter !== 'all' ? 'btn-active' : ''}`}
-                  >
-                    {pricingOptions.find((o) => o.id === pricingFilter)?.label || 'Price'}
-                    <CaretDown size={10} />
-                  </button>
-                  {showMobilePriceDropdown && (
-                    <>
-                      <div
-                        className="fixed inset-0 z-40"
-                        onClick={() => setShowMobilePriceDropdown(false)}
-                      />
-                      <div className="absolute left-0 top-full mt-1 py-1 rounded-[var(--radius-medium)] border border-[var(--border-hover)] shadow-xl z-50 min-w-[140px] bg-[var(--surface)]">
-                        {pricingOptions.map((opt) => (
-                          <button
-                            key={opt.id}
-                            onClick={() => {
-                              setPricingFilter(opt.id);
-                              setShowMobilePriceDropdown(false);
-                            }}
-                            className={`
-                              w-full px-3 py-1.5 text-left text-xs transition-colors
-                              ${
-                                pricingFilter === opt.id
-                                  ? 'bg-[var(--surface-hover)] text-[var(--text)] font-medium'
-                                  : 'text-[var(--text-muted)] hover:bg-[var(--surface-hover)] hover:text-[var(--text)]'
-                              }
-                            `}
-                          >
-                            {opt.label}
-                          </button>
-                        ))}
-                      </div>
-                    </>
-                  )}
-                </div>
-
                 {/* Sort Dropdown */}
                 <div className="relative">
                   <button
                     onClick={() => {
                       setShowMobileSortDropdown(!showMobileSortDropdown);
                       setShowMobileCategoryDropdown(false);
-                      setShowMobilePriceDropdown(false);
                     }}
                     className="btn"
                   >
@@ -626,33 +570,8 @@ export default function MarketplaceBrowse() {
                 </div>
               </div>
 
-              {/* Desktop: Sidebar filters (price + sort only, categories in tab row) */}
+              {/* Desktop: Sidebar sort filter; categories remain in the tab row. */}
               <div className="hidden lg:block space-y-6">
-                {/* Price Filter */}
-                <div>
-                  <h3 className="text-[10px] font-semibold uppercase tracking-wider mb-2 text-[var(--text-subtle)]">
-                    Price
-                  </h3>
-                  <div className="space-y-1">
-                    {pricingOptions.map((opt) => (
-                      <button
-                        key={opt.id}
-                        onClick={() => setPricingFilter(opt.id)}
-                        className={`
-                        w-full text-left px-2.5 py-1.5 rounded-[var(--radius-small)] text-xs transition-colors
-                        ${
-                          pricingFilter === opt.id
-                            ? 'bg-[var(--surface-hover)] text-[var(--text)] font-medium'
-                            : 'text-[var(--text-muted)] hover:bg-[var(--surface-hover)] hover:text-[var(--text)]'
-                        }
-                      `}
-                      >
-                        {opt.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
                 {/* Sort */}
                 <div>
                   <h3 className="text-[10px] font-semibold uppercase tracking-wider mb-2 text-[var(--text-subtle)]">
@@ -683,7 +602,6 @@ export default function MarketplaceBrowse() {
                   <button
                     onClick={() => {
                       setSelectedCategory('all');
-                      setPricingFilter('all');
                       setSearchQuery('');
                     }}
                     className="btn btn-danger w-full"
@@ -735,7 +653,6 @@ export default function MarketplaceBrowse() {
                     <button
                       onClick={() => {
                         setSelectedCategory('all');
-                        setPricingFilter('all');
                         setSearchQuery('');
                       }}
                       className="btn btn-filled mt-4"

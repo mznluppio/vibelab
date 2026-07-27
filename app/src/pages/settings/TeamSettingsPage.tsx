@@ -209,11 +209,11 @@ export default function TeamSettingsPage() {
           }
         />
         <SettingsItem
-          label="Subscription Tier"
-          description="Current plan for this team"
+          label="Allocation profile"
+          description="Current allocation for this team"
           control={
             <span className="px-2 py-0.5 bg-[var(--primary)]/10 text-[var(--primary)] rounded-[var(--radius-small)] text-xs font-medium capitalize">
-              {team.subscription_tier}
+              {team.subscription_tier === 'free' ? 'Standard allocation' : 'Managed allocation'}
             </span>
           }
         />

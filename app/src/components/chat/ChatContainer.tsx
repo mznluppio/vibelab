@@ -36,7 +36,7 @@ function formatAgentError(raw: string): string {
     return 'Authentication error. Check your API key configuration.';
   if (raw.includes('Resource limit')) return 'Resource limit exceeded for this session.';
   if (raw.includes('budget') || raw.includes('Budget'))
-    return 'Usage limit reached. Please try again or purchase more credits.';
+    return 'Usage quota reached. Contact an administrator to request additional capacity.';
   return raw.length > 120 ? raw.slice(0, 120) + '...' : raw;
 }
 
@@ -1594,7 +1594,7 @@ export function ChatContainer({
             if (errorData.code === 'insufficient_credits') {
               toast.error(
                 (errorData.message as string | undefined) ||
-                  'Insufficient credits. Please purchase more to continue.',
+                  'Usage quota reached. Contact an administrator to request additional capacity.',
                 { duration: 6000 }
               );
               setMessages((prev) => prev.filter((msg) => msg.id !== thinkingMessageId));

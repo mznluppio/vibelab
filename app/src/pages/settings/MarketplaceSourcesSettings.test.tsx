@@ -2,7 +2,7 @@
  * Tests for MarketplaceSourcesSettings (Wave 5).
  *
  * Covers the user-visible contract from the implementation plan:
- *   1. The list of sources renders with handle, display name, and trust chip
+ *   1. The list of sources renders with its display name and trust chip
  *   2. The Add modal submits a create request with the entered fields
  *   3. System rows (scope=system) are read-only — no edit/delete affordance
  *   4. Untrusted sources show the "MCP & app installs blocked" warning
@@ -117,7 +117,7 @@ function makeSource(over: Partial<MarketplaceSourceResponse> = {}): MarketplaceS
   return {
     id: 'src-1',
     handle: 'tesslate-official',
-    display_name: 'Tesslate Official',
+    display_name: 'Legrand Official',
     base_url: 'https://marketplace.tesslate.com',
     scope: 'system',
     user_id: null,
@@ -186,11 +186,11 @@ beforeEach(() => {
 });
 
 describe('MarketplaceSourcesSettings', () => {
-  it('lists every source visible to the user with handle and display name', async () => {
+  it('lists every source visible to the user with a display name', async () => {
     render(<MarketplaceSourcesSettings />);
 
     await waitFor(() => {
-      expect(screen.getByText('Tesslate Official')).toBeInTheDocument();
+      expect(screen.getByText('Legrand Official')).toBeInTheDocument();
     });
     expect(screen.getByText('Partner Hub (anonymous)')).toBeInTheDocument();
     expect(screen.getByText('Partner Hub (token)')).toBeInTheDocument();
@@ -201,9 +201,17 @@ describe('MarketplaceSourcesSettings', () => {
     expect(screen.getByText('Private')).toBeInTheDocument();
   });
 
+  it('uses the corporate name without exposing the official system handle or URL', async () => {
+    render(<MarketplaceSourcesSettings />);
+
+    await waitFor(() => expect(screen.getByText('Legrand Official')).toBeInTheDocument());
+    expect(screen.queryByText('tesslate-official')).not.toBeInTheDocument();
+    expect(screen.queryByText('https://marketplace.tesslate.com')).not.toBeInTheDocument();
+  });
+
   it('marks system rows as read-only — no edit/delete buttons', async () => {
     render(<MarketplaceSourcesSettings />);
-    await waitFor(() => screen.getByText('Tesslate Official'));
+    await waitFor(() => screen.getByText('Legrand Official'));
 
     // System row should NOT have edit/delete affordance
     expect(screen.queryByTestId('source-edit-tesslate-official')).not.toBeInTheDocument();
@@ -240,7 +248,7 @@ describe('MarketplaceSourcesSettings', () => {
     );
 
     render(<MarketplaceSourcesSettings />);
-    await waitFor(() => screen.getByText('Tesslate Official'));
+    await waitFor(() => screen.getByText('Legrand Official'));
 
     fireEvent.click(screen.getByTestId('add-marketplace-source'));
 
