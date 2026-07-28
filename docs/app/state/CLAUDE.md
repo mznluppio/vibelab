@@ -71,9 +71,9 @@ executeAll(
 
 | Variable | Purpose |
 |----------|---------|
-| `--primary` | Brand orange (#F89521) |
+| `--primary` | VibeLab brand blue (#0055A4) |
 | `--primary-hover` | Hover state |
-| `--accent` | Accent blue (#00D9FF) |
+| `--accent` | VibeLab accent blue (#00A3E0) |
 | `--bg-dark` | Background |
 | `--surface` | Elevated surfaces |
 | `--text` | Text color |

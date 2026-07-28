@@ -72,6 +72,27 @@ def test_seeds_directory_has_content() -> None:
     assert not missing, f"seed catalogue is missing kinds: {missing}"
 
 
+def test_default_theme_variants_use_vibelab_branding() -> None:
+    """The light/dark fallback pair must never reintroduce Tesslate orange."""
+    themes = {
+        entry["slug"]: entry
+        for entry in _read_all_seed_entries()
+        if entry.get("kind") == "theme" and entry.get("slug") in {"default-dark", "default-light"}
+    }
+
+    assert set(themes) == {"default-dark", "default-light"}
+    for slug, mode in (("default-dark", "dark"), ("default-light", "light")):
+        theme = themes[slug]
+        metadata = theme["extra_metadata"]
+        colors = metadata["theme_json"]["colors"]
+
+        assert theme["name"] == f"VibeLab {mode.title()}"
+        assert metadata["mode"] == mode
+        assert metadata["author"] == "VibeLab by Legrand"
+        assert colors["primary"] == "#0055A4"
+        assert colors["accent"] == "#00A3E0"
+
+
 # ---------------------------------------------------------------------------
 # load_seed_entries — pure file reader.
 # ---------------------------------------------------------------------------

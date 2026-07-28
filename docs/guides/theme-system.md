@@ -75,7 +75,7 @@ The theme API is **public** (no authentication required) so themes can load befo
   "mode": "dark",
   "author": "Tesslate",
   "version": "1.0.0",
-  "description": "The default Tesslate dark theme with orange accents",
+  "description": "The official VibeLab dark theme",
   "colors": { ... },
   "typography": { ... },
   "spacing": { ... },
@@ -159,10 +159,10 @@ A theme JSON file contains metadata and four sections: `colors`, `typography`, `
   "description": "A custom theme description",
 
   "colors": {
-    "primary": "#F89521",
-    "primaryHover": "#fa9f35",
-    "primaryRgb": "248, 149, 33",
-    "accent": "#00D9FF",
+    "primary": "#0055A4",
+    "primaryHover": "#004580",
+    "primaryRgb": "0, 85, 164",
+    "accent": "#00A3E0",
 
     "background": "#111113",
     "surface": "#0a0a0a",
@@ -180,13 +180,13 @@ A theme JSON file contains metadata and four sections: `colors`, `typography`, `
       "text": "#ffffff",
       "border": "rgba(255, 255, 255, 0.06)",
       "hover": "rgba(255, 255, 255, 0.05)",
-      "active": "rgba(248, 149, 33, 0.15)"
+      "active": "rgba(0, 85, 164, 0.15)"
     },
 
     "input": {
       "background": "#1a1a1a",
       "border": "rgba(255, 255, 255, 0.1)",
-      "borderFocus": "#F89521",
+      "borderFocus": "#0055A4",
       "text": "#ffffff",
       "placeholder": "rgba(255, 255, 255, 0.4)"
     },
@@ -198,8 +198,8 @@ A theme JSON file contains metadata and four sections: `colors`, `typography`, `
     },
 
     "code": {
-      "inlineBackground": "rgba(248, 149, 33, 0.1)",
-      "inlineText": "#F89521",
+      "inlineBackground": "rgba(0, 85, 164, 0.1)",
+      "inlineText": "#0055A4",
       "blockBackground": "rgba(0, 0, 0, 0.4)",
       "blockBorder": "rgba(255, 255, 255, 0.1)",
       "blockText": "#e2e2e2"
