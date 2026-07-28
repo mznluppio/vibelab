@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from app.agent.tools.marketplace_ops import request_assist_to_build_review as review_tool
+from app.agent.tools.registry import ToolRegistry
 from app.services.assist_to_build import block_pre_build_tool, merge_workflow_metadata
 
 
@@ -26,6 +27,16 @@ def test_pre_build_guard_blocks_mutation_even_in_allow_mode():
     assert denied and denied["workflow_guard"] == "assist_to_build_pre_build"
     assert block_pre_build_tool("read_file", context) is None
     assert block_pre_build_tool("mcp__unknown__mutate", context) is not None
+
+
+def test_assist_to_build_review_tool_declares_checkpoint_annotations():
+    registry = ToolRegistry()
+    review_tool.register_request_assist_to_build_review_tool(registry)
+
+    tool = registry.get("request_assist_to_build_review")
+    assert tool is not None
+    assert tool.state_serializable is True
+    assert tool.holds_external_state is False
 
 
 def test_pre_build_guard_releases_only_after_to_be_approval():

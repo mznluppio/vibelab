@@ -171,5 +171,9 @@ def register_request_assist_to_build_review_tool(registry) -> None:
                 "required": ["stage", "summary_markdown"],
             },
             executor=request_assist_to_build_review_executor,
+            # The checkpoint payload and final review outcome are JSON-clean.
+            state_serializable=True,
+            # The DB-backed approval wait owns no socket, PTY, or process handle.
+            holds_external_state=False,
         )
     )
