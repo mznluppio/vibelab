@@ -12,7 +12,8 @@ import { AdminProvider } from './contexts/AdminContext';
 import { CommandProvider } from './contexts/CommandContext';
 import { FeatureFlagProvider } from './contexts/FeatureFlagContext';
 import { DashboardLayout } from './components/DashboardLayout';
-import { PrivateRoute, PublicOnlyRoute } from './components/RouteGuards';
+import { PrivateRoute, PublicOnlyRoute, TeamFeatureRoute } from './components/RouteGuards';
+import { useTeam } from './contexts/TeamContext';
 import { TitleBar } from './components/desktop/TitleBar';
 import Login from './pages/Login';
 import MagicLinkConsume from './pages/MagicLinkConsume';
@@ -108,6 +109,7 @@ function AppContent() {
   // Navigation and theme for global shortcuts
   const navigate = useNavigate();
   const { toggleTheme } = useTheme();
+  const { canAccessMarketplace } = useTeam();
 
   // State for keyboard shortcuts modal
   const [showShortcuts, setShowShortcuts] = useState(false);
@@ -144,9 +146,10 @@ function AppContent() {
     'mod+m',
     (e) => {
       e.preventDefault();
-      navigate('/marketplace');
+      if (canAccessMarketplace) navigate('/marketplace');
     },
-    { enableOnFormTags: false }
+    { enableOnFormTags: false },
+    [canAccessMarketplace]
   );
 
   useHotkeys(
@@ -325,9 +328,8 @@ function AppContent() {
         {/* Public @username profile resolver — redirects to /marketplace/creator/{uuid} */}
         <Route path="/@:username" element={<UserProfilePage />} />
 
-        {/* Marketplace Routes - Adaptive layout based on auth state */}
-        {/* Non-blocking: defaults to public view, upgrades to authenticated view if logged in */}
-        <Route element={<MarketplaceLayout />}>
+        {/* Marketplace is governed by the active team; Library remains available. */}
+        <Route element={<PrivateRoute><TeamFeatureRoute feature="marketplace"><MarketplaceLayout /></TeamFeatureRoute></PrivateRoute>}>
           <Route path="/marketplace" element={<Marketplace />} />
           <Route path="/marketplace/category/:category" element={<CategoryRedirect />} />
           <Route path="/marketplace/browse/:itemType" element={<MarketplaceBrowse />} />
@@ -346,7 +348,7 @@ function AppContent() {
           <Route path="/home" element={<Home />} />
           <Route path="/chat" element={<Chat />} />
           <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/marketplace/success" element={<MarketplaceSuccess />} />
+          <Route path="/marketplace/success" element={<TeamFeatureRoute feature="marketplace"><MarketplaceSuccess /></TeamFeatureRoute>} />
           <Route path="/library" element={<Library />} />
           <Route path="/feedback" element={<Feedback />} />
 
@@ -379,19 +381,19 @@ function AppContent() {
           {/* Phase 5 marketplace polish — contract templates. */}
           <Route
             path="/marketplace/contract-templates"
-            element={<ContractTemplates />}
+            element={<TeamFeatureRoute feature="marketplace"><ContractTemplates /></TeamFeatureRoute>}
           />
 
           {/* Automations (Phase 1) — list + create + detail + run-detail */}
-          <Route path="/automations" element={<AutomationsListPage />} />
-          <Route path="/automations/new" element={<AutomationCreatePage />} />
+          <Route path="/automations" element={<TeamFeatureRoute feature="automations"><AutomationsListPage /></TeamFeatureRoute>} />
+          <Route path="/automations/new" element={<TeamFeatureRoute feature="automations"><AutomationCreatePage /></TeamFeatureRoute>} />
           {/* Phase 2 HITL — cross-automation pending-approvals inbox.
               Defined before "/automations/:id" so the literal segment wins. */}
-          <Route path="/automations/approvals" element={<ApprovalsPage />} />
-          <Route path="/automations/:id" element={<AutomationDetailPage />} />
+          <Route path="/automations/approvals" element={<TeamFeatureRoute feature="automations"><ApprovalsPage /></TeamFeatureRoute>} />
+          <Route path="/automations/:id" element={<TeamFeatureRoute feature="automations"><AutomationDetailPage /></TeamFeatureRoute>} />
           <Route
             path="/automations/:id/runs/:run_id"
-            element={<RunDetailPage />}
+            element={<TeamFeatureRoute feature="automations"><RunDetailPage /></TeamFeatureRoute>}
           />
 
           {/* Project builder — shares the same NavigationSidebar instance so
@@ -446,9 +448,9 @@ function AppContent() {
           <Route path="deployment" element={<DeploymentSettings />} />
           {/* /settings/connectors moved to Library → Connectors (#307). */}
           <Route path="connectors" element={<Navigate to="/library?tab=connectors" replace />} />
-          <Route path="api-keys" element={<ApiKeysSettings />} />
-          <Route path="marketplace-sources" element={<MarketplaceSourcesSettings />} />
-          <Route path="cloud" element={<CloudSettings />} />
+          <Route path="api-keys" element={<TeamFeatureRoute feature="technical-settings"><ApiKeysSettings /></TeamFeatureRoute>} />
+          <Route path="marketplace-sources" element={<TeamFeatureRoute feature="technical-settings"><MarketplaceSourcesSettings /></TeamFeatureRoute>} />
+          <Route path="cloud" element={<TeamFeatureRoute feature="technical-settings"><CloudSettings /></TeamFeatureRoute>} />
           <Route path="billing" element={<Navigate to="/settings/team/billing" replace />} />
           <Route path="messaging" element={<ConnectionsSettings />} />
           {/* Channels moved to Library → Channels. Old route stays as a redirect for bookmarks. */}

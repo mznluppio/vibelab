@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import { teamsApi } from '../lib/api';
 import type { TeamList } from '../lib/api';
 import { useAuth } from './AuthContext';
@@ -36,6 +36,9 @@ interface TeamContextValue {
   membership: { role: string } | null;
   /** Frontend-only permission check (UX gating — backend always enforces). */
   can: (permission: string) => boolean;
+  /** Effective team feature capabilities. The backend remains authoritative. */
+  canAccessMarketplace: boolean;
+  canAccessAutomations: boolean;
   loading: boolean;
   refreshTeams: () => Promise<void>;
   /** Increments on every team switch — use in useEffect deps to trigger re-fetches. */
@@ -101,7 +104,10 @@ export function TeamProvider({ children }: { children: React.ReactNode }) {
     [teams]
   );
 
-  const membership = activeTeam?.role ? { role: activeTeam.role } : null;
+  const membership = useMemo(
+    () => (activeTeam?.role ? { role: activeTeam.role } : null),
+    [activeTeam?.role]
+  );
 
   const can = useCallback(
     (permission: string) => {
@@ -114,9 +120,28 @@ export function TeamProvider({ children }: { children: React.ReactNode }) {
     [membership]
   );
 
+  // Administrators always retain access. Feature flags only grant the two
+  // governed surfaces to non-admin members of the currently active team.
+  const isTeamAdmin = membership?.role === 'admin';
+  const canAccessMarketplace =
+    isTeamAdmin || activeTeam?.marketplace_access_for_non_admins === true;
+  const canAccessAutomations =
+    isTeamAdmin || activeTeam?.automations_access_for_non_admins === true;
+
   return (
     <TeamContext.Provider
-      value={{ activeTeam, teams, switchTeam, membership, can, loading, refreshTeams: loadTeams, teamSwitchKey }}
+      value={{
+        activeTeam,
+        teams,
+        switchTeam,
+        membership,
+        can,
+        canAccessMarketplace,
+        canAccessAutomations,
+        loading,
+        refreshTeams: loadTeams,
+        teamSwitchKey,
+      }}
     >
       {children}
     </TeamContext.Provider>

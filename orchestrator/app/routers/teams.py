@@ -445,6 +445,13 @@ async def update_team(
     if "avatar_url" in provided:
         changes["avatar_url"] = provided["avatar_url"]
         team.avatar_url = provided["avatar_url"]
+    for setting in (
+        "marketplace_access_for_non_admins",
+        "automations_access_for_non_admins",
+    ):
+        if setting in provided:
+            changes[setting] = provided[setting]
+            setattr(team, setting, provided[setting])
 
     if changes:
         await log_event(

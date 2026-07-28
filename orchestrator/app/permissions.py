@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 if TYPE_CHECKING:
     from .models import Project
+    from .models_auth import User
     from .models_team import TeamMembership
 
 logger = logging.getLogger(__name__)
@@ -371,6 +372,67 @@ async def check_team_permission(
         )
 
     return membership
+
+
+async def require_team_feature_access(
+    db: AsyncSession,
+    user: User,
+    *,
+    setting_name: str,
+    feature_name: str,
+) -> None:
+    """Require access to an opt-in team feature for a non-administrator.
+
+    Team feature settings deliberately complement the existing role system:
+    team admins (and platform superusers) always retain access, while editors
+    and viewers need the active team's explicit opt-in.  Users without a
+    default team are allowed for backwards compatibility with databases that
+    predate personal-team provisioning.
+    """
+    if getattr(user, "is_superuser", False):
+        return
+
+    team_id = getattr(user, "default_team_id", None)
+    if team_id is None:
+        return
+
+    from .models_team import Team
+
+    team = (await db.execute(select(Team).where(Team.id == team_id))).scalar_one_or_none()
+    if team is None:
+        # Do not turn a stale legacy team reference into an application-wide
+        # lockout. Normal team switching repairs this state.
+        return
+
+    membership = await get_team_membership(db, team.id, user.id)
+    if membership is not None and membership.role == "admin":
+        return
+    if membership is not None and bool(getattr(team, setting_name, False)):
+        return
+
+    raise HTTPException(
+        status_code=403,
+        detail=f"{feature_name} is restricted to team administrators",
+    )
+
+
+async def require_active_team_administrator(db: AsyncSession, user: User) -> None:
+    """Require an administrator role in the user's active team.
+
+    This is intentionally narrower than feature access: technical provider and
+    marketplace-source configuration must never become available just because
+    the team has opened the end-user Marketplace catalog.
+    """
+    if getattr(user, "is_superuser", False):
+        return
+
+    team_id = getattr(user, "default_team_id", None)
+    if team_id is None:
+        raise HTTPException(status_code=403, detail="Team administrator access is required")
+
+    membership = await get_team_membership(db, team_id, user.id)
+    if membership is None or membership.role != "admin":
+        raise HTTPException(status_code=403, detail="Team administrator access is required")
 
 
 async def get_effective_project_role(

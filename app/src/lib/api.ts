@@ -3961,6 +3961,8 @@ export interface Team {
   signup_bonus_credits: number;
   deployed_projects_count: number;
   support_tier: string;
+  marketplace_access_for_non_admins: boolean;
+  automations_access_for_non_admins: boolean;
   created_at: string;
 }
 
@@ -3972,6 +3974,8 @@ export interface TeamList {
   is_personal: boolean;
   subscription_tier: string;
   role: string | null;
+  marketplace_access_for_non_admins: boolean;
+  automations_access_for_non_admins: boolean;
 }
 
 export interface TeamMember {
@@ -4047,7 +4051,13 @@ export const teamsApi = {
   },
   async update(
     slug: string,
-    data: Partial<{ name: string; slug: string; avatar_url: string | null }>
+    data: Partial<{
+      name: string;
+      slug: string;
+      avatar_url: string | null;
+      marketplace_access_for_non_admins: boolean;
+      automations_access_for_non_admins: boolean;
+    }>
   ): Promise<Team> {
     const response = await api.patch(`/api/teams/${slug}`, data);
     return response.data;

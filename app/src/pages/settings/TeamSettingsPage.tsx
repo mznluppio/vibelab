@@ -19,6 +19,8 @@ export default function TeamSettingsPage() {
   const [name, setName] = useState('');
   const [slug, setSlug] = useState('');
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [marketplaceAccessForNonAdmins, setMarketplaceAccessForNonAdmins] = useState(false);
+  const [automationsAccessForNonAdmins, setAutomationsAccessForNonAdmins] = useState(false);
   const [saving, setSaving] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
@@ -34,6 +36,8 @@ export default function TeamSettingsPage() {
       setName(data.name);
       setSlug(data.slug);
       setAvatarUrl(data.avatar_url || null);
+      setMarketplaceAccessForNonAdmins(data.marketplace_access_for_non_admins);
+      setAutomationsAccessForNonAdmins(data.automations_access_for_non_admins);
     } catch (error) {
       console.error('Failed to load team:', error);
       toast.error('Failed to load team details');
@@ -58,6 +62,14 @@ export default function TeamSettingsPage() {
         name: name !== team.name ? name : undefined,
         slug: slug !== team.slug ? slug : undefined,
         avatar_url: avatarUrl !== team.avatar_url ? avatarUrl : undefined,
+        marketplace_access_for_non_admins:
+          marketplaceAccessForNonAdmins !== team.marketplace_access_for_non_admins
+            ? marketplaceAccessForNonAdmins
+            : undefined,
+        automations_access_for_non_admins:
+          automationsAccessForNonAdmins !== team.automations_access_for_non_admins
+            ? automationsAccessForNonAdmins
+            : undefined,
       });
       setTeam(updated);
       await refreshTeams();
@@ -178,6 +190,35 @@ export default function TeamSettingsPage() {
         </div>
       </SettingsGroup>
 
+      <SettingsGroup title="Feature access">
+        <SettingsItem
+          label="Allow non-admin users to access Marketplace"
+          description="Editors and viewers can browse Marketplace when enabled. Administrators always have access."
+          control={
+            <input
+              type="checkbox"
+              checked={marketplaceAccessForNonAdmins}
+              onChange={(event) => setMarketplaceAccessForNonAdmins(event.target.checked)}
+              disabled={!canEdit}
+              aria-label="Allow non-admin users to access Marketplace"
+            />
+          }
+        />
+        <SettingsItem
+          label="Allow non-admin users to access Automations"
+          description="Editors and viewers can use Automations when enabled. Administrators always have access."
+          control={
+            <input
+              type="checkbox"
+              checked={automationsAccessForNonAdmins}
+              onChange={(event) => setAutomationsAccessForNonAdmins(event.target.checked)}
+              disabled={!canEdit}
+              aria-label="Allow non-admin users to access Automations"
+            />
+          }
+        />
+      </SettingsGroup>
+
       {/* Basic Info */}
       <SettingsGroup title="General">
         <SettingsItem
@@ -224,7 +265,14 @@ export default function TeamSettingsPage() {
         <div className="flex justify-end">
           <button
             onClick={handleSave}
-            disabled={saving || (name === team.name && slug === team.slug && avatarUrl === team.avatar_url)}
+            disabled={
+              saving ||
+              (name === team.name &&
+                slug === team.slug &&
+                avatarUrl === team.avatar_url &&
+                marketplaceAccessForNonAdmins === team.marketplace_access_for_non_admins &&
+                automationsAccessForNonAdmins === team.automations_access_for_non_admins)
+            }
             className="btn btn-filled flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {saving ? (
