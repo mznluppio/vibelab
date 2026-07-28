@@ -89,20 +89,35 @@ services:
     image: ghcr.io/berriai/litellm:main-v1.81.9-stable
     container_name: vibelab-litellm
     restart: unless-stopped
-    command: ["--port", "4000", "--config", "/app/config.yaml"]
+    # Keep the rest of the local stack usable before Azure credentials are
+    # available. The validation script prints variable names only, then this
+        # container serves an explicit disabled state that fails readiness
+        # (rather than crash-looping). Recreate it after configuring the
+        # missing values.
+    entrypoint:
+      - /bin/sh
+      - -ec
+      - |
+        if ! /usr/local/bin/validate-litellm-env; then
+          echo "LiteLLM is disabled until Azure AI Foundry configuration is complete." >&2
+          exec python /usr/local/bin/litellm-disabled-server.py
+        fi
+        exec litellm --port 4000 --config /app/config.yaml
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-tesslate_user}:${POSTGRES_PASSWORD:-dev_password_change_me}@postgres:5432/${POSTGRES_DB:-tesslate_dev}
-      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:?Set LITELLM_MASTER_KEY in .env}
-      AZURE_API_BASE: ${AZURE_API_BASE:?Set AZURE_API_BASE in .env}
-      AZURE_API_KEY: ${AZURE_API_KEY:?Set AZURE_API_KEY in .env}
-      AZURE_API_VERSION: ${AZURE_API_VERSION:?Set AZURE_API_VERSION in .env}
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-}
+      AZURE_API_BASE: ${AZURE_API_BASE:-}
+      AZURE_API_KEY: ${AZURE_API_KEY:-}
+      AZURE_API_VERSION: ${AZURE_API_VERSION:-}
       # LiteLLM resolves the entire provider-prefixed model value from env,
       # keeping Azure deployment names out of the checked-in proxy config.
-      AZURE_AI_DEFAULT_MODEL: azure/${AZURE_AI_DEFAULT_DEPLOYMENT:?Set AZURE_AI_DEFAULT_DEPLOYMENT in .env}
-      AZURE_AI_FAST_MODEL: azure/${AZURE_AI_FAST_DEPLOYMENT:?Set AZURE_AI_FAST_DEPLOYMENT in .env}
-      AZURE_AI_REASONING_MODEL: azure/${AZURE_AI_REASONING_DEPLOYMENT:?Set AZURE_AI_REASONING_DEPLOYMENT in .env}
+      AZURE_AI_DEFAULT_MODEL: azure/${AZURE_AI_DEFAULT_DEPLOYMENT:-}
+      AZURE_AI_FAST_MODEL: azure/${AZURE_AI_FAST_DEPLOYMENT:-}
+      AZURE_AI_REASONING_MODEL: azure/${AZURE_AI_REASONING_DEPLOYMENT:-}
     volumes:
       - ./k8s/litellm/vibelab-azure-config.yaml:/app/config.yaml:ro
+      - ./scripts/validate-litellm-env.sh:/usr/local/bin/validate-litellm-env:ro
+      - ./scripts/litellm-disabled-server.py:/usr/local/bin/litellm-disabled-server.py:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -200,11 +215,8 @@ services:
       - DEPLOYMENT_ENV=${DEPLOYMENT_ENV:-docker}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - LITELLM_API_BASE=http://litellm:4000/v1
-      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY}
-      - LITELLM_DEFAULT_MODELS=${LITELLM_DEFAULT_MODELS}
-      - LITELLM_TEAM_ID=${LITELLM_TEAM_ID}
-      - LITELLM_EMAIL_DOMAIN=${LITELLM_EMAIL_DOMAIN}
-      - LITELLM_INITIAL_BUDGET=${LITELLM_INITIAL_BUDGET}
+      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-}
+      - LITELLM_DEFAULT_MODELS=${LITELLM_DEFAULT_MODELS:-vibelab-default,vibelab-fast,vibelab-reasoning}
       # Agent Resource Limits
       - AGENT_MAX_COST=${AGENT_MAX_COST:-20.0}
       - AGENT_MAX_ITERATIONS=${AGENT_MAX_ITERATIONS:-0}
@@ -364,11 +376,8 @@ services:
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
       - LITELLM_API_BASE=http://litellm:4000/v1
-      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY}
-      - LITELLM_DEFAULT_MODELS=${LITELLM_DEFAULT_MODELS}
-      - LITELLM_TEAM_ID=${LITELLM_TEAM_ID}
-      - LITELLM_EMAIL_DOMAIN=${LITELLM_EMAIL_DOMAIN}
-      - LITELLM_INITIAL_BUDGET=${LITELLM_INITIAL_BUDGET}
+      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-}
+      - LITELLM_DEFAULT_MODELS=${LITELLM_DEFAULT_MODELS:-vibelab-default,vibelab-fast,vibelab-reasoning}
       - AGENT_MAX_COST=${AGENT_MAX_COST:-20.0}
       - AGENT_MAX_ITERATIONS=${AGENT_MAX_ITERATIONS:-0}
       - AGENT_MAX_COST_PER_RUN=${AGENT_MAX_COST_PER_RUN:-5.0}
@@ -454,9 +463,8 @@ services:
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
       - LITELLM_API_BASE=http://litellm:4000/v1
-      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY}
-      - LITELLM_DEFAULT_MODELS=${LITELLM_DEFAULT_MODELS}
-      - LITELLM_TEAM_ID=${LITELLM_TEAM_ID}
+      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-}
+      - LITELLM_DEFAULT_MODELS=${LITELLM_DEFAULT_MODELS:-vibelab-default,vibelab-fast,vibelab-reasoning}
       - APP_DOMAIN=${APP_DOMAIN:-localhost}
       - GATEWAY_SHARD=0
       - GATEWAY_LOCK_DIR=/var/run/tesslate

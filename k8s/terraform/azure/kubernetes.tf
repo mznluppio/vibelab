@@ -291,9 +291,6 @@ resource "kubernetes_secret" "app_secrets" {
     LITELLM_API_BASE       = "http://litellm-service.tesslate.svc.cluster.local:4000/v1"
     LITELLM_MASTER_KEY     = var.litellm_master_key
     LITELLM_DEFAULT_MODELS = var.litellm_default_models
-    LITELLM_TEAM_ID        = "default"
-    LITELLM_EMAIL_DOMAIN   = var.domain_name
-    LITELLM_INITIAL_BUDGET = "10000.0"
 
     # CORS & Domain
     CORS_ORIGINS        = "https://${var.domain_name},https://*.${var.domain_name}"
@@ -433,6 +430,8 @@ resource "kubernetes_config_map" "litellm_config" {
 
   data = {
     "config.yaml" = file("${path.module}/../../litellm/vibelab-azure-config.yaml")
+    "validate-litellm-env" = file("${path.module}/../../../scripts/validate-litellm-env.sh")
+    "litellm-disabled-server.py" = file("${path.module}/../../../scripts/litellm-disabled-server.py")
   }
 }
 
@@ -469,7 +468,15 @@ resource "kubernetes_deployment" "litellm" {
         container {
           name  = "litellm"
           image = "ghcr.io/berriai/litellm:${var.litellm_image_tag}"
-          args  = ["--port", "4000", "--config", "/app/config.yaml"]
+          command = ["/bin/sh", "-ec"]
+          args = [<<-EOT
+            if ! /usr/local/bin/validate-litellm-env; then
+              echo "LiteLLM is disabled until Azure AI Foundry configuration is complete." >&2
+              exec python /usr/local/bin/litellm-disabled-server.py
+            fi
+            exec litellm --port 4000 --config /app/config.yaml
+          EOT
+          ]
 
           port {
             container_port = 4000
@@ -513,11 +520,28 @@ resource "kubernetes_deployment" "litellm" {
             sub_path   = "config.yaml"
             read_only  = true
           }
+
+          volume_mount {
+            name       = "litellm-config"
+            mount_path = "/usr/local/bin/validate-litellm-env"
+            sub_path   = "validate-litellm-env"
+            read_only  = true
+          }
+
+          volume_mount {
+            name       = "litellm-config"
+            mount_path = "/usr/local/bin/litellm-disabled-server.py"
+            sub_path   = "litellm-disabled-server.py"
+            read_only  = true
+          }
         }
 
         volume {
           name = "litellm-config"
-          config_map { name = kubernetes_config_map.litellm_config.metadata[0].name }
+          config_map {
+            name         = kubernetes_config_map.litellm_config.metadata[0].name
+            default_mode = "0555"
+          }
         }
       }
     }

@@ -81,6 +81,35 @@ spec:
       port: 8000
 
 ---
+# LiteLLM is private: only server-side platform processes can call its
+# OpenAI-compatible endpoint. This complements the namespace-wide default
+# deny ingress and deliberately excludes the frontend and ingress controller.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-litellm-from-platform
+  namespace: tesslate
+spec:
+  podSelector:
+    matchLabels:
+      app: litellm
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchExpressions:
+        - key: app
+          operator: In
+          values:
+          - tesslate-backend
+          - tesslate-worker
+          - tesslate-gateway
+    ports:
+    - protocol: TCP
+      port: 4000
+
+---
 # Allow all platform components that query the database to reach postgres.
 # Callers: backend (API), worker (ARQ agent tasks), gateway (channel configs),
 # and snapshot-cleanup cronjob (snapshot records).
@@ -261,6 +290,53 @@ spec:
       port: 80
     - protocol: TCP
       port: 9000  # MinIO object store (S3-compatible)
+
+---
+# LiteLLM needs PostgreSQL for virtual-key management and HTTPS access to the
+# Azure AI Foundry endpoint. Private VNet access is limited to PostgreSQL on
+# its database port; all other private ranges remain blocked.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-litellm-egress
+  namespace: tesslate
+spec:
+  podSelector:
+    matchLabels:
+      app: litellm
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: postgres
+    ports:
+    - protocol: TCP
+      port: 5432
+  # Azure-managed PostgreSQL resolves to a private VNet address when enabled.
+  # Keep that exception limited to the database port.
+  - to:
+    - ipBlock:
+        cidr: 10.0.0.0/8
+    - ipBlock:
+        cidr: 172.16.0.0/12
+    - ipBlock:
+        cidr: 192.168.0.0/16
+    ports:
+    - protocol: TCP
+      port: 5432
+  - to:
+    - ipBlock:
+        cidr: 0.0.0.0/0
+        except:
+        - 10.0.0.0/8
+        - 172.16.0.0/12
+        - 192.168.0.0/16
+        - 169.254.169.254/32
+    ports:
+    - protocol: TCP
+      port: 443
 
 ---
 # Allow gateway egress — the gateway holds long-lived connections to external

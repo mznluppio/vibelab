@@ -50,7 +50,7 @@ from ..services.agent_context import (
     _resolve_container_name,
     enrich_project_context_for_run,
 )
-from ..services.model_adapters import create_model_adapter
+from ..services.model_adapters import LLM_UNAVAILABLE_MESSAGE, create_model_adapter
 from ..users import current_superuser
 from ..utils.resource_naming import get_project_path
 
@@ -1144,6 +1144,14 @@ async def agent_chat(
                 model_name=model_name, user_id=current_user.id, db=db
             )
             logger.info("[HTTP-AGENT] Model adapter created successfully")
+        except ValueError as e:
+            await db.rollback()
+            if str(e) == LLM_UNAVAILABLE_MESSAGE:
+                raise HTTPException(status_code=503, detail=LLM_UNAVAILABLE_MESSAGE) from e
+            logger.error(f"[HTTP-AGENT] Error creating model adapter: {e}", exc_info=True)
+            raise HTTPException(
+                status_code=500, detail=f"Error creating model adapter: {str(e)}"
+            ) from e
         except Exception as e:
             logger.error(f"[HTTP-AGENT] Error creating model adapter: {e}", exc_info=True)
             await db.rollback()
