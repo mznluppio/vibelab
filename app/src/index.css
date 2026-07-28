@@ -873,7 +873,9 @@ textarea {
 }
 
 .vibelab-diagram-header {
-  margin-bottom: 0.75rem;
+  margin-bottom: 0.625rem;
+  padding-bottom: 0.625rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--diagram-border) 74%, transparent);
 }
 
 .vibelab-diagram-header h3,
@@ -907,9 +909,9 @@ textarea {
 }
 
 .vibelab-diagram-action {
-  width: 1.75rem;
-  height: 1.75rem;
-  min-width: 1.75rem;
+  width: 2.25rem;
+  height: 2.25rem;
+  min-width: 2.25rem;
   padding: 0;
   color: var(--diagram-muted);
   border: 1px solid var(--diagram-border);
@@ -920,6 +922,10 @@ textarea {
   color: var(--diagram-ink);
   border-color: var(--diagram-line);
   background: var(--diagram-node);
+}
+
+.vibelab-diagram-action:focus-visible {
+  outline-color: var(--diagram-line);
 }
 
 .vibelab-diagram-canvas,
@@ -989,7 +995,7 @@ textarea {
   box-sizing: border-box;
   width: 100%;
   height: 100%;
-  padding: 0.75rem;
+  padding: 0.875rem;
   pointer-events: none;
   background: var(--diagram-group);
   border: 1px solid var(--diagram-border);
@@ -1013,12 +1019,9 @@ textarea {
 }
 
 .vibelab-diagram-group__heading span {
-  padding: 0.2rem 0.45rem;
+  padding: 0.15rem 0;
   color: var(--diagram-ink);
-  background: var(--diagram-surface-raised);
-  border: 1px solid var(--diagram-border);
-  border-radius: 999px;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 650;
   line-height: 1.25;
 }
@@ -1032,11 +1035,14 @@ textarea {
 .vibelab-diagram-node {
   box-sizing: border-box;
   min-height: 100%;
-  padding: 0.7rem 0.75rem;
+  width: 100%;
+  height: 100%;
+  padding: 0.75rem 0.875rem;
   color: var(--diagram-ink);
   background: var(--diagram-node);
   border: 1px solid var(--diagram-node-border);
-  border-radius: 11px;
+  border-radius: 10px;
+  overflow: hidden;
 }
 
 .vibelab-diagram-node.is-emphasized {
@@ -1045,11 +1051,12 @@ textarea {
 
 .vibelab-diagram-node--start,
 .vibelab-diagram-node--end {
-  border-radius: 999px;
+  border-radius: 10px;
 }
 
 .vibelab-diagram-node--decision {
-  background: color-mix(in srgb, var(--diagram-node) 84%, var(--diagram-line));
+  background: color-mix(in srgb, var(--diagram-node) 78%, var(--diagram-line));
+  border-width: 2px;
 }
 
 .vibelab-diagram-node--note {
@@ -1060,8 +1067,9 @@ textarea {
 .vibelab-diagram-node__header {
   display: flex;
   align-items: center;
-  gap: 0.42rem;
-  font-size: 12px;
+  gap: 0.5rem;
+  min-width: 0;
+  font-size: 13px;
   font-weight: 650;
   line-height: 1.3;
 }
@@ -1071,22 +1079,27 @@ textarea {
   color: var(--diagram-line);
 }
 
+.vibelab-diagram-node__header span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .vibelab-diagram-node p {
   display: -webkit-box;
   margin: 0.35rem 0 0;
   overflow: hidden;
   color: var(--diagram-muted);
-  font-size: 10px;
+  font-size: 11px;
   line-height: 1.4;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 3;
 }
 
 .vibelab-diagram-handle {
-  width: 6px;
-  height: 6px;
-  min-width: 6px;
-  min-height: 6px;
+  width: 8px;
+  height: 8px;
+  min-width: 8px;
+  min-height: 8px;
   opacity: 0;
   border: 0;
   background: transparent;
@@ -1146,6 +1159,11 @@ textarea {
 
   .vibelab-diagram-actions {
     justify-content: flex-start;
+  }
+
+  .vibelab-diagram-action {
+    width: 2.25rem;
+    height: 2.25rem;
   }
 
   .vibelab-diagram-dialog {
