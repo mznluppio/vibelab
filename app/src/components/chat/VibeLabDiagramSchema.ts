@@ -38,7 +38,7 @@ export const DIAGRAM_ICONS = [
  */
 export const VIBELAB_DIAGRAM_AGENT_INSTRUCTION = `When a structured professional diagram improves understanding, output a fenced code block tagged \`vibelab-diagram\` containing valid JSON matching the platform schema.
 
-Use Mermaid only for diagrams that cannot be represented by the structured schema. Do not output coordinates, CSS, colors, SVG, JSX, HTML, JavaScript, URLs or callbacks. Choose exactly one preset: technical-dark, editorial-comparison, or business-process. Keep labels short, use groups only when they improve comprehension, prefer 3 to 15 nodes, and split very complex diagrams.`;
+Use Mermaid only for diagrams that cannot be represented by the structured schema. Do not output coordinates, CSS, colors, SVG, JSX, HTML, JavaScript, URLs or callbacks. Choose exactly one preset: technical-dark, editorial-comparison, or business-process. Keep labels short and descriptions only when they add useful context. Include every meaningful branch of a decision (for example Yes/No, Approved/Rejected, or Success/Failure). Use groups only when they improve comprehension; never use a decorative group or a group with one node unless there is a strong structural reason. Prefer 3 to 12 nodes in the main graph, split overly complex diagrams, and keep one coherent direction. The renderer owns all coordinates and styling.`;
 
 export type DiagramPreset = (typeof DIAGRAM_PRESETS)[number];
 export type DiagramDirection = (typeof DIAGRAM_DIRECTIONS)[number];
@@ -106,6 +106,20 @@ export interface DiagramGroupData extends Record<string, unknown> {
 
 export type DiagramFlowNode = Node<DiagramNodeData, 'vibelab-node' | 'vibelab-decision'>;
 export type DiagramGroupFlowNode = Node<DiagramGroupData, 'vibelab-group'>;
+
+export interface DiagramLayoutBounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** Keeps inline canvases proportional to the measured Dagre content. */
+export function getVibeLabDiagramHeight(bounds: DiagramLayoutBounds, direction: DiagramDirection) {
+  const horizontal = direction === 'LR' || direction === 'RL';
+  const viewportBreathingRoom = horizontal ? 138 : 104;
+  return Math.round(Math.min(560, Math.max(280, bounds.height + viewportBreathingRoom)));
+}
 
 const MAX_NODES = 30;
 const MAX_EDGES = 60;
@@ -179,13 +193,15 @@ function hasBannedContent(value: unknown): boolean {
     'url',
     'callback',
   ]);
-  return Object.entries(value).some(([key, nestedValue]) => bannedKeys.has(key) || hasBannedContent(nestedValue));
+  return Object.entries(value).some(
+    ([key, nestedValue]) => bannedKeys.has(key) || hasBannedContent(nestedValue)
+  );
 }
 
 /** Parses the intentionally small, presentation-safe diagram contract. */
-export function parseVibeLabDiagram(source: string):
-  | { success: true; data: VibeLabDiagramDefinition }
-  | { success: false; error: string } {
+export function parseVibeLabDiagram(
+  source: string
+): { success: true; data: VibeLabDiagramDefinition } | { success: false; error: string } {
   let parsed: unknown;
   try {
     parsed = JSON.parse(source);
@@ -197,7 +213,16 @@ export function parseVibeLabDiagram(source: string):
     return { success: false, error: 'The diagram contains unsupported fields or content.' };
   }
 
-  const { title, subtitle, preset, direction, nodes, edges, groups = [], annotations = [] } = parsed;
+  const {
+    title,
+    subtitle,
+    preset,
+    direction,
+    nodes,
+    edges,
+    groups = [],
+    annotations = [],
+  } = parsed;
   if (
     !safeText(title, MAX_TITLE_LENGTH) ||
     !safeOptionalText(subtitle, MAX_SUBTITLE_LENGTH) ||
@@ -227,7 +252,8 @@ export function parseVibeLabDiagram(source: string):
         safeText(node.label, MAX_LABEL_LENGTH) &&
         safeOptionalText(node.description, MAX_DESCRIPTION_LENGTH) &&
         (node.icon === undefined || DIAGRAM_ICONS.includes(node.icon as DiagramIcon)) &&
-        (node.groupId === undefined || (typeof node.groupId === 'string' && SAFE_ID.test(node.groupId))) &&
+        (node.groupId === undefined ||
+          (typeof node.groupId === 'string' && SAFE_ID.test(node.groupId))) &&
         (node.emphasis === undefined || typeof node.emphasis === 'boolean')
     )
   ) {
@@ -243,7 +269,8 @@ export function parseVibeLabDiagram(source: string):
         SAFE_ID.test(group.id) &&
         safeText(group.label, MAX_LABEL_LENGTH) &&
         safeOptionalText(group.description, MAX_DESCRIPTION_LENGTH) &&
-        (group.variant === undefined || ['default', 'muted', 'highlight'].includes(group.variant as string))
+        (group.variant === undefined ||
+          ['default', 'muted', 'highlight'].includes(group.variant as string))
     )
   ) {
     return { success: false, error: 'One or more diagram groups are invalid.' };
@@ -271,7 +298,8 @@ export function parseVibeLabDiagram(source: string):
         nodeIds.includes(edge.target) &&
         edge.source !== edge.target &&
         safeOptionalText(edge.label, MAX_LABEL_LENGTH) &&
-        (edge.variant === undefined || ['solid', 'dashed', 'dotted'].includes(edge.variant as string)) &&
+        (edge.variant === undefined ||
+          ['solid', 'dashed', 'dotted'].includes(edge.variant as string)) &&
         (edge.animated === undefined || typeof edge.animated === 'boolean')
     )
   ) {
@@ -288,7 +316,8 @@ export function parseVibeLabDiagram(source: string):
         typeof annotation.nodeId === 'string' &&
         nodeIds.includes(annotation.nodeId) &&
         safeText(annotation.label, MAX_LABEL_LENGTH) &&
-        (annotation.tone === undefined || ['info', 'success', 'warning'].includes(annotation.tone as string))
+        (annotation.tone === undefined ||
+          ['info', 'success', 'warning'].includes(annotation.tone as string))
     )
   ) {
     return { success: false, error: 'One or more diagram annotations are invalid.' };
@@ -313,12 +342,20 @@ export function parseVibeLabDiagram(source: string):
   };
 }
 
-function nodeSize(node: VibeLabDiagramNode) {
-  const labelLines = Math.max(1, Math.ceil(node.label.length / 25));
-  const descriptionLines = node.description ? Math.ceil(node.description.length / 34) : 0;
+function nodeSize(node: VibeLabDiagramNode, annotationCount = 0) {
+  const width = node.type === 'note' ? 240 : node.type === 'decision' ? 210 : 220;
+  const labelLines = Math.max(1, Math.ceil(node.label.length / (node.type === 'note' ? 31 : 27)));
+  const descriptionLines = node.description
+    ? Math.min(3, Math.ceil(node.description.length / 37))
+    : 0;
+  const annotationLines = annotationCount ? Math.ceil(annotationCount / 2) : 0;
+  const minHeight = node.type === 'decision' ? 82 : node.type === 'note' ? 78 : 74;
   return {
-    width: Math.min(280, Math.max(180, 118 + Math.min(node.label.length, 40) * 3.2)),
-    height: 76 + labelLines * 18 + descriptionLines * 15 + (node.type === 'decision' ? 8 : 0),
+    width,
+    height: Math.max(
+      minHeight,
+      34 + labelLines * 18 + descriptionLines * 15 + annotationLines * 22
+    ),
   };
 }
 
@@ -345,6 +382,7 @@ function directionPositions(direction: DiagramDirection) {
 export function createVibeLabDiagramLayout(definition: VibeLabDiagramDefinition): {
   nodes: Array<DiagramFlowNode | DiagramGroupFlowNode>;
   edges: Edge[];
+  bounds: DiagramLayoutBounds;
 } {
   const graph = new dagre.graphlib.Graph();
   const horizontal = definition.direction === 'LR' || definition.direction === 'RL';
@@ -357,10 +395,6 @@ export function createVibeLabDiagramLayout(definition: VibeLabDiagramDefinition)
     marginy: 32,
   });
 
-  definition.nodes.forEach((node) => graph.setNode(node.id, nodeSize(node)));
-  definition.edges.forEach((edge) => graph.setEdge(edge.source, edge.target));
-  dagre.layout(graph);
-
   const annotationsByNode = new Map<string, VibeLabDiagramAnnotation[]>();
   definition.annotations?.forEach((annotation) => {
     annotationsByNode.set(annotation.nodeId, [
@@ -368,10 +402,17 @@ export function createVibeLabDiagramLayout(definition: VibeLabDiagramDefinition)
       annotation,
     ]);
   });
+
+  definition.nodes.forEach((node) => {
+    graph.setNode(node.id, nodeSize(node, annotationsByNode.get(node.id)?.length));
+  });
+  definition.edges.forEach((edge) => graph.setEdge(edge.source, edge.target));
+  dagre.layout(graph);
+
   const flowPositions = directionPositions(definition.direction);
   const calculated = definition.nodes.map((node) => {
     const position = graph.node(node.id);
-    const dimensions = nodeSize(node);
+    const dimensions = nodeSize(node, annotationsByNode.get(node.id)?.length);
     return {
       node,
       dimensions,
@@ -380,6 +421,7 @@ export function createVibeLabDiagramLayout(definition: VibeLabDiagramDefinition)
   });
   const groupPadding = { horizontal: 28, top: 62, bottom: 26 };
   const groupNodes = new Map<string, DiagramGroupFlowNode>();
+  const groupBounds = new Map<string, DiagramLayoutBounds>();
   const groupOffsets = new Map<string, { x: number; y: number }>();
 
   definition.groups?.forEach((group) => {
@@ -387,24 +429,36 @@ export function createVibeLabDiagramLayout(definition: VibeLabDiagramDefinition)
     if (!children.length) return;
     const minX = Math.min(...children.map(({ position }) => position.x));
     const minY = Math.min(...children.map(({ position }) => position.y));
-    const maxX = Math.max(...children.map(({ position, dimensions }) => position.x + dimensions.width));
-    const maxY = Math.max(...children.map(({ position, dimensions }) => position.y + dimensions.height));
+    const maxX = Math.max(
+      ...children.map(({ position, dimensions }) => position.x + dimensions.width)
+    );
+    const maxY = Math.max(
+      ...children.map(({ position, dimensions }) => position.y + dimensions.height)
+    );
     const position = { x: minX - groupPadding.horizontal, y: minY - groupPadding.top };
+    const bounds = {
+      x: position.x,
+      y: position.y,
+      width: maxX - minX + groupPadding.horizontal * 2,
+      height: maxY - minY + groupPadding.top + groupPadding.bottom,
+    };
     groupOffsets.set(group.id, position);
+    groupBounds.set(group.id, bounds);
     groupNodes.set(group.id, {
       id: `group-${group.id}`,
       type: 'vibelab-group',
       position,
       selectable: false,
       draggable: false,
+      zIndex: 0,
       data: {
         label: group.label,
         description: group.description,
         variant: group.variant ?? 'default',
       },
       style: {
-        width: maxX - minX + groupPadding.horizontal * 2,
-        height: maxY - minY + groupPadding.top + groupPadding.bottom,
+        width: bounds.width,
+        height: bounds.height,
       },
     });
   });
@@ -424,6 +478,7 @@ export function createVibeLabDiagramLayout(definition: VibeLabDiagramDefinition)
         targetPosition: flowPositions.targetPosition,
         selectable: false,
         draggable: false,
+        zIndex: 2,
         data: {
           label: node.label,
           description: node.description,
@@ -433,7 +488,7 @@ export function createVibeLabDiagramLayout(definition: VibeLabDiagramDefinition)
           annotations: annotationsByNode.get(node.id) ?? [],
           preset: definition.preset,
         },
-        style: { width: dimensions.width, minHeight: dimensions.height },
+        style: { width: dimensions.width, height: dimensions.height },
       } satisfies DiagramFlowNode;
     }),
   ];
@@ -453,14 +508,32 @@ export function createVibeLabDiagramLayout(definition: VibeLabDiagramDefinition)
         : edge.variant === 'dotted'
           ? { strokeDasharray: '2 5' }
           : undefined,
+    zIndex: 1,
     ...(edge.label
       ? {
           labelShowBg: true,
-          labelBgPadding: [8, 4] as [number, number],
-          labelBgBorderRadius: 8,
+          labelBgPadding: [7, 4] as [number, number],
+          labelBgBorderRadius: 7,
+          labelStyle: { fontSize: 11, fontWeight: 650 },
+          labelBgStyle: { fillOpacity: 1 },
         }
       : {}),
   }));
 
-  return { nodes, edges };
+  const contentRects = [
+    ...calculated
+      .filter(({ node }) => !node.groupId)
+      .map(({ position, dimensions }) => ({ ...position, ...dimensions })),
+    ...groupBounds.values(),
+  ];
+  const minX = Math.min(...contentRects.map((rect) => rect.x));
+  const minY = Math.min(...contentRects.map((rect) => rect.y));
+  const maxX = Math.max(...contentRects.map((rect) => rect.x + rect.width));
+  const maxY = Math.max(...contentRects.map((rect) => rect.y + rect.height));
+
+  return {
+    nodes,
+    edges,
+    bounds: { x: minX, y: minY, width: maxX - minX, height: maxY - minY },
+  };
 }
