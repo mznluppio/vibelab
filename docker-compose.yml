@@ -91,9 +91,9 @@ services:
     restart: unless-stopped
     # Keep the rest of the local stack usable before Azure credentials are
     # available. The validation script prints variable names only, then this
-        # container serves an explicit disabled state that fails readiness
-        # (rather than crash-looping). Recreate it after configuring the
-        # missing values.
+    # container serves an explicit disabled state that fails readiness
+    # (rather than crash-looping). Recreate it after configuring the
+    # missing values.
     entrypoint:
       - /bin/sh
       - -ec
@@ -125,7 +125,10 @@ services:
     networks:
       - tesslate-network
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4000/health/readiness', timeout=5).read()"]
+      # Readiness remains 503 in degraded mode by design; use liveness here
+      # so Compose reports the running fallback as healthy and does not block
+      # the rest of local development.
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4000/health/liveliness', timeout=5).read()"]
       interval: 10s
       timeout: 5s
       retries: 12
