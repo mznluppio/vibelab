@@ -2601,6 +2601,7 @@ export function ChatContainer({
                     agentIcon={message.agentIcon}
                     agentAvatarUrl={message.agentAvatarUrl}
                     toolCallsCollapsed={toolCallsCollapsed}
+                    isStreaming={agentExecuting && message.agentData.completion_reason === 'in_progress'}
                   />
                 </div>
               );
@@ -2624,6 +2625,7 @@ export function ChatContainer({
                   timestamp={message.timestamp}
                   showRetry={isLastUser && !agentExecuting && !isStreaming}
                   onRetry={isLastUser ? () => handleRetryMessage(message.content) : undefined}
+                  isStreaming={isStreaming}
                 />
               </div>
             );
