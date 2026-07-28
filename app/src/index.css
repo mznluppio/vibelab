@@ -801,6 +801,363 @@ textarea {
   background-color: transparent !important;
 }
 
+/* Structured VibeLab diagrams are interactive React Flow canvases. */
+.vibelab-diagram-card,
+.vibelab-diagram-dialog {
+  --diagram-surface: var(--bg);
+  --diagram-surface-raised: var(--surface);
+  --diagram-border: var(--border-hover);
+  --diagram-ink: var(--text);
+  --diagram-muted: var(--text-muted);
+  --diagram-line: var(--accent);
+  --diagram-node: var(--surface-hover);
+  --diagram-node-border: var(--border-hover);
+  --diagram-group: color-mix(in srgb, var(--surface) 82%, transparent);
+  min-width: 0;
+  color: var(--diagram-ink);
+  background: var(--diagram-surface);
+  border: 1px solid var(--diagram-border);
+  border-radius: min(var(--radius-medium, 12px), 14px);
+}
+
+.vibelab-diagram-card--technical-dark,
+.vibelab-diagram-dialog.technical-dark {
+  --diagram-surface: #0b1426;
+  --diagram-surface-raised: #101f38;
+  --diagram-border: #28496d;
+  --diagram-ink: #e8f2ff;
+  --diagram-muted: #a8c0db;
+  --diagram-line: #68b6ec;
+  --diagram-node: #132a49;
+  --diagram-node-border: #477aa9;
+  --diagram-group: #0d1b31;
+}
+
+.vibelab-diagram-card--editorial-comparison,
+.vibelab-diagram-dialog.editorial-comparison {
+  --diagram-surface: var(--bg);
+  --diagram-surface-raised: var(--surface);
+  --diagram-border: var(--border-hover);
+  --diagram-ink: var(--text);
+  --diagram-muted: var(--text-muted);
+  --diagram-line: var(--primary);
+  --diagram-node: var(--surface-hover);
+  --diagram-node-border: var(--border-hover);
+  --diagram-group: color-mix(in srgb, var(--surface) 86%, var(--bg));
+}
+
+.vibelab-diagram-card--business-process,
+.vibelab-diagram-dialog.business-process {
+  --diagram-surface: var(--bg);
+  --diagram-surface-raised: var(--surface);
+  --diagram-border: var(--border-hover);
+  --diagram-ink: var(--text);
+  --diagram-muted: var(--text-muted);
+  --diagram-line: var(--accent);
+  --diagram-node: color-mix(in srgb, var(--surface-hover) 88%, var(--primary));
+  --diagram-node-border: color-mix(in srgb, var(--border-hover) 80%, var(--primary));
+  --diagram-group: color-mix(in srgb, var(--surface) 88%, var(--primary));
+}
+
+.vibelab-diagram-card {
+  padding: 0.875rem;
+}
+
+.vibelab-diagram-header,
+.vibelab-diagram-dialog__header,
+.vibelab-diagram-fallback-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.vibelab-diagram-header {
+  margin-bottom: 0.75rem;
+}
+
+.vibelab-diagram-header h3,
+.vibelab-diagram-dialog__header [role='heading'],
+.vibelab-diagram-fallback-header p {
+  margin: 0;
+  color: var(--diagram-ink);
+  font-size: 0.875rem;
+  font-weight: 650;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+  text-wrap: balance;
+}
+
+.vibelab-diagram-header p,
+.vibelab-diagram-dialog__header [role='heading'] + p,
+.vibelab-diagram-fallback-header span {
+  display: block;
+  margin: 0.2rem 0 0;
+  color: var(--diagram-muted);
+  font-size: 0.75rem;
+  line-height: 1.45;
+}
+
+.vibelab-diagram-actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.25rem;
+}
+
+.vibelab-diagram-action {
+  width: 1.75rem;
+  height: 1.75rem;
+  min-width: 1.75rem;
+  padding: 0;
+  color: var(--diagram-muted);
+  border: 1px solid var(--diagram-border);
+  background: var(--diagram-surface-raised);
+}
+
+.vibelab-diagram-action:hover {
+  color: var(--diagram-ink);
+  border-color: var(--diagram-line);
+  background: var(--diagram-node);
+}
+
+.vibelab-diagram-canvas,
+.vibelab-diagram-dialog__canvas {
+  min-width: 0;
+  overflow: hidden;
+  background: var(--diagram-surface-raised);
+  border: 1px solid var(--diagram-border);
+  border-radius: 10px;
+}
+
+.vibelab-diagram-dialog {
+  padding: 1rem;
+  outline: none;
+}
+
+.vibelab-diagram-dialog__header {
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+
+.vibelab-diagram-dialog__canvas {
+  min-height: 0;
+  flex: 1;
+}
+
+.vibelab-diagram-flow {
+  background: var(--diagram-surface-raised);
+}
+
+.vibelab-diagram-flow .react-flow__background {
+  opacity: 0.34;
+}
+
+.vibelab-diagram-flow .react-flow__edge-path {
+  stroke: var(--diagram-line);
+  stroke-width: 1.45;
+}
+
+.vibelab-diagram-flow .react-flow__arrowhead polyline {
+  stroke: var(--diagram-line);
+  fill: var(--diagram-line);
+}
+
+.vibelab-diagram-flow .react-flow__edge-textbg {
+  fill: var(--diagram-surface);
+  stroke: var(--diagram-border);
+  stroke-width: 1;
+}
+
+.vibelab-diagram-flow .react-flow__edge-text {
+  fill: var(--diagram-ink);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.vibelab-diagram-flow .react-flow__minimap {
+  border: 1px solid var(--diagram-border);
+  background: var(--diagram-surface);
+}
+
+.vibelab-diagram-flow .react-flow__minimap-mask {
+  fill: color-mix(in srgb, var(--diagram-line) 14%, transparent);
+}
+
+.vibelab-diagram-group {
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  padding: 0.75rem;
+  pointer-events: none;
+  background: var(--diagram-group);
+  border: 1px solid var(--diagram-border);
+  border-radius: 12px;
+}
+
+.vibelab-diagram-group[data-variant='muted'] {
+  border-style: dashed;
+}
+
+.vibelab-diagram-group[data-variant='highlight'] {
+  border-color: var(--diagram-line);
+}
+
+.vibelab-diagram-group__heading {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.2rem;
+  max-width: calc(100% - 0.25rem);
+}
+
+.vibelab-diagram-group__heading span {
+  padding: 0.2rem 0.45rem;
+  color: var(--diagram-ink);
+  background: var(--diagram-surface-raised);
+  border: 1px solid var(--diagram-border);
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 650;
+  line-height: 1.25;
+}
+
+.vibelab-diagram-group__heading small {
+  color: var(--diagram-muted);
+  font-size: 10px;
+  line-height: 1.25;
+}
+
+.vibelab-diagram-node {
+  box-sizing: border-box;
+  min-height: 100%;
+  padding: 0.7rem 0.75rem;
+  color: var(--diagram-ink);
+  background: var(--diagram-node);
+  border: 1px solid var(--diagram-node-border);
+  border-radius: 11px;
+}
+
+.vibelab-diagram-node.is-emphasized {
+  border-color: var(--diagram-line);
+}
+
+.vibelab-diagram-node--start,
+.vibelab-diagram-node--end {
+  border-radius: 999px;
+}
+
+.vibelab-diagram-node--decision {
+  background: color-mix(in srgb, var(--diagram-node) 84%, var(--diagram-line));
+}
+
+.vibelab-diagram-node--note {
+  border-style: dashed;
+  border-radius: 8px;
+}
+
+.vibelab-diagram-node__header {
+  display: flex;
+  align-items: center;
+  gap: 0.42rem;
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.3;
+}
+
+.vibelab-diagram-node__header svg {
+  flex: 0 0 auto;
+  color: var(--diagram-line);
+}
+
+.vibelab-diagram-node p {
+  display: -webkit-box;
+  margin: 0.35rem 0 0;
+  overflow: hidden;
+  color: var(--diagram-muted);
+  font-size: 10px;
+  line-height: 1.4;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.vibelab-diagram-handle {
+  width: 6px;
+  height: 6px;
+  min-width: 6px;
+  min-height: 6px;
+  opacity: 0;
+  border: 0;
+  background: transparent;
+}
+
+.vibelab-diagram-annotations {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin-top: 0.45rem;
+}
+
+.vibelab-diagram-annotations span {
+  padding: 0.1rem 0.32rem;
+  color: var(--diagram-ink);
+  background: var(--diagram-surface);
+  border: 1px solid var(--diagram-border);
+  border-radius: 999px;
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.vibelab-diagram-annotations span[data-tone='success'] {
+  border-color: color-mix(in srgb, var(--success, #3fb950) 68%, var(--diagram-border));
+}
+
+.vibelab-diagram-annotations span[data-tone='warning'] {
+  border-color: color-mix(in srgb, var(--warning, #d29922) 68%, var(--diagram-border));
+}
+
+.vibelab-diagram-fallback-header {
+  margin-bottom: 0.65rem;
+}
+
+.vibelab-diagram-card > pre {
+  max-height: 18rem;
+  margin: 0;
+  overflow: auto;
+  padding: 0.75rem;
+  color: var(--code-block-text);
+  background: var(--code-block-bg);
+  border: 1px solid var(--code-block-border);
+  border-radius: 8px;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+@media (max-width: 640px) {
+  .vibelab-diagram-card {
+    padding: 0.625rem;
+  }
+
+  .vibelab-diagram-header {
+    flex-direction: column;
+  }
+
+  .vibelab-diagram-actions {
+    justify-content: flex-start;
+  }
+
+  .vibelab-diagram-dialog {
+    padding: 0.75rem;
+  }
+
+  .vibelab-diagram-dialog__header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
 .user-message-bubble {
   padding: 0.75rem 1rem;
   background: color-mix(in srgb, var(--primary) 14%, var(--surface));
