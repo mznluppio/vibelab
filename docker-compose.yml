@@ -89,7 +89,20 @@ services:
     image: ghcr.io/berriai/litellm:main-v1.81.9-stable
     container_name: vibelab-litellm
     restart: unless-stopped
-    command: ["--port", "4000", "--config", "/app/config.yaml"]
+    # Keep the rest of the local stack usable before Azure credentials are
+    # available. The validation script prints variable names only, then this
+    # container serves an explicit disabled state that fails readiness
+    # (rather than crash-looping). Recreate it after configuring the
+    # missing values.
+    entrypoint:
+      - /bin/sh
+      - -ec
+      - |
+        if ! /usr/local/bin/validate-litellm-env; then
+          echo "LiteLLM is disabled until Azure AI Foundry configuration is complete." >&2
+          exec python /usr/local/bin/litellm-disabled-server.py
+        fi
+        exec litellm --port 4000 --config /app/config.yaml
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-tesslate_user}:${POSTGRES_PASSWORD:-dev_password_change_me}@postgres:5432/${POSTGRES_DB:-tesslate_dev}
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:?Set LITELLM_MASTER_KEY in .env}
@@ -109,7 +122,10 @@ services:
     networks:
       - tesslate-network
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4000/health/readiness', timeout=5).read()"]
+      # Readiness remains 503 in degraded mode by design; use liveness here
+      # so Compose reports the running fallback as healthy and does not block
+      # the rest of local development.
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4000/health/liveliness', timeout=5).read()"]
       interval: 10s
       timeout: 5s
       retries: 12
@@ -344,6 +360,5 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-tesslate_user}:${POSTGRES_PASSWORD:-dev_password_change_me}@postgres:5432/${POSTGRES_DB:-tesslate_dev}
-
 
 
