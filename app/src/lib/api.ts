@@ -309,16 +309,20 @@ export const authApi = {
   },
 
   // Register new user (fastapi-users endpoint)
-  register: async (name: string, email: string, password: string) => {
+  register: async (name: string, email: string, password: string, invitationToken?: string) => {
     // Check if there's a referrer in sessionStorage
     const referred_by = sessionStorage.getItem('referrer');
 
-    const response = await api.post('/api/auth/register', {
-      name,
-      email,
-      password,
-      referral_code: referred_by || undefined,
-    });
+    const response = await api.post(
+      '/api/auth/register',
+      {
+        name,
+        email,
+        password,
+        referral_code: referred_by || undefined,
+      },
+      invitationToken ? { headers: { 'X-VibeLab-Invitation-Token': invitationToken } } : undefined
+    );
     return response.data;
   },
 
@@ -4039,6 +4043,10 @@ export interface AuditLogEntry {
 export const teamsApi = {
   async list(): Promise<TeamList[]> {
     const response = await api.get('/api/teams/');
+    return response.data;
+  },
+  async getCapabilities(): Promise<{ can_create_teams: boolean }> {
+    const response = await api.get('/api/teams/capabilities');
     return response.data;
   },
   async get(slug: string): Promise<Team> {

@@ -216,6 +216,7 @@ export function NavigationSidebar({
     can,
     canAccessMarketplace,
     canAccessAutomations,
+    canCreateTeams,
     teamSwitchKey,
   } = useTeam();
   const { count: pendingApprovalsCount } = usePendingApprovals({
@@ -550,7 +551,7 @@ export function NavigationSidebar({
                       </button>
                     ))}
                     {/* Create Team */}
-                    {!showCreateTeam ? (
+                    {canCreateTeams && !showCreateTeam ? (
                       <button
                         onClick={() => setShowCreateTeam(true)}
                         className="w-full flex items-center gap-2.5 px-3 py-1.5 hover:bg-[var(--surface-hover)] transition-colors text-left"
@@ -560,7 +561,7 @@ export function NavigationSidebar({
                         </div>
                         <span className="text-[11px] text-[var(--text-muted)]">Create Team</span>
                       </button>
-                    ) : (
+                    ) : canCreateTeams ? (
                       <div className="px-3 py-2 space-y-2">
                         <input
                           type="text"
@@ -596,7 +597,7 @@ export function NavigationSidebar({
                           </button>
                         </div>
                       </div>
-                    )}
+                    ) : null}
 
                     <div className="h-px bg-[var(--border)] mx-3 my-1" />
                   </>

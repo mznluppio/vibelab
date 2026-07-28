@@ -39,6 +39,8 @@ interface TeamContextValue {
   /** Effective team feature capabilities. The backend remains authoritative. */
   canAccessMarketplace: boolean;
   canAccessAutomations: boolean;
+  /** Effective platform permission to create a Team; backend remains authoritative. */
+  canCreateTeams: boolean;
   loading: boolean;
   refreshTeams: () => Promise<void>;
   /** Increments on every team switch — use in useEffect deps to trigger re-fetches. */
@@ -53,17 +55,23 @@ export function TeamProvider({ children }: { children: React.ReactNode }) {
   const [activeTeam, setActiveTeam] = useState<TeamList | null>(null);
   const [loading, setLoading] = useState(true);
   const [teamSwitchKey, setTeamSwitchKey] = useState(0);
+  const [canCreateTeams, setCanCreateTeams] = useState(false);
 
   const loadTeams = useCallback(async () => {
     if (!isAuthenticated) {
       setTeams([]);
       setActiveTeam(null);
+      setCanCreateTeams(false);
       setLoading(false);
       return;
     }
     try {
-      const data = await teamsApi.list();
+      const [data, capabilities] = await Promise.all([
+        teamsApi.list(),
+        teamsApi.getCapabilities(),
+      ]);
       setTeams(data);
+      setCanCreateTeams(capabilities.can_create_teams);
 
       const savedSlug = localStorage.getItem('tesslate_active_team');
       const saved = data.find((t: TeamList) => t.slug === savedSlug);
@@ -138,6 +146,7 @@ export function TeamProvider({ children }: { children: React.ReactNode }) {
         can,
         canAccessMarketplace,
         canAccessAutomations,
+        canCreateTeams,
         loading,
         refreshTeams: loadTeams,
         teamSwitchKey,

@@ -58,6 +58,10 @@ class User(SQLAlchemyBaseUserTable[uuid.UUID], Base):
         nullable=True,
     )
 
+    # ``None`` inherits the platform team-creation policy.  Explicit values
+    # are set only by a platform administrator for a user-specific exception.
+    can_create_teams_override: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+
     # Creator payouts (Stripe Connect)
     creator_stripe_account_id: Mapped[str | None] = mapped_column(
         String, nullable=True

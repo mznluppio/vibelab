@@ -29,6 +29,7 @@ from ..models_team import (
 )
 from ..permissions import (
     Permission,
+    can_create_team,
     check_team_permission,
     get_project_with_access,
     get_team_membership,
@@ -82,6 +83,20 @@ async def _resolve_project_in_team(db: AsyncSession, team: Team, project_slug: s
     project = result.scalar_one_or_none()
     if project is None:
         raise HTTPException(status_code=404, detail="Project not found")
+    return project
+
+
+async def _require_project_access_administrator(
+    db: AsyncSession,
+    project_slug: str,
+    user: User,
+) -> Project:
+    """Require an effective project administrator for access mutations."""
+    project, role = await get_project_with_access(
+        db, project_slug, user.id, Permission.PROJECT_SETTINGS
+    )
+    if role != "admin":
+        raise HTTPException(status_code=403, detail="Project administrator access is required")
     return project
 
 
@@ -163,6 +178,9 @@ async def create_team(
     user: User = Depends(current_active_user),
 ):
     """Create a new team. The caller automatically becomes the admin."""
+    if not await can_create_team(db, user):
+        raise HTTPException(status_code=403, detail="Team creation is not permitted")
+
     # Check slug uniqueness
     existing = await db.execute(select(Team).where(Team.slug == body.slug))
     if existing.scalar_one_or_none() is not None:
@@ -229,50 +247,6 @@ async def list_teams(
     )
     rows = result.all()
 
-    # Auto-provision a personal team for legacy users who never got one.
-    # This is idempotent: the helper returns immediately if default_team_id is set.
-    if not rows:
-        import uuid as _uuid
-
-        team_id = _uuid.uuid4()
-        team_slug = f"personal-{str(user.id)[:8]}"
-        team = Team(
-            id=team_id,
-            name="Personal",
-            slug=team_slug,
-            is_personal=True,
-            created_by_id=user.id,
-            subscription_tier="free",
-            daily_credits=0,
-            signup_bonus_credits=0,
-        )
-        db.add(team)
-        await db.flush()
-
-        membership = TeamMembership(
-            team_id=team_id,
-            user_id=user.id,
-            role="admin",
-        )
-        db.add(membership)
-        user.default_team_id = team_id
-        await db.commit()
-        logger.info("Auto-provisioned personal team '%s' for user %s", team_slug, user.id)
-
-        # Re-query so the response reflects the new team
-        result = await db.execute(
-            select(Team, TeamMembership.role)
-            .join(TeamMembership, TeamMembership.team_id == Team.id)
-            .where(
-                and_(
-                    TeamMembership.user_id == user.id,
-                    TeamMembership.is_active.is_(True),
-                )
-            )
-            .order_by(Team.created_at)
-        )
-        rows = result.all()
-
     out: list[TeamList] = []
     for team, role in rows:
         item = TeamList.model_validate(team)
@@ -282,6 +256,15 @@ async def list_teams(
             item.is_personal = False
         out.append(item)
     return out
+
+
+@router.get("/capabilities")
+async def get_team_capabilities(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(current_active_user),
+):
+    """Return effective team-governance capabilities for the current user."""
+    return {"can_create_teams": await can_create_team(db, user)}
 
 
 # ── Invitation public routes (must be before /{team_slug} to avoid collision) ──
@@ -346,10 +329,20 @@ async def accept_invitation(
     if invitation.max_uses is not None and invitation.use_count >= invitation.max_uses:
         raise HTTPException(status_code=410, detail="Invitation has reached maximum uses")
 
-    # Check not already an active member
+    # Existing membership makes invitation acceptance idempotent.  This
+    # covers email invitations auto-accepted during registration and lets the
+    # invite page safely resume after login.
     existing = await get_team_membership(db, invitation.team_id, user.id)
     if existing is not None:
-        raise HTTPException(status_code=409, detail="Already a member of this team")
+        user.default_team_id = invitation.team_id
+        await db.commit()
+        team = invitation.team
+        return InviteAcceptResponse(
+            team_id=team.id,
+            team_name=team.name,
+            team_slug=team.slug,
+            role=existing.role,
+        )
 
     # Check for inactive membership (user previously left) — reactivate instead of inserting
     inactive_result = await db.execute(
@@ -385,6 +378,10 @@ async def accept_invitation(
     if invitation.invite_type == "email":
         invitation.accepted_at = datetime.now(UTC)
         invitation.accepted_by_id = user.id
+
+    # An invitation is an explicit active-team choice.  In particular, this
+    # prevents an invited user from landing in an unrelated personal team.
+    user.default_team_id = invitation.team_id
 
     await log_event(
         db,
@@ -961,8 +958,8 @@ async def list_project_members(
 ):
     """List project members with user info."""
     team = await _resolve_team(db, team_slug)
-    await check_team_permission(db, team.id, user.id, Permission.TEAM_VIEW)
     project = await _resolve_project_in_team(db, team, project_slug)
+    await get_project_with_access(db, project_slug, user.id, Permission.PROJECT_VIEW)
 
     result = await db.execute(
         select(ProjectMembership)
@@ -1008,10 +1005,7 @@ async def add_project_member(
     team = await _resolve_team(db, team_slug)
     project = await _resolve_project_in_team(db, team, project_slug)
 
-    # Caller must be project admin
-    _, caller_role = await get_project_with_access(
-        db, project_slug, user.id, Permission.PROJECT_SETTINGS
-    )
+    await _require_project_access_administrator(db, project_slug, user)
 
     # Target must be a team member
     target_team_membership = await get_team_membership(db, team.id, body.user_id)
@@ -1035,6 +1029,17 @@ async def add_project_member(
         existing_pm.is_active = True
         existing_pm.role = body.role
         existing_pm.granted_by_id = user.id
+        await log_event(
+            db,
+            team_id=team.id,
+            user_id=user.id,
+            action="project.member_added",
+            resource_type="project_membership",
+            resource_id=existing_pm.id,
+            project_id=project.id,
+            details={"target_user_id": str(body.user_id), "role": body.role, "reactivated": True},
+            request=request,
+        )
         await db.commit()
         await db.refresh(existing_pm)
         return ProjectMemberRead(
@@ -1093,7 +1098,7 @@ async def change_project_member_role(
     team = await _resolve_team(db, team_slug)
     project = await _resolve_project_in_team(db, team, project_slug)
 
-    await get_project_with_access(db, project_slug, user.id, Permission.PROJECT_SETTINGS)
+    await _require_project_access_administrator(db, project_slug, user)
 
     result = await db.execute(
         select(ProjectMembership).where(
@@ -1107,6 +1112,9 @@ async def change_project_member_role(
     pm = result.scalar_one_or_none()
     if pm is None:
         raise HTTPException(status_code=404, detail="Project member not found")
+
+    if user_id == project.owner_id and body.role != "admin":
+        raise HTTPException(status_code=400, detail="The project owner must retain administrator access")
 
     old_role = pm.role
     pm.role = body.role
@@ -1150,7 +1158,7 @@ async def remove_project_member(
     team = await _resolve_team(db, team_slug)
     project = await _resolve_project_in_team(db, team, project_slug)
 
-    await get_project_with_access(db, project_slug, user.id, Permission.PROJECT_SETTINGS)
+    await _require_project_access_administrator(db, project_slug, user)
 
     result = await db.execute(
         select(ProjectMembership).where(
@@ -1164,6 +1172,9 @@ async def remove_project_member(
     pm = result.scalar_one_or_none()
     if pm is None:
         raise HTTPException(status_code=404, detail="Project member not found")
+
+    if user_id == project.owner_id:
+        raise HTTPException(status_code=400, detail="The project owner must retain administrator access")
 
     pm.is_active = False
 
@@ -1193,7 +1204,7 @@ async def update_project_visibility(
     """Update project visibility. Admin only."""
     team = await _resolve_team(db, team_slug)
     project = await _resolve_project_in_team(db, team, project_slug)
-    await check_team_permission(db, team.id, user.id, Permission.PROJECT_SETTINGS)
+    await _require_project_access_administrator(db, project_slug, user)
 
     old_visibility = project.visibility
     project.visibility = body.visibility

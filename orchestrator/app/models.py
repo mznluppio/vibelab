@@ -62,7 +62,7 @@ class Project(Base):
     owner_id = Column(GUID(), ForeignKey("users.id"), nullable=False)
     team_id = Column(GUID(), ForeignKey("teams.id", ondelete="CASCADE"), nullable=False)
     visibility = Column(
-        String(20), nullable=False, default="team"
+        String(20), nullable=False, default="private", server_default="private"
     )  # 'team' (all members see) or 'private' (explicit access only)
     has_git_repo = Column(Boolean, default=False)
     git_remote_url = Column(String(500), nullable=True)
@@ -3352,6 +3352,7 @@ from .models_automations import (  # noqa: F401, E402
 from .models_inbox import InboxItem  # noqa: F401, E402
 from .models_team import (  # noqa: F401, E402
     AuditLog,
+    PlatformSettings,
     ProjectMembership,
     Team,
     TeamInvitation,

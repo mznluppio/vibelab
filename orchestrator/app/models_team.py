@@ -9,6 +9,7 @@ import uuid
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     Column,
     DateTime,
     ForeignKey,
@@ -25,6 +26,31 @@ from sqlalchemy.types import JSON
 from app.types.guid import GUID
 
 from .database import Base
+
+
+class PlatformSettings(Base):
+    """Singleton platform-wide governance settings.
+
+    The single row is deliberately narrow: these settings govern the whole
+    VibeLab instance and are not Team preferences.  ``id=1`` is enforced by
+    a database check rather than introducing a generic settings registry.
+    """
+
+    __tablename__ = "platform_settings"
+
+    id = Column(Integer, primary_key=True, default=1)
+    automatically_create_personal_teams = Column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    allow_user_team_creation = Column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at = Column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+    __table_args__ = (CheckConstraint("id = 1", name="ck_platform_settings_singleton"),)
 
 
 class Team(Base):

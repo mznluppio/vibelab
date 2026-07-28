@@ -326,6 +326,48 @@ async def get_team_membership(
     return result.scalar_one_or_none()
 
 
+async def get_platform_settings(
+    db: AsyncSession,
+    *,
+    create: bool = False,
+):
+    """Return the singleton platform governance row.
+
+    A missing row is treated as the secure enterprise default (both flags
+    disabled).  Normal authorization checks stay read-only; only the admin
+    write surface requests creation, which keeps ordinary requests from
+    unexpectedly provisioning data.
+    """
+    from .models_team import PlatformSettings
+
+    result = await db.execute(select(PlatformSettings).where(PlatformSettings.id == 1))
+    settings = result.scalar_one_or_none()
+    if settings is not None or not create:
+        return settings or PlatformSettings(
+            id=1,
+            automatically_create_personal_teams=False,
+            allow_user_team_creation=False,
+        )
+
+    settings = PlatformSettings(id=1)
+    db.add(settings)
+    await db.flush()
+    return settings
+
+
+async def can_create_team(db: AsyncSession, user: User) -> bool:
+    """Resolve the server-authoritative team creation capability."""
+    if getattr(user, "is_superuser", False):
+        return True
+
+    override = getattr(user, "can_create_teams_override", None)
+    if override is not None:
+        return bool(override)
+
+    settings = await get_platform_settings(db)
+    return bool(settings.allow_user_team_creation)
+
+
 async def check_team_permission(
     db: AsyncSession,
     team_id: UUID,
