@@ -261,13 +261,19 @@ locals {
     "postgresql://${local.postgres_user}:${var.postgres_password}@${local.postgres_host}/postgres"
   )
 
-  # LiteLLM uses the synchronous PostgreSQL URL understood by Prisma. It
-  # shares the application database but owns its own tables, avoiding a second
-  # database lifecycle solely for the central LLM gateway.
+  # LiteLLM uses Prisma migrations and must have a database that is isolated
+  # from the application's Alembic-managed database. The Deployment creates
+  # this fixed database idempotently through the maintenance connection below.
   litellm_database_url = var.create_postgres ? (
-    "postgresql://${local.postgres_user}:${var.postgres_password}@${local.postgres_host}/${var.postgres_database_name}?sslmode=require"
+    "postgresql://${local.postgres_user}:${var.postgres_password}@${local.postgres_host}/litellm?sslmode=require"
     ) : (
-    "postgresql://${local.postgres_user}:${var.postgres_password}@${local.postgres_host}/tesslate"
+    "postgresql://${local.postgres_user}:${var.postgres_password}@${local.postgres_host}/litellm"
+  )
+
+  litellm_admin_database_url = var.create_postgres ? (
+    "postgresql://${local.postgres_user}:${var.postgres_password}@${local.postgres_host}/postgres?sslmode=require"
+    ) : (
+    "postgresql://${local.postgres_user}:${var.postgres_password}@${local.postgres_host}/postgres"
   )
 
   redis_url = var.create_redis ? (
@@ -409,14 +415,15 @@ resource "kubernetes_secret" "litellm" {
   }
 
   data = {
-    DATABASE_URL                 = local.litellm_database_url
-    LITELLM_MASTER_KEY           = var.litellm_master_key
-    AZURE_API_KEY                = var.azure_api_key
-    AZURE_API_BASE               = var.azure_api_base
-    AZURE_API_VERSION            = var.azure_api_version
-    AZURE_AI_DEFAULT_MODEL       = "azure/${var.azure_ai_default_deployment}"
-    AZURE_AI_FAST_MODEL          = "azure/${var.azure_ai_fast_deployment}"
-    AZURE_AI_REASONING_MODEL     = "azure/${var.azure_ai_reasoning_deployment}"
+    DATABASE_URL             = local.litellm_database_url
+    ADMIN_DATABASE_URL       = local.litellm_admin_database_url
+    LITELLM_MASTER_KEY       = var.litellm_master_key
+    AZURE_API_KEY            = var.azure_api_key
+    AZURE_API_BASE           = var.azure_api_base
+    AZURE_API_VERSION        = var.azure_api_version
+    AZURE_AI_DEFAULT_MODEL   = "azure/${var.azure_ai_default_deployment}"
+    AZURE_AI_FAST_MODEL      = "azure/${var.azure_ai_fast_deployment}"
+    AZURE_AI_REASONING_MODEL = "azure/${var.azure_ai_reasoning_deployment}"
   }
 
   type = "Opaque"
@@ -429,8 +436,8 @@ resource "kubernetes_config_map" "litellm_config" {
   }
 
   data = {
-    "config.yaml" = file("${path.module}/../../litellm/vibelab-azure-config.yaml")
-    "validate-litellm-env" = file("${path.module}/../../../scripts/validate-litellm-env.sh")
+    "config.yaml"                = file("${path.module}/../../litellm/vibelab-azure-config.yaml")
+    "validate-litellm-env"       = file("${path.module}/../../../scripts/validate-litellm-env.sh")
     "litellm-disabled-server.py" = file("${path.module}/../../../scripts/litellm-disabled-server.py")
   }
 }
@@ -441,8 +448,8 @@ resource "kubernetes_deployment" "litellm" {
     namespace = kubernetes_namespace.tesslate.metadata[0].name
     labels = {
       app                            = "litellm"
-      "app.kubernetes.io/name"      = "litellm"
-      "app.kubernetes.io/component" = "ai-proxy"
+      "app.kubernetes.io/name"       = "litellm"
+      "app.kubernetes.io/component"  = "ai-proxy"
       "app.kubernetes.io/managed-by" = "terraform"
     }
   }
@@ -458,16 +465,43 @@ resource "kubernetes_deployment" "litellm" {
       metadata {
         labels = {
           app                            = "litellm"
-          "app.kubernetes.io/name"      = "litellm"
-          "app.kubernetes.io/component" = "ai-proxy"
+          "app.kubernetes.io/name"       = "litellm"
+          "app.kubernetes.io/component"  = "ai-proxy"
           "app.kubernetes.io/managed-by" = "terraform"
         }
       }
 
       spec {
+        # Prisma manages LiteLLM's own tables. Bootstrap a separate database
+        # before the proxy starts instead of letting Prisma touch the
+        # Alembic-managed application database.
+        init_container {
+          name  = "create-database"
+          image = "postgres:16-alpine"
+          command = ["sh", "-ec", <<-EOT
+            if psql "$ADMIN_DATABASE_URL" -tAc "SELECT 1 FROM pg_database WHERE datname = 'litellm'" | grep -qx 1; then
+              echo "[create-database] litellm database already exists"
+            else
+              echo "[create-database] creating litellm database"
+              psql "$ADMIN_DATABASE_URL" -c 'CREATE DATABASE litellm'
+            fi
+          EOT
+          ]
+
+          env {
+            name = "ADMIN_DATABASE_URL"
+            value_from {
+              secret_key_ref {
+                name = kubernetes_secret.litellm.metadata[0].name
+                key  = "ADMIN_DATABASE_URL"
+              }
+            }
+          }
+        }
+
         container {
-          name  = "litellm"
-          image = "ghcr.io/berriai/litellm:${var.litellm_image_tag}"
+          name    = "litellm"
+          image   = "ghcr.io/berriai/litellm:${var.litellm_image_tag}"
           command = ["/bin/sh", "-ec"]
           args = [<<-EOT
             if ! /usr/local/bin/validate-litellm-env; then
@@ -571,8 +605,8 @@ resource "kubernetes_service" "litellm" {
     namespace = kubernetes_namespace.tesslate.metadata[0].name
     labels = {
       app                            = "litellm"
-      "app.kubernetes.io/name"      = "litellm"
-      "app.kubernetes.io/component" = "ai-proxy"
+      "app.kubernetes.io/name"       = "litellm"
+      "app.kubernetes.io/component"  = "ai-proxy"
       "app.kubernetes.io/managed-by" = "terraform"
     }
   }

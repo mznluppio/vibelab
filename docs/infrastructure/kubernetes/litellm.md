@@ -20,6 +20,13 @@ LiteLLM sits between OpenSail's backend and every upstream model provider (OpenA
 1. For VibeLab, update deployment values (`AZURE_AI_*_DEPLOYMENT`) rather than replacing the stable public aliases: `vibelab-default`, `vibelab-fast`, and `vibelab-reasoning`.
 2. Keep `AZURE_API_BASE`, `AZURE_API_KEY`, and `AZURE_API_VERSION` in the environment or Terraform secret input; never put them in a config file.
 3. Apply the relevant Terraform stack. The LiteLLM service is private and does not have an ingress.
+4. The platform NetworkPolicies explicitly allow backend, worker, and gateway
+   pods to reach LiteLLM. Keep the matching LiteLLM ingress/egress rules when
+   changing the namespace-wide default-deny policies.
+5. LiteLLM owns a dedicated `litellm` PostgreSQL database. Do not point its
+   `DATABASE_URL` at the application database: the proxy runs Prisma migrations
+   while the application uses Alembic. Docker Compose and AKS create the
+   dedicated database idempotently before the proxy starts.
 
 ## Related
 
