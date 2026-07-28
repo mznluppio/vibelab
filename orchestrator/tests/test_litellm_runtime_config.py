@@ -1,13 +1,12 @@
 """Regression checks for VibeLab's central LiteLLM runtime defaults."""
 
-from types import SimpleNamespace
 from pathlib import Path
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
 
 from app.config import Settings
-
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 

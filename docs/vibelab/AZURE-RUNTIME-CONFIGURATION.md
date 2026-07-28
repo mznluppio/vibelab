@@ -6,14 +6,13 @@ VibeLab uses one server-managed route for AI requests:
 
 The browser never receives an Azure key, a LiteLLM key, or a provider endpoint.
 
-## Required secrets
+## Required Azure values
 
 Set these only in ignored `.env` files for local development, or inject them
 through the Azure deployment secret workflow. Do not commit real values.
 
 | Variable | Purpose |
 | --- | --- |
-| `LITELLM_MASTER_KEY` | Authenticates VibeLab services to the central LiteLLM gateway. |
 | `AZURE_API_BASE` | Azure AI Foundry/Azure OpenAI endpoint. |
 | `AZURE_API_KEY` | Azure provider credential. |
 | `AZURE_API_VERSION` | Azure API version supported by the deployment. |
@@ -28,17 +27,42 @@ application-facing.
 
 ## Local runtime
 
-Copy `.env.example` to ignored `.env`, replace the placeholders above, then
-start the normal stack with `docker compose up --build -d`. The official
-LiteLLM image is private to `tesslate-network`; it has no host port. Check
-health with `docker compose ps litellm` and, after credentials are configured,
-run a model-list and minimal completion from an internal service.
+Prepare the local environment once (or safely re-run after pulling changes):
+
+```sh
+python3 scripts/setup-local-env.py
+docker compose up -d --build
+```
+
+The setup script creates or completes the ignored `.env` atomically. It
+generates `SECRET_KEY`, `INTERNAL_API_SECRET`, both local PostgreSQL passwords,
+`LITELLM_MASTER_KEY`, and the Marketplace Hub token; it preserves existing
+non-placeholder values and never prints their values. The only values an
+operator must supply are:
+
+```text
+AZURE_API_BASE
+AZURE_API_KEY
+AZURE_API_VERSION
+AZURE_AI_DEFAULT_DEPLOYMENT
+AZURE_AI_FAST_DEPLOYMENT
+AZURE_AI_REASONING_DEPLOYMENT
+```
+
+After supplying them, run the normal command again:
+
+```sh
+docker compose up -d --build
+```
+
+The official LiteLLM image is private to `tesslate-network`; it has no host
+port. Check health with `docker compose ps litellm` and, after credentials are
+configured, run a model-list and minimal completion from an internal service.
 
 Before starting, an operator can validate names without printing any secret:
 
 ```sh
-set -a; . ./.env; set +a
-./scripts/validate-litellm-env.sh
+python3 scripts/setup-local-env.py --validate-azure --env-file .env
 ```
 
 When one or more Azure variables are absent, Compose still starts the

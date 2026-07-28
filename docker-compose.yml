@@ -117,6 +117,7 @@ services:
     volumes:
       - ./k8s/litellm/vibelab-azure-config.yaml:/app/config.yaml:ro
       - ./scripts/validate-litellm-env.sh:/usr/local/bin/validate-litellm-env:ro
+      - ./scripts/setup-local-env.py:/usr/local/bin/setup-local-env.py:ro
       - ./scripts/litellm-disabled-server.py:/usr/local/bin/litellm-disabled-server.py:ro
     depends_on:
       postgres:
