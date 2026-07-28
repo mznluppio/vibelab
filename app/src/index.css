@@ -26,10 +26,10 @@
 
 :root {
   /* === BRAND COLORS === */
-  --primary: #f89521;
-  --primary-hover: #fa9f35;
-  --primary-rgb: 248, 149, 33;
-  --accent: #00d9ff;
+  --primary: #0055a4;
+  --primary-hover: #004580;
+  --primary-rgb: 0, 85, 164;
+  --accent: #00a3e0;
 
   /* === BACKGROUNDS === */
   /* Content "glows" slightly relative to sidebar — dimmed sidebar philosophy */
@@ -70,8 +70,8 @@
   --scrollbar-track: transparent;
 
   /* === CODE === */
-  --code-inline-bg: rgba(248, 149, 33, 0.12);
-  --code-inline-text: #fbbf68;
+  --code-inline-bg: rgba(0, 85, 164, 0.12);
+  --code-inline-text: #00a3e0;
   --code-block-bg: #0a0a0c;
   --code-block-border: #1c1e21;
   --code-block-text: #e2e2e2;
@@ -651,7 +651,7 @@ textarea {
 }
 
 .diagram-scroll-container::-webkit-scrollbar-thumb:hover {
-  background: #fa9f35;
+  background: var(--primary-hover);
 }
 
 .diagram-scroll-container::-webkit-scrollbar-corner {
@@ -763,8 +763,8 @@ textarea {
 }
 
 .tiptap-editor.ProseMirror code {
-  background-color: var(--code-inline-bg, rgba(248, 149, 33, 0.1));
-  color: var(--code-inline-text, #f89521);
+  background-color: var(--code-inline-bg, rgba(0, 85, 164, 0.1));
+  color: var(--code-inline-text, #0055a4);
   padding: 0.2em 0.4em;
   border-radius: var(--radius-small, 4px);
   font-family: var(--font-family-mono, 'JetBrains Mono', 'Fira Code', 'Consolas', monospace);
@@ -816,7 +816,7 @@ textarea {
 }
 
 .tiptap-editor.ProseMirror a:hover {
-  color: #fa9f35;
+  color: var(--primary-hover);
 }
 
 /* Pulse highlight used by MarketplaceSidebar when the Deploy hub deep-links

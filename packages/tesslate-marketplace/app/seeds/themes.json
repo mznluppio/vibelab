@@ -1002,13 +1002,14 @@
   {
     "kind": "theme",
     "slug": "default-dark",
-    "name": "Default Dark",
-    "description": "The default Tesslate dark theme with orange accents",
+    "name": "VibeLab Dark",
+    "description": "The official VibeLab dark theme",
     "category": "general",
     "tags": [
       "dark",
       "default",
-      "neutral"
+      "vibelab",
+      "legrand"
     ],
     "icon": "moon",
     "is_active": true,
@@ -1018,14 +1019,15 @@
     "price": 0,
     "extra_metadata": {
       "mode": "dark",
-      "author": "Tesslate",
+      "author": "VibeLab by Legrand",
       "version": "1.0.0",
+      "is_default": true,
       "theme_json": {
         "colors": {
-          "primary": "#F89521",
-          "primaryHover": "#fa9f35",
-          "primaryRgb": "248, 149, 33",
-          "accent": "#00D9FF",
+          "primary": "#0055A4",
+          "primaryHover": "#004580",
+          "primaryRgb": "0, 85, 164",
+          "accent": "#00A3E0",
           "background": "#111113",
           "surface": "#0a0a0a",
           "surfaceHover": "#1a1a1a",
@@ -1039,12 +1041,12 @@
             "text": "#ffffff",
             "border": "rgba(255, 255, 255, 0.06)",
             "hover": "rgba(255, 255, 255, 0.05)",
-            "active": "rgba(248, 149, 33, 0.15)"
+            "active": "rgba(0, 85, 164, 0.15)"
           },
           "input": {
             "background": "#1a1a1a",
             "border": "rgba(255, 255, 255, 0.1)",
-            "borderFocus": "#F89521",
+            "borderFocus": "#0055A4",
             "text": "#ffffff",
             "placeholder": "rgba(255, 255, 255, 0.4)"
           },
@@ -1054,8 +1056,8 @@
             "track": "transparent"
           },
           "code": {
-            "inlineBackground": "rgba(248, 149, 33, 0.1)",
-            "inlineText": "#F89521",
+            "inlineBackground": "rgba(0, 85, 164, 0.1)",
+            "inlineText": "#00A3E0",
             "blockBackground": "rgba(0, 0, 0, 0.4)",
             "blockBorder": "rgba(255, 255, 255, 0.1)",
             "blockText": "#e2e2e2"

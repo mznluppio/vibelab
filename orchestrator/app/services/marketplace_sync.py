@@ -1238,11 +1238,10 @@ class MarketplaceSyncWorker:
         existing = await self._existing_row(session, Theme, source, slug)
         pricing, effective = self._resolve_pricing(item, source.trust_level)
         manifest = self._extract_version_manifest(item)
+        metadata = item.get("extra_metadata") if isinstance(item.get("extra_metadata"), dict) else {}
         theme_json = (
             (manifest.get("theme_json") if isinstance(manifest, dict) else None)
-            or item.get("extra_metadata", {}).get("theme_json")
-            if isinstance(item.get("extra_metadata"), dict)
-            else None
+            or metadata.get("theme_json")
         )
 
         if not theme_json:
@@ -1254,7 +1253,13 @@ class MarketplaceSyncWorker:
         fields: dict[str, Any] = {
             "slug": slug,
             "name": item.get("name") or slug,
-            "mode": (manifest or {}).get("mode") if isinstance(manifest, dict) else "dark",
+            "mode": (
+                (manifest or {}).get("mode") if isinstance(manifest, dict) else None
+            )
+            or metadata.get("mode")
+            or "dark",
+            "author": metadata.get("author") or "Tesslate",
+            "version": metadata.get("version") or "1.0.0",
             "description": item.get("description"),
             "long_description": item.get("long_description"),
             "theme_json": theme_json,
@@ -1263,6 +1268,13 @@ class MarketplaceSyncWorker:
             "is_active": bool(item.get("is_active", True)),
             "is_published": bool(item.get("is_published", True)),
             "is_featured": bool(item.get("is_featured", False)),
+            # Marketplace themes are catalog content only. A theme becomes
+            # the product default only when the trusted source explicitly
+            # marks it as such; synchronization never changes user choices.
+            "is_default": bool(
+                source.trust_level in _TRUSTED_PRICING_LEVELS
+                and bool(metadata.get("is_default", False))
+            ),
             "downloads": int(item.get("downloads") or 0),
             "rating": float(item.get("rating") or 0.0),
             "reviews_count": int(item.get("reviews_count") or 0),

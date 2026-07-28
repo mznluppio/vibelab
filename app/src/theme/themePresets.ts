@@ -26,11 +26,11 @@ let themesLoading: Promise<void> | null = null;
 // Default fallback theme (used before API loads)
 const DEFAULT_FALLBACK_THEME: Theme = {
   id: 'default-dark',
-  name: 'Default Dark',
+  name: 'VibeLab Dark',
   mode: 'dark',
   author: 'VibeLab by Legrand',
   version: '1.0.0',
-  description: 'The default VibeLab dark theme',
+  description: 'The official VibeLab dark theme',
   colors: {
     primary: '#0055A4',
     primaryHover: '#004580',
@@ -64,8 +64,8 @@ const DEFAULT_FALLBACK_THEME: Theme = {
       track: 'transparent',
     },
     code: {
-      inlineBackground: 'rgba(248, 149, 33, 0.15)',
-      inlineText: '#fbbf68',
+      inlineBackground: 'rgba(0, 85, 164, 0.15)',
+      inlineText: '#00A3E0',
       blockBackground: 'rgba(0, 0, 0, 0.4)',
       blockBorder: 'rgba(255, 255, 255, 0.1)',
       blockText: '#e2e2e2',
