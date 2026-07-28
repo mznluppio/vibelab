@@ -34,6 +34,19 @@ LiteLLM image is private to `tesslate-network`; it has no host port. Check
 health with `docker compose ps litellm` and, after credentials are configured,
 run a model-list and minimal completion from an internal service.
 
+Before starting, an operator can validate names without printing any secret:
+
+```sh
+set -a; . ./.env; set +a
+./scripts/validate-litellm-env.sh
+```
+
+When one or more Azure variables are absent, Compose still starts the
+non-AI services. LiteLLM stays running in an explicitly disabled, unhealthy
+state and logs only the missing variable names. Add the variables to `.env`
+and recreate the LiteLLM service. The application returns the generic AI
+availability message rather than exposing provider setup to normal users.
+
 ## Azure runtime
 
 The Azure Terraform configuration creates a private ClusterIP LiteLLM
@@ -44,13 +57,21 @@ required values through the ignored Azure tfvars/secret process (or the
 platform's existing secret injection), then run the standard Azure Terraform
 and deployment workflow.
 
+The namespace NetworkPolicies allow only backend, worker, and gateway pods to
+reach LiteLLM on TCP 4000. The LiteLLM pod can reach PostgreSQL and external
+HTTPS for Azure AI Foundry, while the proxy remains inaccessible to the
+browser and ingress.
+
 ## Team governance
 
-Team Settings → **Feature access** controls Marketplace and Automations for
-non-admin members. Both are off by default. Team admins always have access;
-editors and viewers gain access only when the matching option is enabled.
-Library remains available. API keys, provider configuration, Marketplace
-Sources, and Cloud settings remain team-admin-only.
+See [Platform Team and Workspace Governance](PLATFORM-TEAM-WORKSPACE-GOVERNANCE.md)
+for the platform Team policies, per-user creation overrides, invitation flow,
+and private-by-default Workspace access. Team Settings → **Feature access**
+continues to control Marketplace and Automations for non-admin members. Both
+are off by default. Team admins always have access; editors and viewers gain
+access only when the matching option is enabled. Library remains available.
+API keys, provider configuration, Marketplace Sources, and Cloud settings
+remain team-admin-only.
 
 Chat defaults to **Allow all edits** when no user choice is stored. The Assist
 to Build TO-BE approval gate still rejects all write tools until it is approved.
