@@ -261,6 +261,15 @@ locals {
     "postgresql://${local.postgres_user}:${var.postgres_password}@${local.postgres_host}/postgres"
   )
 
+  # LiteLLM uses the synchronous PostgreSQL URL understood by Prisma. It
+  # shares the application database but owns its own tables, avoiding a second
+  # database lifecycle solely for the central LLM gateway.
+  litellm_database_url = var.create_postgres ? (
+    "postgresql://${local.postgres_user}:${var.postgres_password}@${local.postgres_host}/${var.postgres_database_name}?sslmode=require"
+    ) : (
+    "postgresql://${local.postgres_user}:${var.postgres_password}@${local.postgres_host}/tesslate"
+  )
+
   redis_url = var.create_redis ? (
     "rediss://:${azurerm_redis_cache.this[0].primary_access_key}@${azurerm_redis_cache.this[0].hostname}:${azurerm_redis_cache.this[0].ssl_port}/0"
     ) : (
@@ -388,6 +397,163 @@ resource "kubernetes_secret" "app_secrets" {
   }
 
   type = "Opaque"
+}
+
+# -----------------------------------------------------------------------------
+# Centrally managed LiteLLM gateway (Azure AI Foundry)
+# -----------------------------------------------------------------------------
+# Provider credentials are injected only into this pod via a Kubernetes Secret.
+# Backend, worker and gateway receive only the LiteLLM URL/master key from
+# tesslate-app-secrets and never receive Azure provider credentials.
+resource "kubernetes_secret" "litellm" {
+  metadata {
+    name      = "litellm-secrets"
+    namespace = kubernetes_namespace.tesslate.metadata[0].name
+  }
+
+  data = {
+    DATABASE_URL                 = local.litellm_database_url
+    LITELLM_MASTER_KEY           = var.litellm_master_key
+    AZURE_API_KEY                = var.azure_api_key
+    AZURE_API_BASE               = var.azure_api_base
+    AZURE_API_VERSION            = var.azure_api_version
+    AZURE_AI_DEFAULT_MODEL       = "azure/${var.azure_ai_default_deployment}"
+    AZURE_AI_FAST_MODEL          = "azure/${var.azure_ai_fast_deployment}"
+    AZURE_AI_REASONING_MODEL     = "azure/${var.azure_ai_reasoning_deployment}"
+  }
+
+  type = "Opaque"
+}
+
+resource "kubernetes_config_map" "litellm_config" {
+  metadata {
+    name      = "litellm-config"
+    namespace = kubernetes_namespace.tesslate.metadata[0].name
+  }
+
+  data = {
+    "config.yaml" = file("${path.module}/../../litellm/vibelab-azure-config.yaml")
+  }
+}
+
+resource "kubernetes_deployment" "litellm" {
+  metadata {
+    name      = "litellm"
+    namespace = kubernetes_namespace.tesslate.metadata[0].name
+    labels = {
+      app                            = "litellm"
+      "app.kubernetes.io/name"      = "litellm"
+      "app.kubernetes.io/component" = "ai-proxy"
+      "app.kubernetes.io/managed-by" = "terraform"
+    }
+  }
+
+  spec {
+    replicas = 1
+
+    selector {
+      match_labels = { app = "litellm" }
+    }
+
+    template {
+      metadata {
+        labels = {
+          app                            = "litellm"
+          "app.kubernetes.io/name"      = "litellm"
+          "app.kubernetes.io/component" = "ai-proxy"
+          "app.kubernetes.io/managed-by" = "terraform"
+        }
+      }
+
+      spec {
+        container {
+          name  = "litellm"
+          image = "ghcr.io/berriai/litellm:${var.litellm_image_tag}"
+          args  = ["--port", "4000", "--config", "/app/config.yaml"]
+
+          port {
+            container_port = 4000
+            protocol       = "TCP"
+          }
+
+          env_from {
+            secret_ref { name = kubernetes_secret.litellm.metadata[0].name }
+          }
+
+          resources {
+            requests = { memory = "512Mi", cpu = "250m" }
+            limits   = { memory = "2Gi", cpu = "1000m" }
+          }
+
+          startup_probe {
+            http_get { path = "/health/liveliness", port = 4000 }
+            initial_delay_seconds = 10
+            period_seconds        = 10
+            timeout_seconds       = 5
+            failure_threshold     = 60
+          }
+
+          liveness_probe {
+            http_get { path = "/health/liveliness", port = 4000 }
+            period_seconds    = 15
+            timeout_seconds   = 5
+            failure_threshold = 3
+          }
+
+          readiness_probe {
+            http_get { path = "/health/readiness", port = 4000 }
+            period_seconds    = 10
+            timeout_seconds   = 5
+            failure_threshold = 3
+          }
+
+          volume_mount {
+            name       = "litellm-config"
+            mount_path = "/app/config.yaml"
+            sub_path   = "config.yaml"
+            read_only  = true
+          }
+        }
+
+        volume {
+          name = "litellm-config"
+          config_map { name = kubernetes_config_map.litellm_config.metadata[0].name }
+        }
+      }
+    }
+  }
+
+  depends_on = [
+    kubernetes_namespace.tesslate,
+    kubernetes_secret.litellm,
+    kubernetes_config_map.litellm_config,
+  ]
+}
+
+# ClusterIP keeps the LLM gateway private. The application receives this URL
+# through tesslate-app-secrets; no public ingress is created for the proxy.
+resource "kubernetes_service" "litellm" {
+  metadata {
+    name      = "litellm-service"
+    namespace = kubernetes_namespace.tesslate.metadata[0].name
+    labels = {
+      app                            = "litellm"
+      "app.kubernetes.io/name"      = "litellm"
+      "app.kubernetes.io/component" = "ai-proxy"
+      "app.kubernetes.io/managed-by" = "terraform"
+    }
+  }
+
+  spec {
+    type     = "ClusterIP"
+    selector = { app = "litellm" }
+
+    port {
+      port        = 4000
+      target_port = 4000
+      protocol    = "TCP"
+    }
+  }
 }
 
 # -----------------------------------------------------------------------------

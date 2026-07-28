@@ -271,7 +271,7 @@ variable "litellm_master_key" {
 variable "litellm_default_models" {
   description = "Default LiteLLM models (comma-separated)"
   type        = string
-  default     = "claude-sonnet-4.6,claude-opus-4.6"
+  default     = "vibelab-default,vibelab-fast,vibelab-reasoning"
 }
 
 variable "google_client_id" {
@@ -661,22 +661,42 @@ variable "nanogpt_api_key" {
 }
 
 variable "azure_api_key" {
-  description = "Azure OpenAI API key (for LiteLLM proxy — distinct from the deployment subscription)"
+  description = "Azure AI Foundry / Azure OpenAI API key for the LiteLLM proxy"
   type        = string
   sensitive   = true
   default     = ""
 }
 
 variable "azure_api_base" {
-  description = "Azure OpenAI endpoint URL (e.g. https://your-resource.openai.azure.com)"
+  description = "Azure AI Foundry / Azure OpenAI endpoint URL (e.g. https://your-resource.openai.azure.com)"
   type        = string
   default     = ""
 }
 
 variable "azure_api_version" {
-  description = "Azure OpenAI API version"
+  description = "Azure AI Foundry / Azure OpenAI API version"
   type        = string
   default     = "2024-12-01-preview"
+}
+
+# Azure deployment names are intentionally separate from the public VibeLab
+# aliases. The proxy maps these values to vibelab-default/fast/reasoning.
+variable "azure_ai_default_deployment" {
+  description = "Azure AI Foundry deployment used by the vibelab-default alias"
+  type        = string
+  default     = ""
+}
+
+variable "azure_ai_fast_deployment" {
+  description = "Azure AI Foundry deployment used by the vibelab-fast alias"
+  type        = string
+  default     = ""
+}
+
+variable "azure_ai_reasoning_deployment" {
+  description = "Azure AI Foundry deployment used by the vibelab-reasoning alias"
+  type        = string
+  default     = ""
 }
 
 variable "llama_api_key" {

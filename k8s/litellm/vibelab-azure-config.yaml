@@ -1,0 +1,49 @@
+# VibeLab's centrally managed Azure AI Foundry catalog.
+#
+# The `AZURE_AI_*_MODEL` values are constructed by Docker Compose/Terraform
+# from deployment names. They deliberately include the `azure/` provider
+# prefix required by LiteLLM, while the aliases below are the only model names
+# exposed to the VibeLab application.
+general_settings:
+  master_key: "os.environ/LITELLM_MASTER_KEY"
+  database_url: "os.environ/DATABASE_URL"
+  database_connection_pool_limit: 20
+  store_model_in_db: false
+  store_prompts_in_spend_logs: true
+
+router_settings:
+  routing_strategy: simple-shuffle
+  allowed_fails: 3
+  cooldown_time: 60
+  num_retries: 2
+  timeout: 300
+
+litellm_settings:
+  set_verbose: false
+  drop_params: true
+  cache: true
+  cache_params:
+    type: local
+    ttl: 600
+
+model_list:
+  - model_name: vibelab-default
+    litellm_params:
+      model: "os.environ/AZURE_AI_DEFAULT_MODEL"
+      api_base: "os.environ/AZURE_API_BASE"
+      api_key: "os.environ/AZURE_API_KEY"
+      api_version: "os.environ/AZURE_API_VERSION"
+
+  - model_name: vibelab-fast
+    litellm_params:
+      model: "os.environ/AZURE_AI_FAST_MODEL"
+      api_base: "os.environ/AZURE_API_BASE"
+      api_key: "os.environ/AZURE_API_KEY"
+      api_version: "os.environ/AZURE_API_VERSION"
+
+  - model_name: vibelab-reasoning
+    litellm_params:
+      model: "os.environ/AZURE_AI_REASONING_MODEL"
+      api_base: "os.environ/AZURE_API_BASE"
+      api_key: "os.environ/AZURE_API_KEY"
+      api_version: "os.environ/AZURE_API_VERSION"

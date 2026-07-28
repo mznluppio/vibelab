@@ -871,7 +871,7 @@ async def execute_agent_task(ctx: dict, payload_dict: dict):
                 model_name = (
                     user_purchase.selected_model
                     if user_purchase and user_purchase.selected_model
-                    else agent_model.model or settings.litellm_default_models.split(",")[0]
+                    else agent_model.model or settings.default_model
                 )
 
             # 5. Create model adapter

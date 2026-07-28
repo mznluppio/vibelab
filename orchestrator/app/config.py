@@ -2,6 +2,12 @@ from functools import lru_cache
 
 from pydantic_settings import BaseSettings
 
+CENTRAL_LITELLM_DEFAULT_MODELS = (
+    "vibelab-default",
+    "vibelab-fast",
+    "vibelab-reasoning",
+)
+
 
 class Settings(BaseSettings):
     # Security - MUST be set via environment
@@ -55,19 +61,22 @@ class Settings(BaseSettings):
     # LiteLLM Configuration (for per-user API keys and usage tracking)
     litellm_api_base: str = ""
     litellm_master_key: str = ""
-    litellm_default_models: str = "claude-sonnet-4.6,claude-opus-4.6"  # Comma-separated list
+    # Stable aliases exposed by VibeLab's centrally managed LiteLLM proxy.
+    # Provider deployment names stay in the proxy configuration, never in the
+    # client-facing application configuration.
+    litellm_default_models: str = ",".join(CENTRAL_LITELLM_DEFAULT_MODELS)
     litellm_team_id: str = "default"  # Team/access group for users
 
     @property
     def default_model(self) -> str:
         """Return the first model from litellm_default_models."""
-        models = [m.strip() for m in self.litellm_default_models.split(",") if m.strip()]
-        return models[0] if models else "claude-sonnet-4.6"
+        return self.default_models_list[0]
 
     @property
     def default_models_list(self) -> list[str]:
-        """Return all default models as a list."""
-        return [m.strip() for m in self.litellm_default_models.split(",") if m.strip()]
+        """Return configured aliases, or the central catalog when unset."""
+        models = [m.strip() for m in self.litellm_default_models.split(",") if m.strip()]
+        return models or list(CENTRAL_LITELLM_DEFAULT_MODELS)
 
     litellm_email_domain: str = "localhost"  # Domain for internal emails
     litellm_initial_budget: float = (

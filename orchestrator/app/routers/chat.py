@@ -1113,7 +1113,7 @@ async def agent_chat(
         model_name = (
             user_purchase.selected_model
             if user_purchase and user_purchase.selected_model
-            else agent_model.model or settings.litellm_default_models.split(",")[0]
+            else agent_model.model or settings.default_model
         )
 
         logger.info(f"[HTTP-AGENT] Using model: {model_name}")
@@ -1768,7 +1768,7 @@ async def agent_chat_stream(
             model_name = (
                 user_purchase.selected_model
                 if user_purchase and user_purchase.selected_model
-                else agent_model.model or settings.litellm_default_models.split(",")[0]
+                else agent_model.model or settings.default_model
             )
 
             # 2b. Pre-request credit check
@@ -3101,7 +3101,7 @@ async def handle_chat_message(data: dict, user: User, db: AsyncSession, websocke
         model_name = (
             user_purchase.selected_model
             if user_purchase and user_purchase.selected_model
-            else agent_model.model or settings.litellm_default_models.split(",")[0]
+            else agent_model.model or settings.default_model
         )
 
         logger.info(f"[UNIFIED-CHAT] Using model: {model_name}")

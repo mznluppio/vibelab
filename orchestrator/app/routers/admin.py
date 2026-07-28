@@ -1669,8 +1669,7 @@ async def get_available_models(
             from ..config import get_settings
 
             settings = get_settings()
-            models_str = settings.litellm_default_models
-            models = [m.strip() for m in models_str.split(",") if m.strip()]
+            models = settings.default_models_list
 
         if not models:
             models = [settings.default_model]
@@ -1683,9 +1682,7 @@ async def get_available_models(
         from ..config import get_settings
 
         settings = get_settings()
-        models_str = settings.litellm_default_models
-        models = [m.strip() for m in models_str.split(",") if m.strip()]
-        return {"models": models if models else [settings.default_model]}
+        return {"models": settings.default_models_list}
 
 
 # ============================================================================
