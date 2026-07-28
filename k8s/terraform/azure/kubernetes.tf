@@ -493,7 +493,10 @@ resource "kubernetes_deployment" "litellm" {
           }
 
           startup_probe {
-            http_get { path = "/health/liveliness", port = 4000 }
+            http_get {
+              path = "/health/liveliness"
+              port = 4000
+            }
             initial_delay_seconds = 10
             period_seconds        = 10
             timeout_seconds       = 5
@@ -501,14 +504,20 @@ resource "kubernetes_deployment" "litellm" {
           }
 
           liveness_probe {
-            http_get { path = "/health/liveliness", port = 4000 }
+            http_get {
+              path = "/health/liveliness"
+              port = 4000
+            }
             period_seconds    = 15
             timeout_seconds   = 5
             failure_threshold = 3
           }
 
           readiness_probe {
-            http_get { path = "/health/readiness", port = 4000 }
+            http_get {
+              path = "/health/readiness"
+              port = 4000
+            }
             period_seconds    = 10
             timeout_seconds   = 5
             failure_threshold = 3
