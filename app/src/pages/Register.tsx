@@ -17,6 +17,7 @@ export default function Register() {
   const redirectTo = (location.state as { from?: string })?.from
     || searchParams.get('redirect')
     || '/home';
+  const invitationToken = redirectTo.match(/^\/invite\/([^/?#]+)$/)?.[1];
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -117,7 +118,7 @@ export default function Register() {
 
     try {
       // Register the user
-      await authApi.register(formData.name, formData.email, formData.password);
+      await authApi.register(formData.name, formData.email, formData.password, invitationToken);
 
       toast.success('Account created successfully!');
 
