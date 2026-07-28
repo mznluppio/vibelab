@@ -2,6 +2,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import AgentStep from './AgentStep';
 import { type AgentMessageData } from '../types/agent';
+import { MermaidDiagram } from './chat/MermaidDiagram';
 
 interface AgentMessageProps {
   agentData: AgentMessageData;
@@ -9,6 +10,7 @@ interface AgentMessageProps {
   agentIcon?: string;
   agentAvatarUrl?: string;
   toolCallsCollapsed?: boolean;
+  isStreaming?: boolean;
 }
 
 export default function AgentMessage({
@@ -16,6 +18,7 @@ export default function AgentMessage({
   finalResponse,
   agentAvatarUrl,
   toolCallsCollapsed,
+  isStreaming = false,
 }: AgentMessageProps) {
   // In development, show all steps (to display debug panels)
   // In production, only show steps with meaningful content
@@ -41,7 +44,7 @@ export default function AgentMessage({
           />
         ) : (
           <div className="w-8 h-8 rounded-full bg-[var(--surface)] border border-[var(--border-color)] flex items-center justify-center p-1.5">
-<img src="/favicon.svg" alt="VibeLab" className="w-full h-full" />
+            <img src="/favicon.svg" alt="VibeLab" className="w-full h-full" />
           </div>
         )}
       </div>
@@ -101,8 +104,30 @@ export default function AgentMessage({
                     <ol className="list-decimal list-inside mb-2 space-y-1">{children}</ol>
                   ),
                   li: ({ children }) => <li className="ml-2">{children}</li>,
+                  pre: ({ children, node }) => {
+                    const codeNode = node?.children[0];
+                    const classNames =
+                      codeNode && 'properties' in codeNode
+                        ? codeNode.properties.className
+                        : undefined;
+                    const className = Array.isArray(classNames)
+                      ? classNames.join(' ')
+                      : typeof classNames === 'string'
+                        ? classNames
+                        : '';
+                    return !isStreaming && /language-mermaid/.test(className) ? (
+                      children
+                    ) : (
+                      <pre>{children}</pre>
+                    );
+                  },
                   // Style code
-                  code: ({ children }) => {
+                  code: ({ children, className }) => {
+                    const language = /language-(\w+)/.exec(className ?? '')?.[1];
+                    const normalizedCode = String(children).replace(/\n$/, '');
+                    if (!isStreaming && language === 'mermaid') {
+                      return <MermaidDiagram code={normalizedCode} />;
+                    }
                     const inline = !String(children).includes('\n');
                     return inline ? (
                       <code className="bg-[var(--code-inline-bg)] text-[var(--code-inline-text)] px-1.5 py-0.5 rounded text-xs font-mono">

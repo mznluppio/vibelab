@@ -145,6 +145,7 @@ export function ChatMessageList({
                 finalResponse={msg.content}
                 agentAvatarUrl={msg.agentAvatarUrl}
                 toolCallsCollapsed={toolCallsCollapsed}
+                isStreaming={isExecuting && msg.id === lastAiId}
               />
             );
           }
@@ -157,6 +158,7 @@ export function ChatMessageList({
               attachments={msg.attachments}
               onRetry={onRetry}
               showRetry={msg.type === 'ai' && msg.id === lastAiId && !isExecuting}
+              isStreaming={isExecuting && msg.id === lastAiId}
             />
           );
         })}

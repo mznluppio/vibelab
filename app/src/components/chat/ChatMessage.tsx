@@ -4,6 +4,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { SerializedAttachment } from '../../types/agent';
 import { AttachmentChip } from './AttachmentChip';
+import { MermaidDiagram } from './MermaidDiagram';
 
 interface ChatMessageProps {
   type: 'user' | 'ai';
@@ -23,6 +24,7 @@ interface ChatMessageProps {
   timestamp?: string;
   onRetry?: () => void;
   showRetry?: boolean;
+  isStreaming?: boolean;
 }
 
 export function ChatMessage({
@@ -36,6 +38,7 @@ export function ChatMessage({
   timestamp,
   onRetry,
   showRetry,
+  isStreaming = false,
 }: ChatMessageProps) {
   const isUser = type === 'user';
   const [copied, setCopied] = useState(false);
@@ -75,19 +78,17 @@ export function ChatMessage({
     />
   ) : (
     <div className="w-8 h-8 rounded-full bg-[var(--surface)] border-2 border-[var(--border-color)] flex items-center justify-center p-1.5">
-<img src="/favicon.svg" alt="VibeLab" className="w-full h-full" />
+      <img src="/favicon.svg" alt="VibeLab" className="w-full h-full" />
     </div>
   );
 
   return (
     <div className={`group/msg message my-2 flex gap-3 ${isUser ? 'flex-row-reverse' : ''}`}>
       {/* Avatar */}
-      <div className="message-avatar flex-shrink-0">
-        {avatar || defaultAvatar}
-      </div>
+      <div className="message-avatar flex-shrink-0">{avatar || defaultAvatar}</div>
 
       {/* Content - 60-30-10: User message (10% accent orange), AI message (30% secondary surface) */}
-      <div className="flex-1 max-w-[75%]">
+      <div className={isUser ? 'w-fit max-w-[92%] flex-none sm:max-w-[76%]' : 'flex-1 max-w-[75%]'}>
         {/* Attachments */}
         {attachments && attachments.length > 0 && (
           <div className="flex flex-wrap gap-1 mb-1.5">
@@ -99,9 +100,10 @@ export function ChatMessage({
         <div
           className={`
             message-bubble px-4 py-3 rounded-2xl text-sm leading-relaxed
-            ${isUser
-              ? 'bg-gradient-to-br from-[var(--primary)] to-[#ff8533] text-white border-2 border-[var(--primary)]/40 shadow-lg shadow-[var(--primary)]/20'
-              : 'bg-[var(--surface)] text-[var(--text)] border-2 border-[var(--border-color)]'
+            ${
+              isUser
+                ? 'user-message-bubble text-[var(--text)]'
+                : 'bg-[var(--surface)] text-[var(--text)] border-2 border-[var(--border-color)]'
             }
           `}
         >
@@ -113,28 +115,65 @@ export function ChatMessage({
                   // Style paragraphs
                   p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
                   // Style lists
-                  ul: ({ children }) => <ul className="list-disc list-inside mb-2 space-y-1">{children}</ul>,
-                  ol: ({ children }) => <ol className="list-decimal list-inside mb-2 space-y-1">{children}</ol>,
+                  ul: ({ children }) => (
+                    <ul className="list-disc list-inside mb-2 space-y-1">{children}</ul>
+                  ),
+                  ol: ({ children }) => (
+                    <ol className="list-decimal list-inside mb-2 space-y-1">{children}</ol>
+                  ),
                   li: ({ children }) => <li className="ml-2">{children}</li>,
+                  pre: ({ children, node }) => {
+                    const codeNode = node?.children[0];
+                    const classNames =
+                      codeNode && 'properties' in codeNode
+                        ? codeNode.properties.className
+                        : undefined;
+                    const className = Array.isArray(classNames)
+                      ? classNames.join(' ')
+                      : typeof classNames === 'string'
+                        ? classNames
+                        : '';
+                    return !isStreaming && /language-mermaid/.test(className) ? (
+                      children
+                    ) : (
+                      <pre>{children}</pre>
+                    );
+                  },
                   // Style code
-                  code: ({ children }) => {
+                  code: ({ children, className }) => {
+                    const language = /language-(\w+)/.exec(className ?? '')?.[1];
+                    const normalizedCode = String(children).replace(/\n$/, '');
+                    if (!isStreaming && language === 'mermaid') {
+                      return <MermaidDiagram code={normalizedCode} />;
+                    }
                     const inline = !String(children).includes('\n');
                     return inline ? (
-                      <code className="bg-black/20 px-1.5 py-0.5 rounded text-xs font-mono">{children}</code>
+                      <code className="bg-black/20 px-1.5 py-0.5 rounded text-xs font-mono">
+                        {children}
+                      </code>
                     ) : (
-                      <code className="block bg-black/20 px-3 py-2 rounded my-2 text-xs font-mono overflow-x-auto">{children}</code>
+                      <code className="block bg-black/20 px-3 py-2 rounded my-2 text-xs font-mono overflow-x-auto">
+                        {children}
+                      </code>
                     );
                   },
                   // Style links
                   a: ({ href, children }) => (
-                    <a href={href} className="underline hover:opacity-80" target="_blank" rel="noopener noreferrer">
+                    <a
+                      href={href}
+                      className="underline hover:opacity-80"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
                       {children}
                     </a>
                   ),
                   // Style headings
                   h1: ({ children }) => <h1 className="text-xl font-bold mb-2 mt-3">{children}</h1>,
                   h2: ({ children }) => <h2 className="text-lg font-bold mb-2 mt-3">{children}</h2>,
-                  h3: ({ children }) => <h3 className="text-base font-bold mb-2 mt-2">{children}</h3>,
+                  h3: ({ children }) => (
+                    <h3 className="text-base font-bold mb-2 mt-2">{children}</h3>
+                  ),
                 }}
               >
                 {content}
@@ -146,7 +185,9 @@ export function ChatMessage({
         </div>
 
         {/* Message footer: timestamp + hover actions (Claude-style) */}
-        <div className={`flex items-center gap-1.5 mt-1 opacity-0 group-hover/msg:opacity-100 transition-opacity ${isUser ? 'justify-end' : 'justify-start'}`}>
+        <div
+          className={`flex items-center gap-1.5 mt-1 opacity-0 group-hover/msg:opacity-100 transition-opacity ${isUser ? 'justify-end' : 'justify-start'}`}
+        >
           {formattedTime && (
             <span className="text-[10px] text-[var(--text-muted)]">{formattedTime}</span>
           )}
@@ -179,7 +220,9 @@ export function ChatMessage({
                 className="tool-call bg-[var(--surface)] border-2 border-[var(--border-color)] rounded-lg px-3 py-2 text-xs text-[var(--text)]/80 font-mono"
               >
                 <strong>{tool.name}</strong>
-                {tool.description && <span className="ml-2 text-[var(--text)]/60">{tool.description}</span>}
+                {tool.description && (
+                  <span className="ml-2 text-[var(--text)]/60">{tool.description}</span>
+                )}
               </div>
             ))}
           </div>
