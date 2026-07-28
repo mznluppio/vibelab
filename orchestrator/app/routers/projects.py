@@ -715,6 +715,7 @@ async def create_project_from_payload(
                 "description": payload.description,
                 "owner_id": current_user.id,
                 "team_id": current_user.default_team_id,
+                "visibility": "private",
                 "runtime": resolved_runtime,
                 "source_path": canonical_source,
             }
@@ -3564,9 +3565,20 @@ async def fork_project(
                     description=f"Forked from: {source_project.description or source_project.name}",
                     owner_id=current_user.id,
                     team_id=current_user.default_team_id,
+                    visibility="private",
                 )
                 db.add(forked_project)
                 await db.flush()
+                from ..models_team import ProjectMembership
+
+                db.add(
+                    ProjectMembership(
+                        project_id=forked_project.id,
+                        user_id=current_user.id,
+                        role="admin",
+                        granted_by_id=current_user.id,
+                    )
+                )
                 break
             except Exception as e:
                 if (

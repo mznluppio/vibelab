@@ -208,11 +208,21 @@ export function NavigationSidebar({
   // Pending approvals — drives the badge on the Automations nav item.
   // The hook polls every 30s and is shared with /automations/approvals so
   // the two surfaces stay in lockstep without extra coordination.
+  const {
+    activeTeam,
+    teams,
+    switchTeam,
+    refreshTeams,
+    can,
+    canAccessMarketplace,
+    canAccessAutomations,
+    canCreateTeams,
+    teamSwitchKey,
+  } = useTeam();
   const { count: pendingApprovalsCount } = usePendingApprovals({
     pollMs: 30_000,
-    enabled: isAuthenticated,
+    enabled: isAuthenticated && canAccessAutomations,
   });
-  const { activeTeam, teams, switchTeam, refreshTeams, can, teamSwitchKey } = useTeam();
   const canChat = can('chat.send');
   const [showUserDropdown, setShowUserDropdown] = useState(false);
   const [creditBalance, setCreditBalance] = useState<CreditBalanceResponse | null>(null);
@@ -541,7 +551,7 @@ export function NavigationSidebar({
                       </button>
                     ))}
                     {/* Create Team */}
-                    {!showCreateTeam ? (
+                    {canCreateTeams && !showCreateTeam ? (
                       <button
                         onClick={() => setShowCreateTeam(true)}
                         className="w-full flex items-center gap-2.5 px-3 py-1.5 hover:bg-[var(--surface-hover)] transition-colors text-left"
@@ -551,7 +561,7 @@ export function NavigationSidebar({
                         </div>
                         <span className="text-[11px] text-[var(--text-muted)]">Create Team</span>
                       </button>
-                    ) : (
+                    ) : canCreateTeams ? (
                       <div className="px-3 py-2 space-y-2">
                         <input
                           type="text"
@@ -587,7 +597,7 @@ export function NavigationSidebar({
                           </button>
                         </div>
                       </div>
-                    )}
+                    ) : null}
 
                     <div className="h-px bg-[var(--border)] mx-3 my-1" />
                   </>
@@ -768,7 +778,7 @@ export function NavigationSidebar({
               </button>
             </Tooltip>
 
-            <Tooltip
+            {canAccessAutomations && <Tooltip
               content={
                 pendingApprovalsCount > 0
                   ? `Automations · ${pendingApprovalsCount} pending approval${pendingApprovalsCount === 1 ? '' : 's'}`
@@ -816,7 +826,7 @@ export function NavigationSidebar({
                   </span>
                 )}
               </button>
-            </Tooltip>
+            </Tooltip>}
 
             <Tooltip content="Workspaces" shortcut={`${modKey} D`} side="right" delay={200}>
               <button
@@ -834,7 +844,7 @@ export function NavigationSidebar({
               </button>
             </Tooltip>
 
-            <Tooltip content="Marketplace" shortcut={`${modKey} M`} side="right" delay={200}>
+            {canAccessMarketplace && <Tooltip content="Marketplace" shortcut={`${modKey} M`} side="right" delay={200}>
               <button
                 onClick={() => navigate('/marketplace?type=app')}
                 className={
@@ -848,7 +858,7 @@ export function NavigationSidebar({
                   <span className={labelClass(activePage === 'marketplace')}>Marketplace</span>
                 )}
               </button>
-            </Tooltip>
+            </Tooltip>}
 
             {/* Library — flyout (#307 follow-up). Hover OR click opens a
                 popover anchored to the right of the sidebar listing all

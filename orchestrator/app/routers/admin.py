@@ -44,7 +44,8 @@ from ..models import (
     UserPurchasedAgent,
     UserPurchasedBase,
 )
-from ..models_team import Team
+from ..models_team import Team, TeamMembership
+from ..permissions import get_platform_settings
 from ..services.git_providers.url_utils import strip_git_credentials as _strip_git_credentials
 from ..services.litellm_service import litellm_service
 from ..services.marketplace_constants import TESSLATE_OFFICIAL_ID
@@ -52,6 +53,46 @@ from ..users import current_superuser
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/admin", tags=["admin"])
+
+
+class TeamGovernanceUpdate(BaseModel):
+    automatically_create_personal_teams: bool | None = None
+    allow_user_team_creation: bool | None = None
+
+
+class TeamCreationOverrideUpdate(BaseModel):
+    can_create_teams_override: bool | None = None
+
+
+@router.get("/platform/team-governance")
+async def get_team_governance(
+    admin: User = Depends(current_superuser),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, bool]:
+    """Return the minimal platform-wide Team governance policy."""
+    settings = await get_platform_settings(db)
+    return {
+        "automatically_create_personal_teams": settings.automatically_create_personal_teams,
+        "allow_user_team_creation": settings.allow_user_team_creation,
+    }
+
+
+@router.patch("/platform/team-governance")
+async def update_team_governance(
+    body: TeamGovernanceUpdate,
+    admin: User = Depends(current_superuser),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, bool]:
+    """Update platform-wide Team governance policy (superuser only)."""
+    settings = await get_platform_settings(db, create=True)
+    changes = body.model_dump(exclude_unset=True)
+    for field, value in changes.items():
+        setattr(settings, field, value)
+    await db.commit()
+    return {
+        "automatically_create_personal_teams": settings.automatically_create_personal_teams,
+        "allow_user_team_creation": settings.allow_user_team_creation,
+    }
 
 
 # ============================================================================
@@ -1669,8 +1710,7 @@ async def get_available_models(
             from ..config import get_settings
 
             settings = get_settings()
-            models_str = settings.litellm_default_models
-            models = [m.strip() for m in models_str.split(",") if m.strip()]
+            models = settings.default_models_list
 
         if not models:
             models = [settings.default_model]
@@ -1683,9 +1723,7 @@ async def get_available_models(
         from ..config import get_settings
 
         settings = get_settings()
-        models_str = settings.litellm_default_models
-        models = [m.strip() for m in models_str.split(",") if m.strip()]
-        return {"models": models if models else [settings.default_model]}
+        return {"models": settings.default_models_list}
 
 
 # ============================================================================
@@ -1894,6 +1932,7 @@ async def list_users(
                     "is_deleted": user.is_deleted,
                     "is_verified": user.is_verified,
                     "is_superuser": user.is_superuser,
+                    "can_create_teams_override": user.can_create_teams_override,
                     "total_credits": team.total_credits if team else 0,
                     "bundled_credits": team.bundled_credits if team else 0,
                     "purchased_credits": team.purchased_credits if team else 0,
@@ -2035,6 +2074,17 @@ async def get_user_detail(
             team_res = await db.execute(select(Team).where(Team.id == user.default_team_id))
             user_team = team_res.scalar_one_or_none()
 
+        active_teams_result = await db.execute(
+            select(Team.id, Team.name, Team.slug, TeamMembership.role)
+            .join(TeamMembership, TeamMembership.team_id == Team.id)
+            .where(
+                TeamMembership.user_id == user.id,
+                TeamMembership.is_active.is_(True),
+            )
+            .order_by(Team.created_at)
+        )
+        active_teams = active_teams_result.all()
+
         # Get project count
         project_count = await db.scalar(
             select(func.count(Project.id)).where(Project.owner_id == user.id)
@@ -2087,6 +2137,11 @@ async def get_user_detail(
             "deleted_reason": user.deleted_reason,
             "is_verified": user.is_verified,
             "is_superuser": user.is_superuser,
+            "can_create_teams_override": user.can_create_teams_override,
+            "active_teams": [
+                {"id": str(team_id), "name": name, "slug": slug, "role": role}
+                for team_id, name, slug, role in active_teams
+            ],
             "bundled_credits": user_team.bundled_credits if user_team else 0,
             "purchased_credits": user_team.purchased_credits if user_team else 0,
             "total_credits": user_team.total_credits if user_team else 0,
@@ -2116,6 +2171,35 @@ async def get_user_detail(
     except Exception as e:
         logger.error(f"Error getting user {user_id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to get user details") from e
+
+
+@router.patch("/users/{user_id}/team-creation")
+async def update_user_team_creation_override(
+    user_id: str,
+    body: TeamCreationOverrideUpdate,
+    admin: User = Depends(current_superuser),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, bool | None]:
+    """Set or clear a user-specific exception to the team creation policy."""
+    target = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+    if target is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    previous = target.can_create_teams_override
+    target.can_create_teams_override = body.can_create_teams_override
+    await db.commit()
+    await log_admin_action(
+        db,
+        admin,
+        "user.team_creation_override_changed",
+        "user",
+        target.id,
+        extra_data={
+            "previous": previous,
+            "current": target.can_create_teams_override,
+        },
+    )
+    return {"can_create_teams_override": target.can_create_teams_override}
 
 
 @router.get("/users/{user_id}/projects")

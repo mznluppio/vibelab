@@ -581,10 +581,15 @@ def _run_pipeline(
 
 def _default_repair_model_name() -> str:
     """Return the model identifier used for fuzzy-edit repair passes."""
+    central_models = [
+        model.strip()
+        for model in os.environ.get("LITELLM_DEFAULT_MODELS", "vibelab-default").split(",")
+        if model.strip()
+    ]
     return (
         os.environ.get("TESSLATE_REPAIR_MODEL")
         or os.environ.get("COMPACTION_SUMMARY_MODEL")
-        or "openai/gpt-4o-mini"
+        or (central_models[0] if central_models else "vibelab-default")
     )
 
 
@@ -599,8 +604,8 @@ async def llm_repair(
 
     Calls :func:`app.agent.models.create_model_adapter` with
     the cheap repair model from the environment
-    (``TESSLATE_REPAIR_MODEL``, ``COMPACTION_SUMMARY_MODEL``, or the
-    ``openai/gpt-4o-mini`` fallback), asks it to return corrected
+    (``TESSLATE_REPAIR_MODEL``, ``COMPACTION_SUMMARY_MODEL``, or the first
+    centrally managed LiteLLM alias), asks it to return corrected
     ``old_str`` / ``new_str`` values as strict JSON, and parses the
     response.
 

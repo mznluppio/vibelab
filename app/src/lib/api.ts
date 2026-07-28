@@ -309,16 +309,20 @@ export const authApi = {
   },
 
   // Register new user (fastapi-users endpoint)
-  register: async (name: string, email: string, password: string) => {
+  register: async (name: string, email: string, password: string, invitationToken?: string) => {
     // Check if there's a referrer in sessionStorage
     const referred_by = sessionStorage.getItem('referrer');
 
-    const response = await api.post('/api/auth/register', {
-      name,
-      email,
-      password,
-      referral_code: referred_by || undefined,
-    });
+    const response = await api.post(
+      '/api/auth/register',
+      {
+        name,
+        email,
+        password,
+        referral_code: referred_by || undefined,
+      },
+      invitationToken ? { headers: { 'X-VibeLab-Invitation-Token': invitationToken } } : undefined
+    );
     return response.data;
   },
 
@@ -1087,11 +1091,13 @@ export const chatApi = {
   },
   sendApprovalResponse: async (
     approvalId: string,
-    response: 'allow_once' | 'allow_all' | 'stop' | 'publish_and_activate' | 'save_draft' | 'cancel'
+    response: 'allow_once' | 'allow_all' | 'stop' | 'publish_and_activate' | 'save_draft' | 'cancel' | 'approve_as_is' | 'approve_to_be_and_build' | 'request_changes',
+    comment?: string,
   ): Promise<void> => {
     await api.post('/api/chat/agent/approval', {
       approval_id: approvalId,
       response: response,
+      ...(comment ? { comment } : {}),
     });
   },
 
@@ -3959,6 +3965,8 @@ export interface Team {
   signup_bonus_credits: number;
   deployed_projects_count: number;
   support_tier: string;
+  marketplace_access_for_non_admins: boolean;
+  automations_access_for_non_admins: boolean;
   created_at: string;
 }
 
@@ -3970,6 +3978,8 @@ export interface TeamList {
   is_personal: boolean;
   subscription_tier: string;
   role: string | null;
+  marketplace_access_for_non_admins: boolean;
+  automations_access_for_non_admins: boolean;
 }
 
 export interface TeamMember {
@@ -4035,6 +4045,10 @@ export const teamsApi = {
     const response = await api.get('/api/teams/');
     return response.data;
   },
+  async getCapabilities(): Promise<{ can_create_teams: boolean }> {
+    const response = await api.get('/api/teams/capabilities');
+    return response.data;
+  },
   async get(slug: string): Promise<Team> {
     const response = await api.get(`/api/teams/${slug}`);
     return response.data;
@@ -4045,7 +4059,13 @@ export const teamsApi = {
   },
   async update(
     slug: string,
-    data: Partial<{ name: string; slug: string; avatar_url: string | null }>
+    data: Partial<{
+      name: string;
+      slug: string;
+      avatar_url: string | null;
+      marketplace_access_for_non_admins: boolean;
+      automations_access_for_non_admins: boolean;
+    }>
   ): Promise<Team> {
     const response = await api.patch(`/api/teams/${slug}`, data);
     return response.data;

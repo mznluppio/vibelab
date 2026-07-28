@@ -63,7 +63,7 @@ export default function Chat() {
   const currentModelSupportsVision = currentModelId ? modelVisionMap[currentModelId] : undefined;
 
   // Edit mode
-  const [editMode, setEditMode] = useState<EditMode>('ask');
+  const [editMode, setEditMode] = useState<EditMode>('allow');
 
   // Tool calls collapsed by default
   const [toolCallsCollapsed, setToolCallsCollapsed] = useState(true);
@@ -359,10 +359,14 @@ export default function Chat() {
         | 'stop'
         | 'publish_and_activate'
         | 'save_draft'
-        | 'cancel',
-      toolName: string
+        | 'cancel'
+        | 'approve_as_is'
+        | 'approve_to_be_and_build'
+        | 'request_changes',
+      toolName: string,
+      comment?: string,
     ) => {
-      await handleApproval(approvalId, response);
+      await handleApproval(approvalId, response, comment);
       const WRITE_TOOLS = new Set(['write_file', 'patch_file', 'multi_edit']);
       if (response === 'allow_all' && WRITE_TOOLS.has(toolName)) {
         setEditMode('allow');

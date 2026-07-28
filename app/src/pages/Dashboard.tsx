@@ -1228,7 +1228,11 @@ export default function Dashboard() {
               </>
             ) : (
               <div className="text-center py-16 flex flex-col items-center gap-4">
-                <p className="text-[var(--text-muted)] text-xs">No projects yet</p>
+                <p className="text-[var(--text-muted)] text-xs">
+                  {activeTeam
+                    ? 'No projects yet'
+                    : 'You do not have access to a team workspace yet. Ask a VibeLab administrator to invite you.'}
+                </p>
                 {canCreateProject && (
                   <div className="flex items-center gap-2">
                     <button

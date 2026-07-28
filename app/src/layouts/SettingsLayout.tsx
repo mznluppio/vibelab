@@ -22,7 +22,13 @@ const settingsTabs = [
 export function SettingsLayout() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { activeTeam, can } = useTeam();
+  const { activeTeam, can, membership } = useTeam();
+  const isTeamAdmin = membership?.role === 'admin';
+  const visibleSettingsTabs = settingsTabs.filter(
+    (tab) =>
+      isTeamAdmin ||
+      !['/settings/api-keys', '/settings/marketplace-sources', '/settings/cloud'].includes(tab.path)
+  );
 
   const isTeamSection = location.pathname.startsWith('/settings/team');
   const isMessagingSection = location.pathname.startsWith('/settings/messaging');
@@ -75,7 +81,7 @@ export function SettingsLayout() {
           className="h-10 flex items-center gap-6 flex-shrink-0 border-b border-[var(--border)]"
           style={{ paddingLeft: '11px', paddingRight: '10px' }}
         >
-          {settingsTabs.map((tab) => (
+          {visibleSettingsTabs.map((tab) => (
             <button
               key={tab.path}
               onClick={() => navigate(tab.path)}

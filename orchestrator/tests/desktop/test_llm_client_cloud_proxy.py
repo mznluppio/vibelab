@@ -38,6 +38,10 @@ class _FakeDB:
         self._calls += 1
         return _FakeResult(self._user if self._calls == 1 else None)
 
+    @property
+    def calls(self) -> int:
+        return self._calls
+
 
 @pytest.fixture
 def desktop_paired(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
@@ -80,5 +84,28 @@ async def test_no_cloud_token_does_not_route_to_proxy(
     from app.services.model_adapters import get_llm_client
 
     user = _FakeUser()
-    with pytest.raises(ValueError, match="No LLM access configured"):
+    with pytest.raises(ValueError, match="AI service is currently unavailable"):
         await get_llm_client(user.id, "claude-sonnet-4.6", _FakeDB(user))  # type: ignore[arg-type]
+
+
+@pytest.mark.asyncio
+async def test_server_never_falls_back_to_byok_when_central_litellm_is_missing(
+    desktop_paired, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A server deployment fails safely instead of using a user's provider key."""
+    monkeypatch.setenv("DEPLOYMENT_MODE", "docker")
+    monkeypatch.setenv("OPENAI_API_KEY", "must-not-be-used")
+    monkeypatch.setenv("LITELLM_API_BASE", "")
+    monkeypatch.setenv("LITELLM_MASTER_KEY", "")
+
+    from app.config import get_settings
+    from app.services.model_adapters import get_llm_client
+
+    get_settings.cache_clear()
+    user = _FakeUser()
+    db = _FakeDB(user)
+    with pytest.raises(ValueError, match="AI service is currently unavailable"):
+        await get_llm_client(user.id, "vibelab-default", db)  # type: ignore[arg-type]
+
+    # One query fetches the user. A second query would indicate BYOK fallback.
+    assert db.calls == 1

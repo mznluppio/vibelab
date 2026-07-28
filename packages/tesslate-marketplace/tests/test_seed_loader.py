@@ -128,6 +128,43 @@ async def test_load_seeds_populates_fresh_database(env) -> None:
 
 
 @pytest.mark.asyncio
+async def test_load_seeds_uses_configured_hub_name_for_official_creator(env) -> None:
+    """Visible first-party provenance follows the hub name, not its handle."""
+    await load_seeds()
+
+    async with session_scope() as session:
+        agent = (
+            await session.execute(select(Item).where(Item.slug == "tesslate-agent"))
+        ).scalar_one()
+
+    # The fixture deliberately uses a non-production name to prove that this
+    # is configuration-driven; the stable `tesslate` owner handle is retained.
+    assert agent.creator_handle == "tesslate"
+    assert agent.creator_display_name == "Tesslate Test Hub"
+
+
+@pytest.mark.asyncio
+async def test_load_seeds_includes_assist_to_build_official_agent(env) -> None:
+    """The workflow agent remains a normal, installable official catalog item."""
+    await load_seeds()
+
+    async with session_scope() as session:
+        agent = (
+            await session.execute(select(Item).where(Item.slug == "assist-to-build"))
+        ).scalar_one()
+
+    assert agent.kind == "agent"
+    assert agent.creator_handle == "tesslate"
+    assert agent.creator_display_name == "Tesslate Test Hub"
+    async with session_scope() as session:
+        version = (
+            await session.execute(select(ItemVersion).where(ItemVersion.item_id == agent.id))
+        ).scalar_one()
+    assert version.manifest["mode"] == "agent"
+    assert version.manifest["is_forkable"] is False
+
+
+@pytest.mark.asyncio
 async def test_load_seeds_is_idempotent(env) -> None:
     """Re-running the loader must not create duplicate rows or
     duplicate ``(kind, slug, version)`` ``upsert`` events for unchanged

@@ -4,7 +4,7 @@ import sys
 from logging.config import fileConfig
 
 from alembic import context
-from sqlalchemy import pool
+from sqlalchemy import event, pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
@@ -68,6 +68,24 @@ def run_migrations_offline() -> None:
 
 def do_run_migrations(connection: Connection) -> None:
     """Helper function to run migrations with a connection."""
+    # Alembic creates its own version table with VARCHAR(32). Widen it on
+    # the first revision transition, before any later revision identifier is
+    # written. This preserves already-released revision IDs without editing
+    # historical migrations.
+    if connection.dialect.name == "postgresql":
+        widened = False
+
+        def widen_alembic_version(_conn, _cursor, statement, _parameters, _context, _executemany):
+            nonlocal widened
+            if widened or not statement.lstrip().upper().startswith("UPDATE ALEMBIC_VERSION"):
+                return
+            _conn.exec_driver_sql(
+                "ALTER TABLE alembic_version ALTER COLUMN version_num TYPE VARCHAR(128)"
+            )
+            widened = True
+
+        event.listen(connection, "before_cursor_execute", widen_alembic_version)
+
     # SQLite lacks ALTER TABLE for most column changes — batch mode
     # emulates it via copy-and-swap. No-op on Postgres.
     is_sqlite = connection.dialect.name == "sqlite"

@@ -42,11 +42,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
-COPY --from=builder /build/app /app/app
-COPY --from=builder /build/scripts /app/scripts
-COPY --from=builder /build/alembic /app/alembic
-COPY --from=builder /build/alembic.ini /app/alembic.ini
-COPY --from=builder /build/spec /app/spec
+# `scripts/init_db.py` rebuilds seed bundles during every idempotent startup.
+# Keep the package tree writable by the non-root runtime user so the initial
+# boot cannot silently skip bundle generation.
+COPY --from=builder --chown=marketplace:marketplace /build/app /app/app
+COPY --from=builder --chown=marketplace:marketplace /build/scripts /app/scripts
+COPY --from=builder --chown=marketplace:marketplace /build/alembic /app/alembic
+COPY --from=builder --chown=marketplace:marketplace /build/alembic.ini /app/alembic.ini
+COPY --from=builder --chown=marketplace:marketplace /build/spec /app/spec
 
 USER marketplace
 

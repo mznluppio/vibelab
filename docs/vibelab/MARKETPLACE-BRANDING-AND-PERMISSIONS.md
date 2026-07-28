@@ -55,6 +55,6 @@ Skills can be attached only to an editable personal agent; authoring and
 publication of official skills still belongs to the federated hub. MCP
 credentials remain per-user/team connector configuration, not marketplace
 content. Themes have their own legacy mutation routes and are outside this
-agent-specific policy. The local `local://legrand-official` ingestion path is
-still incomplete; production official content should use a reachable internal
-federated hub until that separate ingestion issue is resolved.
+agent-specific policy. The official source now uses the reachable internal hub
+documented in [LEGRAND-MARKETPLACE.md](LEGRAND-MARKETPLACE.md), rather than the
+incomplete `local://legrand-official` ingestion path.

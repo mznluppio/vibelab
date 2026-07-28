@@ -103,7 +103,23 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
             logger.error(f"Failed to create LiteLLM key for user {user.username}: {e}")
             logger.warning(f"User {user.username} registered WITHOUT LiteLLM key")
 
-        # Create personal team (RBAC). The library/theme defaults are NOT
+        # Invitations take precedence over personal-team provisioning.  This
+        # makes email invitation registration land directly in the inviting
+        # team; link invitations are accepted immediately after authenticated
+        # redirect by the existing public invite page.
+        accepted_team_id = await self._auto_accept_pending_invites(user)
+
+        # Create a personal team only when the platform policy permits it and
+        # registration did not already join the user to an invited team.
+        invitation_context = await self._has_valid_invitation_context(request)
+        if accepted_team_id is None and not invitation_context:
+            from .permissions import get_platform_settings
+
+            platform_settings = await get_platform_settings(self.user_db.session)
+            if platform_settings.automatically_create_personal_teams:
+                await self._create_personal_team(user)
+
+        # The library/theme defaults are NOT
         # provisioned at signup anymore — the system default agent is
         # code-resident (see ``services.default_agent``) and surfaces in
         # ``/api/marketplace/my-agents`` derivationally. Themes follow the
@@ -121,8 +137,6 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
         #     an empty library AND aborting the txn so the subsequent
         #     theme-insert + auto-accept-invites blocks failed with
         #     ``InFailedSQLTransaction``.
-        await self._create_personal_team(user)
-
         # Send Discord signup notification
         try:
             from .services.discord_service import discord_service
@@ -156,9 +170,6 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
                 logger.info(f"Tracked referral conversion: {user.referred_by} -> {user.username}")
             except Exception as e:
                 logger.error(f"Failed to track referral conversion: {e}")
-
-        # Auto-accept any pending team invitations matching this email
-        await self._auto_accept_pending_invites(user)
 
     async def _create_personal_team(self, user):
         """Create a personal team for a newly registered user."""
@@ -220,8 +231,47 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
         except Exception as e:
             logger.error(f"Failed to create personal team for {user.username}: {e}")
 
+    async def _has_valid_invitation_context(self, request: Request | None) -> bool:
+        """Check an optional registration invitation token without mutating state.
+
+        Browser registration can carry the token in the
+        ``X-VibeLab-Invitation-Token`` header.  This keeps personal-team
+        provisioning from racing a valid link invitation even when the
+        platform has explicitly enabled personal teams.  Acceptance remains
+        token-driven on the existing invitation endpoint after authentication.
+        """
+        if request is None:
+            return False
+        token = request.headers.get("X-VibeLab-Invitation-Token")
+        if not token:
+            return False
+
+        from sqlalchemy import and_, select
+
+        from .models_team import TeamInvitation
+
+        invitation = (
+            await self.user_db.session.execute(
+                select(TeamInvitation).where(
+                    and_(
+                        TeamInvitation.token == token,
+                        TeamInvitation.revoked_at.is_(None),
+                        TeamInvitation.expires_at > datetime.now(UTC),
+                    )
+                )
+            )
+        ).scalar_one_or_none()
+        return invitation is not None and (
+            invitation.max_uses is None or invitation.use_count < invitation.max_uses
+        )
+
     async def _auto_accept_pending_invites(self, user):
-        """Auto-accept any pending team invitations matching this user's email."""
+        """Accept pending email invitations and activate the invited team.
+
+        Returns the selected team ID, or ``None`` when no invitation was
+        accepted.  Link invitations deliberately remain token-driven because
+        they are not bound to an email address.
+        """
         import logging
 
         logger = logging.getLogger(__name__)
@@ -240,27 +290,48 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
                         TeamInvitation.revoked_at.is_(None),
                         TeamInvitation.expires_at > datetime.now(UTC),
                     )
-                )
+                ).order_by(TeamInvitation.created_at.desc())
             )
             invites = result.scalars().all()
+            accepted_team_id = None
             for invite in invites:
                 if invite.max_uses is not None and invite.use_count >= invite.max_uses:
                     continue
-                membership = TeamMembership(
-                    team_id=invite.team_id,
-                    user_id=user.id,
-                    role=invite.role,
-                    invited_by_id=invite.invited_by_id,
+
+                membership_result = await self.user_db.session.execute(
+                    select(TeamMembership).where(
+                        TeamMembership.team_id == invite.team_id,
+                        TeamMembership.user_id == user.id,
+                    )
                 )
-                self.user_db.session.add(membership)
+                membership = membership_result.scalar_one_or_none()
+                if membership is None:
+                    membership = TeamMembership(
+                        team_id=invite.team_id,
+                        user_id=user.id,
+                        role=invite.role,
+                        invited_by_id=invite.invited_by_id,
+                    )
+                    self.user_db.session.add(membership)
+                else:
+                    membership.is_active = True
+                    membership.role = invite.role
+                    membership.invited_by_id = invite.invited_by_id
+
                 invite.accepted_at = datetime.now(UTC)
                 invite.accepted_by_id = user.id
                 invite.use_count += 1
-            if invites:
+                if accepted_team_id is None:
+                    accepted_team_id = invite.team_id
+
+            if accepted_team_id is not None:
+                user.default_team_id = accepted_team_id
                 await self.user_db.session.commit()
-                logger.info(f"Auto-accepted {len(invites)} pending invite(s) for {user.email}")
+                logger.info("Auto-accepted invitation(s) for %s", user.email)
+            return accepted_team_id
         except Exception as e:
             logger.error(f"Failed to auto-accept invites for {user.email}: {e}")
+            return None
 
     async def on_after_login(
         self, user: User, request: Request | None = None, response: Response | None = None

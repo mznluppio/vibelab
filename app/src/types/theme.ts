@@ -277,11 +277,11 @@ export function validateTheme(theme: unknown): {
  */
 export const DEFAULT_FALLBACK_THEME: Theme = {
   id: 'default-dark',
-  name: 'Default Dark',
+  name: 'VibeLab Dark',
   mode: 'dark',
   author: 'VibeLab by Legrand',
   version: '1.0.0',
-  description: 'The default VibeLab dark theme',
+  description: 'The official VibeLab dark theme',
   colors: {
     primary: '#0055A4',
     primaryHover: '#004580',
@@ -315,8 +315,8 @@ export const DEFAULT_FALLBACK_THEME: Theme = {
       track: 'transparent',
     },
     code: {
-      inlineBackground: 'rgba(248, 149, 33, 0.12)',
-      inlineText: '#fbbf68',
+      inlineBackground: 'rgba(0, 85, 164, 0.12)',
+      inlineText: '#00A3E0',
       blockBackground: '#0a0a0c',
       blockBorder: '#1c1e21',
       blockText: '#e2e2e2',

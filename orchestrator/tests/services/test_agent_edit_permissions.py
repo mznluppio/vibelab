@@ -31,6 +31,14 @@ def test_standard_user_cannot_edit_an_official_agent() -> None:
     assert can_edit_agent(agent, official_source, user) is False
 
 
+def test_assist_to_build_is_read_only_for_a_standard_user() -> None:
+    user = _user()
+    agent = _agent(created_by_user_id=user.id, slug="assist-to-build")
+    official_source = SimpleNamespace(trust_level="official")
+
+    assert can_edit_agent(agent, official_source, user) is False
+
+
 def test_creator_can_edit_a_personal_agent() -> None:
     user = _user()
     agent = _agent(created_by_user_id=user.id)

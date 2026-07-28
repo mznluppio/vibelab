@@ -406,7 +406,9 @@ async def _upsert_item(
             # pass can identify rows the loader owns. Seed JSON should not
             # set this field; if it does, the loader's value wins.
             creator_handle=SEED_OWNER_HANDLE,
-            creator_display_name=entry.get("creator_display_name") or "Tesslate",
+            # The reserved owner handle remains a reconciliation key; the
+            # visible creator follows the configured hub identity.
+            creator_display_name=entry.get("creator_display_name") or settings.hub_display_name,
             creator_avatar_url=entry.get("creator_avatar_url"),
             git_repo_url=entry.get("git_repo_url"),
             homepage_url=entry.get("homepage_url"),
@@ -457,6 +459,7 @@ async def _upsert_item(
         # Always reclaim ownership — covers rows seeded before SEED_OWNER_HANDLE
         # enforcement was added, so reconcile finds them.
         item.creator_handle = SEED_OWNER_HANDLE
+        item.creator_display_name = entry.get("creator_display_name") or settings.hub_display_name
         item.git_repo_url = entry.get("git_repo_url", item.git_repo_url)
         item.homepage_url = entry.get("homepage_url", item.homepage_url)
 

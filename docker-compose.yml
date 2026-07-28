@@ -83,6 +83,113 @@ services:
       retries: 5
     command: redis-server --maxmemory 256mb --maxmemory-policy volatile-lru --appendonly yes
 
+  # Central, private LLM gateway for local VibeLab development. The proxy has
+  # no host port: only backend services on tesslate-network can reach it.
+  litellm:
+    image: ghcr.io/berriai/litellm:main-v1.81.9-stable
+    container_name: vibelab-litellm
+    restart: unless-stopped
+    # Keep the rest of the local stack usable before Azure credentials are
+    # available. The validation script prints variable names only, then this
+        # container serves an explicit disabled state that fails readiness
+        # (rather than crash-looping). Recreate it after configuring the
+        # missing values.
+    entrypoint:
+      - /bin/sh
+      - -ec
+      - |
+        if ! /usr/local/bin/validate-litellm-env; then
+          echo "LiteLLM is disabled until Azure AI Foundry configuration is complete." >&2
+          exec python /usr/local/bin/litellm-disabled-server.py
+        fi
+        exec litellm --port 4000 --config /app/config.yaml
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-tesslate_user}:${POSTGRES_PASSWORD:-dev_password_change_me}@postgres:5432/${POSTGRES_DB:-tesslate_dev}
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-}
+      AZURE_API_BASE: ${AZURE_API_BASE:-}
+      AZURE_API_KEY: ${AZURE_API_KEY:-}
+      AZURE_API_VERSION: ${AZURE_API_VERSION:-}
+      # LiteLLM resolves the entire provider-prefixed model value from env,
+      # keeping Azure deployment names out of the checked-in proxy config.
+      AZURE_AI_DEFAULT_MODEL: azure/${AZURE_AI_DEFAULT_DEPLOYMENT:-}
+      AZURE_AI_FAST_MODEL: azure/${AZURE_AI_FAST_DEPLOYMENT:-}
+      AZURE_AI_REASONING_MODEL: azure/${AZURE_AI_REASONING_DEPLOYMENT:-}
+    volumes:
+      - ./k8s/litellm/vibelab-azure-config.yaml:/app/config.yaml:ro
+      - ./scripts/validate-litellm-env.sh:/usr/local/bin/validate-litellm-env:ro
+      - ./scripts/setup-local-env.py:/usr/local/bin/setup-local-env.py:ro
+      - ./scripts/litellm-disabled-server.py:/usr/local/bin/litellm-disabled-server.py:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - tesslate-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4000/health/readiness', timeout=5).read()"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  marketplace-postgres:
+    image: postgres:15-alpine
+    container_name: vibelab-marketplace-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${MARKETPLACE_POSTGRES_DB:-vibelab_marketplace}
+      POSTGRES_USER: ${MARKETPLACE_POSTGRES_USER:-vibelab_marketplace}
+      # Set this development-only value in .env. It is intentionally not
+      # defaulted here so no credential is committed to the repository.
+      POSTGRES_PASSWORD: ${MARKETPLACE_POSTGRES_PASSWORD:?Set MARKETPLACE_POSTGRES_PASSWORD in .env}
+    volumes:
+      - marketplace-postgres-data:/var/lib/postgresql/data
+    networks:
+      - tesslate-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${MARKETPLACE_POSTGRES_USER:-vibelab_marketplace} -d ${MARKETPLACE_POSTGRES_DB:-vibelab_marketplace}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  marketplace:
+    build:
+      context: ./packages/tesslate-marketplace
+      dockerfile: Dockerfile
+    container_name: vibelab-marketplace
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${MARKETPLACE_POSTGRES_USER:-vibelab_marketplace}:${MARKETPLACE_POSTGRES_PASSWORD:?Set MARKETPLACE_POSTGRES_PASSWORD in .env}@marketplace-postgres:5432/${MARKETPLACE_POSTGRES_DB:-vibelab_marketplace}
+      BUNDLE_STORAGE_DIR: /data/bundles
+      # Signed bundle URLs are downloaded by the orchestrator/worker, not a
+      # browser, so keep them on the Compose network.
+      BUNDLE_BASE_URL: http://marketplace:8800
+      HUB_DISPLAY_NAME: Legrand Official
+      OPENSAIL_ENV: dev
+      MARKETPLACE_LOAD_SEEDS_ON_STARTUP: "true"
+      # Keep administrative API access in the untracked .env. Requiring this
+      # avoids the hub's predictable development-token fallback.
+      STATIC_TOKENS: ${MARKETPLACE_STATIC_TOKENS:?Set MARKETPLACE_STATIC_TOKENS in .env}
+      # VibeLab is an internal library: retain catalog reads/installations,
+      # but make commercial capabilities unavailable.
+      DISABLED_CAPABILITIES: pricing.read,pricing.write,pricing.checkout
+    volumes:
+      - marketplace-data:/data
+    command: >
+      sh -c "python scripts/init_db.py &&
+             exec uvicorn app.main:app --host 0.0.0.0 --port 8800"
+    depends_on:
+      marketplace-postgres:
+        condition: service_healthy
+    networks:
+      - tesslate-network
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8800/v1/manifest"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
   orchestrator:
     build:
       context: .
@@ -108,12 +215,9 @@ services:
       - DEPLOYMENT_MODE=docker
       - DEPLOYMENT_ENV=${DEPLOYMENT_ENV:-docker}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
-      - LITELLM_API_BASE=${LITELLM_API_BASE}
-      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY}
-      - LITELLM_DEFAULT_MODELS=${LITELLM_DEFAULT_MODELS}
-      - LITELLM_TEAM_ID=${LITELLM_TEAM_ID}
-      - LITELLM_EMAIL_DOMAIN=${LITELLM_EMAIL_DOMAIN}
-      - LITELLM_INITIAL_BUDGET=${LITELLM_INITIAL_BUDGET}
+      - LITELLM_API_BASE=http://litellm:4000/v1
+      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-}
+      - LITELLM_DEFAULT_MODELS=${LITELLM_DEFAULT_MODELS:-vibelab-default,vibelab-fast,vibelab-reasoning}
       # Agent Resource Limits
       - AGENT_MAX_COST=${AGENT_MAX_COST:-20.0}
       - AGENT_MAX_ITERATIONS=${AGENT_MAX_ITERATIONS:-0}
@@ -217,12 +321,15 @@ services:
       - SMTP_SENDER_EMAIL=${SMTP_SENDER_EMAIL:-}
       - TWO_FA_ENABLED=${TWO_FA_ENABLED:-false}
       - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - LEGRAND_OFFICIAL_BASE_URL=${LEGRAND_OFFICIAL_BASE_URL:-http://marketplace:8800}
       - PYTHONUNBUFFERED=1
       - WATCHFILES_FORCE_POLLING=true
     depends_on:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      marketplace:
         condition: service_healthy
     networks:
       - tesslate-network
@@ -269,21 +376,21 @@ services:
       - DEPLOYMENT_MODE=docker
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
-      - LITELLM_API_BASE=${LITELLM_API_BASE}
-      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY}
-      - LITELLM_DEFAULT_MODELS=${LITELLM_DEFAULT_MODELS}
-      - LITELLM_TEAM_ID=${LITELLM_TEAM_ID}
-      - LITELLM_EMAIL_DOMAIN=${LITELLM_EMAIL_DOMAIN}
-      - LITELLM_INITIAL_BUDGET=${LITELLM_INITIAL_BUDGET}
+      - LITELLM_API_BASE=http://litellm:4000/v1
+      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-}
+      - LITELLM_DEFAULT_MODELS=${LITELLM_DEFAULT_MODELS:-vibelab-default,vibelab-fast,vibelab-reasoning}
       - AGENT_MAX_COST=${AGENT_MAX_COST:-20.0}
       - AGENT_MAX_ITERATIONS=${AGENT_MAX_ITERATIONS:-0}
       - AGENT_MAX_COST_PER_RUN=${AGENT_MAX_COST_PER_RUN:-5.0}
       - APP_DOMAIN=${APP_DOMAIN:-localhost}
+      - LEGRAND_OFFICIAL_BASE_URL=${LEGRAND_OFFICIAL_BASE_URL:-http://marketplace:8800}
       - PYTHONUNBUFFERED=1
     depends_on:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      marketplace:
         condition: service_healthy
     networks:
       - tesslate-network
@@ -356,10 +463,9 @@ services:
       - DEPLOYMENT_MODE=docker
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
-      - LITELLM_API_BASE=${LITELLM_API_BASE}
-      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY}
-      - LITELLM_DEFAULT_MODELS=${LITELLM_DEFAULT_MODELS}
-      - LITELLM_TEAM_ID=${LITELLM_TEAM_ID}
+      - LITELLM_API_BASE=http://litellm:4000/v1
+      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-}
+      - LITELLM_DEFAULT_MODELS=${LITELLM_DEFAULT_MODELS:-vibelab-default,vibelab-fast,vibelab-reasoning}
       - APP_DOMAIN=${APP_DOMAIN:-localhost}
       - GATEWAY_SHARD=0
       - GATEWAY_LOCK_DIR=/var/run/tesslate
@@ -398,3 +504,7 @@ volumes:
     name: tesslate-redis-data
   gateway-locks:
     name: tesslate-gateway-locks
+  marketplace-postgres-data:
+    name: vibelab-marketplace-postgres-data
+  marketplace-data:
+    name: vibelab-marketplace-data

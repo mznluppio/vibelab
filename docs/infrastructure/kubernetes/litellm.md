@@ -1,6 +1,9 @@
 # litellm config
 
-Path: `k8s/litellm/config.yaml`. LiteLLM proxy configuration used by the in-cluster LiteLLM pod.
+Paths:
+
+- `k8s/litellm/config.yaml` — existing multi-provider configuration used by the AWS stack.
+- `k8s/litellm/vibelab-azure-config.yaml` — restricted VibeLab Azure AI Foundry catalog used by Docker Compose and AKS.
 
 ## Purpose
 
@@ -8,14 +11,18 @@ LiteLLM sits between OpenSail's backend and every upstream model provider (OpenA
 
 ## Consumed by
 
-- AWS: Terraform `k8s/terraform/aws/litellm.tf` deploys a LiteLLM Deployment that mounts this file via ConfigMap.
-- Minikube: the backend talks to LiteLLM via `LITELLM_API_BASE`; for pure-local dev the proxy is optional.
+- AWS: Terraform `k8s/terraform/aws/litellm.tf` deploys a LiteLLM Deployment that mounts the multi-provider configuration via ConfigMap.
+- Azure AKS: Terraform `k8s/terraform/azure/kubernetes.tf` deploys a private ClusterIP LiteLLM service with Azure credentials in `litellm-secrets` and mounts the VibeLab configuration.
+- Docker Compose: the `litellm` service mounts the VibeLab configuration and is reachable only as `http://litellm:4000/v1` on the Compose network.
 
 ## Editing
 
-1. Update `config.yaml` with new models or routing tweaks.
-2. Apply via `kubectl apply -k k8s/overlays/aws-production --context=tesslate-production-eks` (the overlay picks up ConfigMap changes through Terraform on the next `apply`).
-3. Restart LiteLLM so it re-reads the config: `kubectl rollout restart deployment/litellm -n tesslate`.
+1. For VibeLab, update deployment values (`AZURE_AI_*_DEPLOYMENT`) rather than replacing the stable public aliases: `vibelab-default`, `vibelab-fast`, and `vibelab-reasoning`.
+2. Keep `AZURE_API_BASE`, `AZURE_API_KEY`, and `AZURE_API_VERSION` in the environment or Terraform secret input; never put them in a config file.
+3. Apply the relevant Terraform stack. The LiteLLM service is private and does not have an ingress.
+4. The platform NetworkPolicies explicitly allow backend, worker, and gateway
+   pods to reach LiteLLM. Keep the matching LiteLLM ingress/egress rules when
+   changing the namespace-wide default-deny policies.
 
 ## Related
 

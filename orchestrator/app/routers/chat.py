@@ -50,7 +50,7 @@ from ..services.agent_context import (
     _resolve_container_name,
     enrich_project_context_for_run,
 )
-from ..services.model_adapters import create_model_adapter
+from ..services.model_adapters import LLM_UNAVAILABLE_MESSAGE, create_model_adapter
 from ..users import current_superuser
 from ..utils.resource_naming import get_project_path
 
@@ -1113,7 +1113,7 @@ async def agent_chat(
         model_name = (
             user_purchase.selected_model
             if user_purchase and user_purchase.selected_model
-            else agent_model.model or settings.litellm_default_models.split(",")[0]
+            else agent_model.model or settings.default_model
         )
 
         logger.info(f"[HTTP-AGENT] Using model: {model_name}")
@@ -1144,6 +1144,14 @@ async def agent_chat(
                 model_name=model_name, user_id=current_user.id, db=db
             )
             logger.info("[HTTP-AGENT] Model adapter created successfully")
+        except ValueError as e:
+            await db.rollback()
+            if str(e) == LLM_UNAVAILABLE_MESSAGE:
+                raise HTTPException(status_code=503, detail=LLM_UNAVAILABLE_MESSAGE) from e
+            logger.error(f"[HTTP-AGENT] Error creating model adapter: {e}", exc_info=True)
+            raise HTTPException(
+                status_code=500, detail=f"Error creating model adapter: {str(e)}"
+            ) from e
         except Exception as e:
             logger.error(f"[HTTP-AGENT] Error creating model adapter: {e}", exc_info=True)
             await db.rollback()
@@ -1528,6 +1536,7 @@ async def handle_agent_approval(
 
     approval_id = approval_data.get("approval_id")
     response = approval_data.get("response")  # 'allow_once', 'allow_all', 'stop'
+    comment = approval_data.get("comment")
 
     if not approval_id or not response:
         raise HTTPException(status_code=400, detail="approval_id and response are required")
@@ -1536,10 +1545,11 @@ async def handle_agent_approval(
 
     # Try local first (in-process agent execution / same pod)
     approval_mgr = get_approval_manager()
-    approval_mgr.respond_to_approval(approval_id, response)
+    delivered_response = {"response": response, "comment": comment} if comment else response
+    approval_mgr.respond_to_approval(approval_id, delivered_response)
 
     # Also publish to Redis so workers on other pods receive the approval
-    await publish_approval_response(approval_id, response)
+    await publish_approval_response(approval_id, delivered_response)
 
     return {"success": True, "message": "Approval response processed"}
 
@@ -1766,7 +1776,7 @@ async def agent_chat_stream(
             model_name = (
                 user_purchase.selected_model
                 if user_purchase and user_purchase.selected_model
-                else agent_model.model or settings.litellm_default_models.split(",")[0]
+                else agent_model.model or settings.default_model
             )
 
             # 2b. Pre-request credit check
@@ -3099,7 +3109,7 @@ async def handle_chat_message(data: dict, user: User, db: AsyncSession, websocke
         model_name = (
             user_purchase.selected_model
             if user_purchase and user_purchase.selected_model
-            else agent_model.model or settings.litellm_default_models.split(",")[0]
+            else agent_model.model or settings.default_model
         )
 
         logger.info(f"[UNIFIED-CHAT] Using model: {model_name}")

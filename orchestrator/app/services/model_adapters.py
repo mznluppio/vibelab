@@ -49,6 +49,10 @@ BYOK_PROVIDER_ENV_VARS: dict[str, str] = {
 LITELLM_API_KEY_ENV_VAR = "LITELLM_MASTER_KEY"
 LITELLM_API_BASE_ENV_VAR = "LITELLM_API_BASE"
 
+# Safe for browser-facing error handling. Provider and credential diagnostics
+# remain in server logs; standard VibeLab users never need configuration steps.
+LLM_UNAVAILABLE_MESSAGE = "AI service is currently unavailable. Contact your VibeLab administrator."
+
 
 class MissingApiKeyError(ValueError):
     """
@@ -594,14 +598,54 @@ async def get_llm_client(
             default_headers=provider_config.get("default_headers", {}),
         )
     else:
-        # No prefix — use LiteLLM proxy for system models.
-        # In desktop mode (no LiteLLM proxy) fall back to common env-var API
-        # keys so users can drop OPENAI_API_KEY / ANTHROPIC_API_KEY into
-        # $OPENSAIL_HOME/.env without needing to configure BYOK in the UI.
-        import os as _os
+        # No prefix — use LiteLLM proxy for centrally managed system models.
+        # Server deployments must never turn a missing central proxy into a
+        # user-facing BYOK or Tesslate Cloud path. Desktop is intentionally
+        # the sole compatibility exception: it can still use its local/cloud
+        # runtime when it is explicitly configured by its owner.
+
+        # Registration deliberately remains available while the private proxy
+        # is unavailable. If it came online afterwards, repair the missing
+        # virtual key on the first central-model request instead of forcing an
+        # administrator to recreate the account. The LiteLLM client has a
+        # bounded timeout; failure still returns the generic availability
+        # message below and never falls back to a standard user's BYOK path.
+        if (
+            not user.litellm_api_key
+            and settings.litellm_api_base
+            and settings.litellm_master_key
+            and not settings.is_desktop_mode
+        ):
+            try:
+                from .litellm_service import litellm_service
+
+                provisioned = await litellm_service.create_user_key(
+                    user_id=user.id,
+                    username=user.username,
+                )
+                user.litellm_api_key = provisioned["api_key"]
+                user.litellm_user_id = provisioned["litellm_user_id"]
+                await db.commit()
+                logger.info("Recovered central LiteLLM access for user %s", user.id)
+            except Exception:
+                logger.warning(
+                    "Central LiteLLM key provisioning is unavailable for user %s",
+                    user.id,
+                    exc_info=True,
+                )
 
         if not user.litellm_api_key or not settings.litellm_api_base:
-            # Desktop / standalone: no per-user LiteLLM key provisioned.
+            if not settings.is_desktop_mode:
+                logger.error(
+                    "Central LiteLLM access is unavailable for model %s; "
+                    "LITELLM_API_BASE=%s, master key configured=%s",
+                    model_name,
+                    bool(settings.litellm_api_base),
+                    bool(settings.litellm_master_key),
+                )
+                raise ValueError(LLM_UNAVAILABLE_MESSAGE)
+
+            # Desktop compatibility: no per-user LiteLLM key provisioned.
 
             # Desktop + paired to a Tesslate Cloud account: route system
             # models through the cloud companion's OpenAI-compatible proxy
@@ -648,7 +692,7 @@ async def get_llm_client(
                 ("OPENROUTER_API_KEY", "https://openrouter.ai/api/v1", None),
             ]
             for env_var, base_url, _ in _env_fallbacks:
-                api_key = _os.environ.get(env_var)
+                api_key = os.environ.get(env_var)
                 if api_key:
                     logger.info(
                         "LiteLLM proxy not configured; falling back to %s env var for model %s",
@@ -687,13 +731,7 @@ async def get_llm_client(
                         max_retries=1,
                     )
 
-            raise ValueError(
-                "No LLM access configured. "
-                "Sign in to Tesslate Cloud in Settings → Cloud to use your "
-                "account credits, add a provider key in Library → API Keys, or "
-                "set OPENAI_API_KEY / ANTHROPIC_API_KEY / OPENROUTER_API_KEY in "
-                "$OPENSAIL_HOME/.env."
-            )
+            raise ValueError(LLM_UNAVAILABLE_MESSAGE)
 
         logger.info(f"Using LiteLLM proxy for model: {model_name}")
         return AsyncOpenAI(

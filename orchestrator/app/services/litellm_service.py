@@ -43,9 +43,7 @@ class LiteLLMService:
             self.management_base_url = base_url_clean
 
         self.master_key = settings.litellm_master_key
-        self.default_models = (
-            settings.litellm_default_models.split(",") if settings.litellm_default_models else []
-        )
+        self.default_models = settings.default_models_list
         self.team_id = settings.litellm_team_id
         self.email_domain = settings.litellm_email_domain
         self.initial_budget = settings.litellm_initial_budget
@@ -78,7 +76,10 @@ class LiteLLMService:
         # Generate unique user ID for LiteLLM
         litellm_user_id = f"user_{user_id}_{username}"
 
-        async with aiohttp.ClientSession() as session:
+        # Provisioning happens on signup and may be retried lazily after a
+        # temporary proxy outage. Bound the whole exchange so it never holds
+        # up authentication or a chat request indefinitely.
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session:
             try:
                 # Create user in LiteLLM
                 user_data = {

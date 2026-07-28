@@ -41,6 +41,7 @@ CANONICAL_AGENTS: list[tuple[str, str]] = [
     ("agent-builder", "Agent Builder"),
     ("automation-builder", "Automation Builder"),
     ("service-integrator", "Service Integrator"),
+    ("assist-to-build", "Assist to Build"),
 ]
 
 

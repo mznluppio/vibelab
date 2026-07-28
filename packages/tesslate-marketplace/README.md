@@ -59,8 +59,9 @@ docker compose up
 ```
 
 The supplied `docker-compose.yml` brings up Postgres + the service on port 8800.
-For local OpenSail dev, the root `docker-compose.yml` exposes a `marketplace-dev`
-profile that wires this service alongside the orchestrator: `docker compose --profile marketplace-dev up`.
+For local VibeLab development, the root `docker-compose.yml` starts this
+service with the rest of the stack. Configure the dedicated marketplace
+Postgres password in the untracked root `.env`, then run `docker compose up`.
 
 ## Configuration
 
@@ -75,7 +76,7 @@ profile that wires this service alongside the orchestrator: `docker compose --pr
 | `BUNDLE_URL_SECRET` | _auto-generated_ | HMAC secret for signed bundle URLs |
 | `HUB_ID` | _auto-generated and persisted_ | Stable hub identity UUID |
 | `HUB_ID_FILE` | `./.hub_id` | Where to persist the auto-generated `HUB_ID` |
-| `HUB_DISPLAY_NAME` | `Tesslate Official` | Friendly hub name surfaced via `/v1/manifest` |
+| `HUB_DISPLAY_NAME` | `Legrand Official` | Friendly hub name surfaced via `/v1/manifest` |
 | `HUB_API_VERSION` | `v1` | Wire protocol version |
 | `BUILD_REVISION` | `dev` | Surfaced via `/v1/manifest` |
 | `ATTESTATION_KEY_PATH` | `./.attestation_key` | Ed25519 PEM private key (auto-generated on boot) |

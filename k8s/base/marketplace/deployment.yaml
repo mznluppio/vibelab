@@ -137,9 +137,9 @@ spec:
               name: marketplace-secret
               key: STATIC_TOKENS
         - name: DISABLED_CAPABILITIES
-          # Wire on what Wave 8 ships; everything else returns the
-          # 501 unsupported_capability envelope.
-          value: ""
+          # VibeLab uses this hub as an internal library. Catalog pricing and
+          # checkout endpoints are unavailable; all supported seeds are free.
+          value: "pricing.read,pricing.write,pricing.checkout"
         - name: MARKETPLACE_LOAD_SEEDS_ON_STARTUP
           value: "true"
         volumeMounts:

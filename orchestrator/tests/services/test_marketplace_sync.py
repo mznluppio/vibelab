@@ -39,6 +39,7 @@ from app.models import (
     MarketplaceAgent,
     MarketplaceApp,
     MarketplaceSource,
+    Theme,
 )
 from app.models_automations import AppInstance
 from app.services.marketplace_client import HubIdMismatchError
@@ -334,6 +335,27 @@ async def test_sync_source_lands_federated_rows(
     for row in synced_agents:
         assert row.source_etag, f"row {row.slug!r} missing source_etag"
         assert row.source_remote_id, f"row {row.slug!r} missing source_remote_id"
+
+    # The catalog's stable legacy default identifier now represents VibeLab,
+    # so existing user preferences remain valid without re-activating a
+    # marketplace theme or overwriting a separately selected alternative.
+    default_theme = (
+        (
+            await orchestrator_session.execute(
+                select(Theme).where(
+                    Theme.source_id == federated_source.id,
+                    Theme.slug == "default-dark",
+                )
+            )
+        )
+        .scalars()
+        .one()
+    )
+    assert default_theme.name == "VibeLab Dark"
+    assert default_theme.author == "VibeLab by Legrand"
+    assert default_theme.is_default is True
+    assert default_theme.theme_json["colors"]["primary"] == "#0055A4"
+    assert default_theme.theme_json["colors"]["accent"] == "#00A3E0"
 
 
 @pytest.mark.integration
