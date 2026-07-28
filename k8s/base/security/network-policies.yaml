@@ -135,6 +135,9 @@ spec:
           - tesslate-worker
           - tesslate-gateway
           - tesslate-snapshot-cleanup
+          # LiteLLM performs an idempotent database bootstrap and then uses
+          # its isolated database for Prisma-managed proxy state.
+          - litellm
           # Marketplace pod connects on beta (in-cluster postgres) for both
           # the alembic init and the runtime API. On production it talks to
           # RDS instead, so this allowlist entry is a no-op there.

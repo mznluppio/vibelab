@@ -15,7 +15,7 @@ through the Azure deployment secret workflow. Do not commit real values.
 | --- | --- |
 | `AZURE_API_BASE` | Azure AI Foundry/Azure OpenAI endpoint. |
 | `AZURE_API_KEY` | Azure provider credential. |
-| `AZURE_API_VERSION` | Azure API version supported by the deployment. |
+| `AZURE_API_VERSION` | Azure API version supported by the deployment (the local template defaults to `2024-10-21`). |
 | `AZURE_AI_DEFAULT_DEPLOYMENT` | Azure deployment behind `vibelab-default`. |
 | `AZURE_AI_FAST_DEPLOYMENT` | Azure deployment behind `vibelab-fast`. |
 | `AZURE_AI_REASONING_DEPLOYMENT` | Azure deployment behind `vibelab-reasoning`. |
@@ -58,6 +58,8 @@ docker compose up -d --build
 The official LiteLLM image is private to `tesslate-network`; it has no host
 port. Check health with `docker compose ps litellm` and, after credentials are
 configured, run a model-list and minimal completion from an internal service.
+LiteLLM uses a separate `litellm` database created idempotently by Compose;
+its Prisma migrations never run against the VibeLab application database.
 
 Before starting, an operator can validate names without printing any secret:
 
@@ -80,6 +82,11 @@ URL, master key, and model aliases through the existing app secret. Supply the
 required values through the ignored Azure tfvars/secret process (or the
 platform's existing secret injection), then run the standard Azure Terraform
 and deployment workflow.
+
+The AKS LiteLLM Deployment first creates the dedicated `litellm` database via
+an idempotent init container. This isolates Prisma-owned proxy tables from the
+application's Alembic-managed database on both managed Azure PostgreSQL and
+the in-cluster development PostgreSQL service.
 
 The namespace NetworkPolicies allow only backend, worker, and gateway pods to
 reach LiteLLM on TCP 4000. The LiteLLM pod can reach PostgreSQL and external

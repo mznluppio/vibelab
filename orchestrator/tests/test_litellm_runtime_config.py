@@ -73,6 +73,19 @@ def test_compose_uses_non_blocking_litellm_validation() -> None:
     assert "${LITELLM_MASTER_KEY:?" not in compose
     assert "litellm-disabled-server.py" in compose
     assert "LITELLM_TEAM_ID=${LITELLM_TEAM_ID}" not in compose
+    assert "litellm-db-bootstrap:" in compose
+    assert "CREATE DATABASE litellm" in compose
+    assert "@postgres:5432/litellm" in compose
+
+
+def test_aks_litellm_uses_a_dedicated_database() -> None:
+    terraform = (REPO_ROOT / "k8s/terraform/azure/kubernetes.tf").read_text()
+
+    assert "/litellm?sslmode=require" in terraform
+    assert "/litellm\"" in terraform
+    assert 'name  = "create-database"' in terraform
+    assert "CREATE DATABASE litellm" in terraform
+    assert "ADMIN_DATABASE_URL" in terraform
 
 
 def test_litellm_config_keeps_aliases_and_provider_values_in_environment() -> None:

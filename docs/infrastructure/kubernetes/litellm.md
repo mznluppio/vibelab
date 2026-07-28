@@ -23,6 +23,10 @@ LiteLLM sits between OpenSail's backend and every upstream model provider (OpenA
 4. The platform NetworkPolicies explicitly allow backend, worker, and gateway
    pods to reach LiteLLM. Keep the matching LiteLLM ingress/egress rules when
    changing the namespace-wide default-deny policies.
+5. LiteLLM owns a dedicated `litellm` PostgreSQL database. Do not point its
+   `DATABASE_URL` at the application database: the proxy runs Prisma migrations
+   while the application uses Alembic. Docker Compose and AKS create the
+   dedicated database idempotently before the proxy starts.
 
 ## Related
 

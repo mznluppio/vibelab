@@ -83,6 +83,33 @@ services:
       retries: 5
     command: redis-server --maxmemory 256mb --maxmemory-policy volatile-lru --appendonly yes
 
+  # LiteLLM owns its Prisma schema and must not migrate the application
+  # database. Create its dedicated database safely for both fresh and
+  # long-lived local Postgres volumes before starting the proxy.
+  litellm-db-bootstrap:
+    image: postgres:15-alpine
+    container_name: vibelab-litellm-db-bootstrap
+    restart: "no"
+    environment:
+      PGHOST: postgres
+      PGUSER: ${POSTGRES_USER:-tesslate_user}
+      PGPASSWORD: ${POSTGRES_PASSWORD:-dev_password_change_me}
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        if psql -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname = 'litellm'" | grep -qx 1; then
+          echo "[litellm-db-bootstrap] litellm database already exists"
+        else
+          echo "[litellm-db-bootstrap] creating litellm database"
+          psql -d postgres -c 'CREATE DATABASE litellm'
+        fi
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - tesslate-network
+
   # Central, private LLM gateway for local VibeLab development. The proxy has
   # no host port: only backend services on tesslate-network can reach it.
   litellm:
@@ -104,7 +131,7 @@ services:
         fi
         exec litellm --port 4000 --config /app/config.yaml
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-tesslate_user}:${POSTGRES_PASSWORD:-dev_password_change_me}@postgres:5432/${POSTGRES_DB:-tesslate_dev}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-tesslate_user}:${POSTGRES_PASSWORD:-dev_password_change_me}@postgres:5432/litellm
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-}
       AZURE_API_BASE: ${AZURE_API_BASE:-}
       AZURE_API_KEY: ${AZURE_API_KEY:-}
@@ -120,8 +147,8 @@ services:
       - ./scripts/setup-local-env.py:/usr/local/bin/setup-local-env.py:ro
       - ./scripts/litellm-disabled-server.py:/usr/local/bin/litellm-disabled-server.py:ro
     depends_on:
-      postgres:
-        condition: service_healthy
+      litellm-db-bootstrap:
+        condition: service_completed_successfully
     networks:
       - tesslate-network
     healthcheck:
