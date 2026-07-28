@@ -46,6 +46,26 @@ def is_build_unlocked(context: dict[str, Any]) -> bool:
     return isinstance(workflow, dict) and workflow.get("to_be_approved") is True
 
 
+def merge_workflow_metadata(
+    metadata: dict[str, Any] | None, workflow_context: dict[str, Any] | None
+) -> dict[str, Any]:
+    """Preserve Assist to Build review history while snapshotting its live state."""
+    merged_metadata = dict(metadata or {})
+    if (
+        not isinstance(workflow_context, dict)
+        or workflow_context.get("workflow") != "assist_to_build"
+    ):
+        return merged_metadata
+
+    existing = merged_metadata.get("assist_to_build_workflow")
+    workflow = dict(existing) if isinstance(existing, dict) else {}
+    checkpoints = list(workflow.get("checkpoints") or [])
+    workflow.update({key: value for key, value in workflow_context.items() if key != "checkpoints"})
+    workflow["checkpoints"] = checkpoints
+    merged_metadata["assist_to_build_workflow"] = workflow
+    return merged_metadata
+
+
 def block_pre_build_tool(tool_name: str, context: dict[str, Any]) -> dict[str, Any] | None:
     """Return a registry-compatible denial before any edit-mode handling."""
     if not is_assist_to_build_context(context) or is_build_unlocked(context):

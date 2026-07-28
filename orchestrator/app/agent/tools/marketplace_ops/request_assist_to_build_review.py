@@ -9,6 +9,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import select
 
 from ....models import Message
+from ....services.assist_to_build import merge_workflow_metadata
 from ..approval_manager import get_pending_input_manager
 from ..output_formatter import error_output, success_output
 from ..registry import Tool, ToolCategory
@@ -30,11 +31,16 @@ async def _persist_checkpoint(context: dict[str, Any], checkpoint: dict[str, Any
         return
     try:
         message_uuid = message_id if isinstance(message_id, UUID) else UUID(str(message_id))
-        message = (await db.execute(select(Message).where(Message.id == message_uuid))).scalar_one_or_none()
+        message = (
+            await db.execute(select(Message).where(Message.id == message_uuid))
+        ).scalar_one_or_none()
         if message is None:
             return
-        metadata = dict(message.message_metadata or {})
-        workflow = dict(metadata.get("assist_to_build_workflow") or {"workflow": "assist_to_build"})
+        metadata = merge_workflow_metadata(
+            message.message_metadata,
+            context.get("assist_to_build_workflow"),
+        )
+        workflow = dict(metadata["assist_to_build_workflow"])
         checkpoints = list(workflow.get("checkpoints") or [])
         checkpoints.append(checkpoint)
         workflow.update({"stage": checkpoint["stage"], "checkpoints": checkpoints})
@@ -50,7 +56,9 @@ async def request_assist_to_build_review_executor(
 ) -> dict[str, Any]:
     workflow = context.get("assist_to_build_workflow")
     if not isinstance(workflow, dict) or workflow.get("workflow") != "assist_to_build":
-        return error_output(message="request_assist_to_build_review is only available to Assist to Build")
+        return error_output(
+            message="request_assist_to_build_review is only available to Assist to Build"
+        )
 
     stage = params.get("stage")
     if stage not in _STAGES:
@@ -58,7 +66,10 @@ async def request_assist_to_build_review_executor(
     if stage == "to_be" and not workflow.get("as_is_approved"):
         return error_output(message="AS-IS must be approved before requesting TO-BE approval")
 
-    title = str(params.get("title") or ("Validate AS-IS process" if stage == "as_is" else "Validate TO-BE process"))
+    title = str(
+        params.get("title")
+        or ("Validate AS-IS process" if stage == "as_is" else "Validate TO-BE process")
+    )
     summary_markdown = str(params.get("summary_markdown") or "")
     if not summary_markdown.strip():
         return error_output(message="summary_markdown is required")
@@ -80,7 +91,7 @@ async def request_assist_to_build_review_executor(
     session_id = str(context.get("chat_id") or context.get("session_id") or "unknown")
     input_id = str(uuid4())
     manager = get_pending_input_manager()
-    request = await manager.create_input_request(
+    await manager.create_input_request(
         input_id=input_id,
         kind="assist_to_build_review",
         session_id=session_id,
@@ -110,7 +121,9 @@ async def request_assist_to_build_review_executor(
     comment = response_data.get("comment") if isinstance(response_data, dict) else None
     response = response_data.get("response") if isinstance(response_data, dict) else response_data
     if not isinstance(response, str) or response not in _RESPONSES[stage]:
-        return error_output(message="Assist to Build review was cancelled or timed out", stage=stage)
+        return error_output(
+            message="Assist to Build review was cancelled or timed out", stage=stage
+        )
 
     if response == "approve_as_is":
         workflow["as_is_approved"] = True
@@ -120,7 +133,9 @@ async def request_assist_to_build_review_executor(
         workflow["stage"] = "build"
     else:
         workflow["stage"] = stage
-    await _persist_checkpoint(context, {**payload, "approval_id": input_id, "response": response, "comment": comment})
+    await _persist_checkpoint(
+        context, {**payload, "approval_id": input_id, "response": response, "comment": comment}
+    )
     return success_output(
         message=(
             "AS-IS approved; prepare the TO-BE proposal."

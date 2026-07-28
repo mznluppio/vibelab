@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from app.agent.tools.marketplace_ops import request_assist_to_build_review as review_tool
-from app.services.assist_to_build import block_pre_build_tool
+from app.services.assist_to_build import block_pre_build_tool, merge_workflow_metadata
 
 
 def _workflow(**extra):
@@ -31,6 +31,27 @@ def test_pre_build_guard_blocks_mutation_even_in_allow_mode():
 def test_pre_build_guard_releases_only_after_to_be_approval():
     context = _workflow(to_be_approved=True, stage="build")
     assert block_pre_build_tool("write_file", context) is None
+
+
+def test_workflow_metadata_keeps_checkpoints_and_final_approval_state():
+    context = _workflow(as_is_approved=True, to_be_approved=True, stage="build")
+    metadata = merge_workflow_metadata(
+        {
+            "agent_mode": True,
+            "assist_to_build_workflow": {
+                "workflow": "assist_to_build",
+                "stage": "as_is",
+                "checkpoints": [{"stage": "as_is", "approval_id": "review-1"}],
+            },
+        },
+        context["assist_to_build_workflow"],
+    )
+
+    workflow = metadata["assist_to_build_workflow"]
+    assert workflow["stage"] == "build"
+    assert workflow["as_is_approved"] is True
+    assert workflow["to_be_approved"] is True
+    assert workflow["checkpoints"] == [{"stage": "as_is", "approval_id": "review-1"}]
 
 
 class _FakeManager:

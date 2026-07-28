@@ -98,6 +98,26 @@ export interface AgentMessageData {
   currentThinking?: string;
 }
 
+export interface AssistToBuildCheckpoint {
+  approval_id: string;
+  stage: 'as_is' | 'to_be';
+  title: string;
+  summary_markdown: string;
+  mermaid?: string | null;
+  assumptions?: string[];
+  risks?: string[];
+  requirements?: string[];
+  response?: string | null;
+}
+
+export interface AssistToBuildWorkflowMetadata {
+  workflow: 'assist_to_build';
+  stage?: string;
+  as_is_approved?: boolean;
+  to_be_approved?: boolean;
+  checkpoints?: AssistToBuildCheckpoint[];
+}
+
 export interface DBMessage {
   id: string;
   chat_id: string;
@@ -111,6 +131,7 @@ export interface DBMessage {
     tool_calls_made?: number;
     completion_reason?: string;
     attachments?: SerializedAttachment[];
+    assist_to_build_workflow?: AssistToBuildWorkflowMetadata;
   };
   created_at: string;
 }

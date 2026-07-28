@@ -244,8 +244,8 @@ async def _contract_gate_hook(tool_name, parameters, context, tool):
     context) so chat sessions are unaffected, or a tool-result envelope
     when the gate denies the call (same shape as the in-tree path).
     """
-    from .services.assist_to_build import block_pre_build_tool
     from .agent.tools.registry import check_contract_gate
+    from .services.assist_to_build import block_pre_build_tool
 
     assist_result = block_pre_build_tool(tool_name, context)
     if assist_result is not None:
@@ -259,7 +259,9 @@ async def _contract_gate_hook(tool_name, parameters, context, tool):
     )
 
 
-def _build_submodule_registry(in_tree_registry, approval_handler=None, agent_slug: str | None = None):
+def _build_submodule_registry(
+    in_tree_registry, approval_handler=None, agent_slug: str | None = None
+):
     """Transfer tools from an in-tree ToolRegistry to a submodule ToolRegistry.
 
     Both registries store tools in a ``_tools`` dict keyed by tool name. The
@@ -317,13 +319,17 @@ async def _create_agent_runner(
 
     if tools_override is not None:
         sub_registry = _build_submodule_registry(
-            tools_override, approval_handler=approval_handler, agent_slug=getattr(agent_model, "slug", None)
+            tools_override,
+            approval_handler=approval_handler,
+            agent_slug=getattr(agent_model, "slug", None),
         )
     else:
         from .agent.tools.registry import get_tool_registry
 
         sub_registry = _build_submodule_registry(
-            get_tool_registry(), approval_handler=approval_handler, agent_slug=getattr(agent_model, "slug", None)
+            get_tool_registry(),
+            approval_handler=approval_handler,
+            agent_slug=getattr(agent_model, "slug", None),
         )
 
     if sub_registry is None:
@@ -1250,7 +1256,12 @@ async def execute_agent_task(ctx: dict, payload_dict: dict):
             _agent_slug = getattr(agent_model, "slug", None)
             _admin_scopes = _BUILTIN_AGENT_SCOPES.get(_agent_slug)
             _assist_to_build_workflow = (
-                {"workflow": "assist_to_build", "stage": "discovery", "as_is_approved": False, "to_be_approved": False}
+                {
+                    "workflow": "assist_to_build",
+                    "stage": "discovery",
+                    "as_is_approved": False,
+                    "to_be_approved": False,
+                }
                 if _agent_slug == "assist-to-build"
                 else None
             )
@@ -1793,7 +1804,7 @@ async def execute_agent_task(ctx: dict, payload_dict: dict):
                     )
                 else:
                     stale_msg.content = final_response or "Agent task completed."
-                    stale_msg.message_metadata = {
+                    final_metadata = {
                         "agent_mode": True,
                         "agent_type": agent_model.agent_type,
                         "iterations": iterations,
@@ -1811,6 +1822,21 @@ async def execute_agent_task(ctx: dict, payload_dict: dict):
                         # Steps are now in agent_steps table, not here
                         "steps_table": True,
                     }
+                    if _assist_to_build_workflow:
+                        from .services.assist_to_build import merge_workflow_metadata
+
+                        final_metadata = merge_workflow_metadata(
+                            {
+                                **final_metadata,
+                                "assist_to_build_workflow": (
+                                    (stale_msg.message_metadata or {}).get(
+                                        "assist_to_build_workflow"
+                                    )
+                                ),
+                            },
+                            context.get("assist_to_build_workflow"),
+                        )
+                    stale_msg.message_metadata = final_metadata
                     db.add(stale_msg)
 
                 # Update chat status — but skip if our lock was stolen.

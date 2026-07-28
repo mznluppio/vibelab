@@ -392,6 +392,32 @@ export function ChatContainer({
           const agentAvatarUrl = agentData?.avatar_url;
           const agentType = msg.message_metadata.agent_type;
           const finalResponse = msg.content && msg.content.trim() ? msg.content : '';
+          const assistWorkflow = msg.message_metadata.assist_to_build_workflow;
+
+          // The worker stores review checkpoints on the assistant message so
+          // a refresh or restart retains the AS-IS/TO-BE audit trail.
+          if (assistWorkflow && Array.isArray(assistWorkflow.checkpoints)) {
+            assistWorkflow.checkpoints.forEach((checkpoint, checkpointIdx) => {
+              if (
+                !checkpoint.approval_id ||
+                !checkpoint.title ||
+                !checkpoint.summary_markdown
+              ) {
+                return;
+              }
+              expandedMessages.push({
+                id: `msg-${idx}-assist-review-${checkpointIdx}`,
+                type: 'assist_to_build_review_request',
+                content: '',
+                approvalId: checkpoint.approval_id,
+                assistToBuildReviewSummary: checkpoint as AssistToBuildReviewSummary,
+                assistToBuildReviewResponse:
+                  typeof checkpoint.response === 'string'
+                    ? checkpoint.response as AssistToBuildReviewResponse
+                    : undefined,
+              });
+            });
+          }
 
           // Add each step as a separate message (filter out steps with no content)
           if (msg.message_metadata.steps && msg.message_metadata.steps.length > 0) {
