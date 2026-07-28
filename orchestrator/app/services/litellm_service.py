@@ -76,7 +76,10 @@ class LiteLLMService:
         # Generate unique user ID for LiteLLM
         litellm_user_id = f"user_{user_id}_{username}"
 
-        async with aiohttp.ClientSession() as session:
+        # Provisioning happens on signup and may be retried lazily after a
+        # temporary proxy outage. Bound the whole exchange so it never holds
+        # up authentication or a chat request indefinitely.
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session:
             try:
                 # Create user in LiteLLM
                 user_data = {

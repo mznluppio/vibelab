@@ -135,25 +135,6 @@ spec:
             secretKeyRef:
               name: tesslate-app-secrets
               key: LITELLM_DEFAULT_MODELS
-        - name: LITELLM_TEAM_ID
-          valueFrom:
-            secretKeyRef:
-              name: tesslate-app-secrets
-              key: LITELLM_TEAM_ID
-              optional: true
-        - name: LITELLM_EMAIL_DOMAIN
-          valueFrom:
-            secretKeyRef:
-              name: tesslate-app-secrets
-              key: LITELLM_EMAIL_DOMAIN
-              optional: true
-        - name: LITELLM_INITIAL_BUDGET
-          valueFrom:
-            secretKeyRef:
-              name: tesslate-app-secrets
-              key: LITELLM_INITIAL_BUDGET
-              optional: true
-
         # JWT Config
         - name: ALGORITHM
           value: "HS256"

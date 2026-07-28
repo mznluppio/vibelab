@@ -604,6 +604,36 @@ async def get_llm_client(
         # the sole compatibility exception: it can still use its local/cloud
         # runtime when it is explicitly configured by its owner.
 
+        # Registration deliberately remains available while the private proxy
+        # is unavailable. If it came online afterwards, repair the missing
+        # virtual key on the first central-model request instead of forcing an
+        # administrator to recreate the account. The LiteLLM client has a
+        # bounded timeout; failure still returns the generic availability
+        # message below and never falls back to a standard user's BYOK path.
+        if (
+            not user.litellm_api_key
+            and settings.litellm_api_base
+            and settings.litellm_master_key
+            and not settings.is_desktop_mode
+        ):
+            try:
+                from .litellm_service import litellm_service
+
+                provisioned = await litellm_service.create_user_key(
+                    user_id=user.id,
+                    username=user.username,
+                )
+                user.litellm_api_key = provisioned["api_key"]
+                user.litellm_user_id = provisioned["litellm_user_id"]
+                await db.commit()
+                logger.info("Recovered central LiteLLM access for user %s", user.id)
+            except Exception:
+                logger.warning(
+                    "Central LiteLLM key provisioning is unavailable for user %s",
+                    user.id,
+                    exc_info=True,
+                )
+
         if not user.litellm_api_key or not settings.litellm_api_base:
             if not settings.is_desktop_mode:
                 logger.error(
