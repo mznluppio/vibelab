@@ -43,9 +43,7 @@ class LiteLLMService:
             self.management_base_url = base_url_clean
 
         self.master_key = settings.litellm_master_key
-        self.default_models = (
-            settings.litellm_default_models.split(",") if settings.litellm_default_models else []
-        )
+        self.default_models = settings.default_models_list
         self.team_id = settings.litellm_team_id
         self.email_domain = settings.litellm_email_domain
         self.initial_budget = settings.litellm_initial_budget

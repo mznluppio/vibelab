@@ -83,7 +83,87 @@ services:
       retries: 5
     command: redis-server --maxmemory 256mb --maxmemory-policy volatile-lru --appendonly yes
 
-  orchestrator:
+  # Central, private LLM gateway for local VibeLab development. The proxy has
+  # no host port: only backend services on tesslate-network can reach it.
+  litellm:
+    image: ghcr.io/berriai/litellm:main-v1.81.9-stable
+    container_name: vibelab-litellm
+    restart: unless-stopped
+    command: ["--port", "4000", "--config", "/app/config.yaml"]
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-tesslate_user}:${POSTGRES_PASSWORD:-dev_password_change_me}@postgres:5432/${POSTGRES_DB:-tesslate_dev}
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:?Set LITELLM_MASTER_KEY in .env}
+      AZURE_API_BASE: ${AZURE_API_BASE:?Set AZURE_API_BASE in .env}
+      AZURE_API_KEY: ${AZURE_API_KEY:?Set AZURE_API_KEY in .env}
+      AZURE_API_VERSION: ${AZURE_API_VERSION:?Set AZURE_API_VERSION in .env}
+      # LiteLLM resolves the entire provider-prefixed model value from env,
+      # keeping Azure deployment names out of the checked-in proxy config.
+      AZURE_AI_DEFAULT_MODEL: azure/${AZURE_AI_DEFAULT_DEPLOYMENT:?Set AZURE_AI_DEFAULT_DEPLOYMENT in .env}
+      AZURE_AI_FAST_MODEL: azure/${AZURE_AI_FAST_DEPLOYMENT:?Set AZURE_AI_FAST_DEPLOYMENT in .env}
+      AZURE_AI_REASONING_MODEL: azure/${AZURE_AI_REASONING_DEPLOYMENT:?Set AZURE_AI_REASONING_DEPLOYMENT in .env}
+    volumes:
+      - ./k8s/litellm/vibelab-azure-config.yaml:/app/config.yaml:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - tesslate-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4000/health/readiness', timeout=5).read()"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  marketplace-postgres:
+    image: postgres:15-alpine
+    container_name: vibelab-marketplace-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${MARKETPLACE_POSTGRES_DB:-vibelab_marketplace}
+      POSTGRES_USER: ${MARKETPLACE_POSTGRES_USER:-vibelab_marketplace}
+      # Set this development-only value in .env. It is intentionally not
+      # defaulted here so no credential is committed to the repository.
+      POSTGRES_PASSWORD: ${MARKETPLACE_POSTGRES_PASSWORD:?Set MARKETPLACE_POSTGRES_PASSWORD in .env}
+    volumes:
+      - marketplace-postgres-data:/var/lib/postgresql/data
+    networks:
+      - tesslate-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${MARKETPLACE_POSTGRES_USER:-vibelab_marketplace} -d ${MARKETPLACE_POSTGRES_DB:-vibelab_marketplace}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  marketplace:
+    build:
+      context: ./packages/tesslate-marketplace
+      dockerfile: Dockerfile
+    container_name: vibelab-marketplace
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${MARKETPLACE_POSTGRES_USER:-vibelab_marketplace}:${MARKETPLACE_POSTGRES_PASSWORD:?Set MARKETPLACE_POSTGRES_PASSWORD in .env}@marketplace-postgres:5432/${MARKETPLACE_POSTGRES_DB:-vibelab_marketplace}
+      BUNDLE_STORAGE_DIR: /data/bundles
+      # Signed bundle URLs are downloaded by the orchestrator/worker, not a
+      # browser, so keep them on the Compose network.
+      BUNDLE_BASE_URL: http://marketplace:8800
+      HUB_DISPLAY_NAME: Legrand Official
+      OPENSAIL_ENV: dev
+      MARKETPLACE_LOAD_SEEDS_ON_STARTUP: "true"
+      # Keep administrative API access in the untracked .env. Requiring this
+      # avoids the hub's predictable development-token fallback.
+      STATIC_TOKENS: ${MARKETPLACE_STATIC_TOKENS:?Set MARKETPLACE_STATIC_TOKENS in .env}
+      # VibeLab is an internal library: retain catalog reads/installations,
+      # but make commercial capabilities unavailable.
+      DISABLED_CAPABILITIES: pricing.read,pricing.write,pricing.checkout
+    volumes:
+      - marketplace-data:/data
+    command: >
+      sh -c "python scripts/init_db.py &&
+             exec uvicorn app.main:app --host 0.0.0.0 --port 8800"
+    depends_on:
+     orchestrator:
     build:
       context: .
       dockerfile: orchestrator/Dockerfile
@@ -108,7 +188,7 @@ services:
       - DEPLOYMENT_MODE=docker
       - DEPLOYMENT_ENV=${DEPLOYMENT_ENV:-docker}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
-      - LITELLM_API_BASE=${LITELLM_API_BASE}
+      - LITELLM_API_BASE=http://litellm:4000/v1
       - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY}
       - LITELLM_DEFAULT_MODELS=${LITELLM_DEFAULT_MODELS}
       - LITELLM_TEAM_ID=${LITELLM_TEAM_ID}
@@ -264,137 +344,4 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-tesslate_user}:${POSTGRES_PASSWORD:-dev_password_change_me}@postgres:5432/${POSTGRES_DB:-tesslate_dev}
-      - SECRET_KEY=${SECRET_KEY:-change-this-in-production}
-      - INTERNAL_API_SECRET=${INTERNAL_API_SECRET:-dev-secret-changeme}
-      - DEPLOYMENT_MODE=docker
-      - LOG_LEVEL=${LOG_LEVEL:-INFO}
-      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
-      - LITELLM_API_BASE=${LITELLM_API_BASE}
-      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY}
-      - LITELLM_DEFAULT_MODELS=${LITELLM_DEFAULT_MODELS}
-      - LITELLM_TEAM_ID=${LITELLM_TEAM_ID}
-      - LITELLM_EMAIL_DOMAIN=${LITELLM_EMAIL_DOMAIN}
-      - LITELLM_INITIAL_BUDGET=${LITELLM_INITIAL_BUDGET}
-      - AGENT_MAX_COST=${AGENT_MAX_COST:-20.0}
-      - AGENT_MAX_ITERATIONS=${AGENT_MAX_ITERATIONS:-0}
-      - AGENT_MAX_COST_PER_RUN=${AGENT_MAX_COST_PER_RUN:-5.0}
-      - APP_DOMAIN=${APP_DOMAIN:-localhost}
-      - PYTHONUNBUFFERED=1
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    networks:
-      - tesslate-network
 
-  app:
-    build: ./app
-    container_name: tesslate-app
-    restart: unless-stopped
-    ports:
-      - "${FRONTEND_PORT:-5173}:5173"
-    volumes:
-      - ./app/src:/app/src
-      - ./app/public:/app/public
-      - ./app/index.html:/app/index.html
-      - ./app/vite.config.ts:/app/vite.config.ts
-      - ./app/tsconfig.json:/app/tsconfig.json
-      - ./app/tsconfig.app.json:/app/tsconfig.app.json
-      - ./app/tsconfig.node.json:/app/tsconfig.node.json
-      - ./app/tailwind.config.ts:/app/tailwind.config.ts
-      - ./app/package.json:/app/package.json
-    environment:
-      # Frontend Runtime Config (used by Vite dev server)
-      # In dev mode, config.ts reads from import.meta.env.VITE_*
-      # In production (Docker/K8s), config.ts reads from window._env_
-      - VITE_API_URL=${VITE_API_URL:-http://localhost:8000}
-      - VITE_PUBLIC_POSTHOG_KEY=${VITE_PUBLIC_POSTHOG_KEY:-}
-      - VITE_PUBLIC_POSTHOG_HOST=${VITE_PUBLIC_POSTHOG_HOST:-https://app.posthog.com}
-      - APP_DOMAIN=${APP_DOMAIN:-localhost}
-      - FRONTEND_PORT=${FRONTEND_PORT:-5173}
-      - DEPLOYMENT_MODE=${DEPLOYMENT_MODE:-docker}
-      - CHOKIDAR_USEPOLLING=true
-      - WATCHPACK_POLLING=true
-    networks:
-      - tesslate-network
-    labels:
-      - "com.tesslate.routable=true"
-      - "traefik.enable=true"
-      # Frontend routes - everything except /api, /ws, and /preview
-      # TRAEFIK_ADDITIONAL_HOST_RULE: Add extra host rules (e.g., for Google OAuth localhost)
-      # Set in .env - should be empty in production
-      - "traefik.http.routers.app.rule=(Host(`${APP_DOMAIN:-localhost}`)${TRAEFIK_ADDITIONAL_HOST_RULE:-}) && !PathPrefix(`/api`) && !PathPrefix(`/ws`) && !PathPrefix(`/preview`) && !PathPrefix(`/traefik`)"
-      - "traefik.http.routers.app.entrypoints=web"
-      - "traefik.http.routers.app.priority=10"
-      - "traefik.http.routers.app.service=app"
-      - "traefik.http.services.app.loadbalancer.server.port=5173"
-      # Handle websocket upgrade for HMR
-      - "traefik.http.middlewares.app-headers.headers.customrequestheaders.X-Forwarded-Proto=${APP_PROTOCOL:-http}"
-      - "traefik.http.routers.app.middlewares=app-headers"
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:5173/"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 30s
-
-  gateway:
-    build:
-      context: .
-      dockerfile: orchestrator/Dockerfile
-    container_name: tesslate-gateway
-    restart: unless-stopped
-    command: ["python", "-m", "app.gateway"]
-    volumes:
-      - ./orchestrator/app:/app/app
-      - gateway-locks:/var/run/tesslate
-    environment:
-      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-tesslate_user}:${POSTGRES_PASSWORD:-dev_password_change_me}@postgres:5432/${POSTGRES_DB:-tesslate_dev}
-      - SECRET_KEY=${SECRET_KEY:-change-this-in-production}
-      - INTERNAL_API_SECRET=${INTERNAL_API_SECRET:-dev-secret-changeme}
-      - DEPLOYMENT_MODE=docker
-      - LOG_LEVEL=${LOG_LEVEL:-INFO}
-      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
-      - LITELLM_API_BASE=${LITELLM_API_BASE}
-      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY}
-      - LITELLM_DEFAULT_MODELS=${LITELLM_DEFAULT_MODELS}
-      - LITELLM_TEAM_ID=${LITELLM_TEAM_ID}
-      - APP_DOMAIN=${APP_DOMAIN:-localhost}
-      - GATEWAY_SHARD=0
-      - GATEWAY_LOCK_DIR=/var/run/tesslate
-      - CHANNEL_ENCRYPTION_KEY=${CHANNEL_ENCRYPTION_KEY:-}
-      - DEPLOYMENT_ENCRYPTION_KEY=${DEPLOYMENT_ENCRYPTION_KEY:-}
-      - PYTHONUNBUFFERED=1
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    networks:
-      - tesslate-network
-
-  devserver:
-    build:
-      context: .
-      dockerfile: orchestrator/Dockerfile.devserver
-    image: tesslate-devserver:latest
-    entrypoint: ["true"]
-    restart: "no"
-
-networks:
-  tesslate-network:
-    name: tesslate-network
-    driver: bridge
-
-volumes:
-  postgres-dev-data:
-    name: tesslate-postgres-dev-data
-  base-cache:
-    name: tesslate-base-cache
-  projects-data:
-    name: tesslate-projects-data  # Shared volume for all project source code
-  redis-data:
-    name: tesslate-redis-data
-  gateway-locks:
-    name: tesslate-gateway-locks

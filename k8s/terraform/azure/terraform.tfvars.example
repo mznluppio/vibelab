@@ -79,7 +79,7 @@ internal_api_secret  = "your-internal-api-secret"
 # LiteLLM Configuration (REQUIRED for AI features)
 # -----------------------------------------------------------------------------
 litellm_master_key     = "your-litellm-master-key"
-litellm_default_models = "claude-sonnet-4.6,claude-opus-4.6"
+litellm_default_models = "vibelab-default,vibelab-fast,vibelab-reasoning"
 
 litellm_create_postgres   = false
 litellm_postgres_sku_name = "B_Standard_B1ms"
@@ -99,9 +99,12 @@ vertex_credentials = ""
 
 nanogpt_api_key    = ""
 
-azure_api_key      = ""
-azure_api_base     = ""
+azure_api_key      = "your-azure-ai-api-key"
+azure_api_base     = "https://your-resource.openai.azure.com"
 azure_api_version  = "2024-12-01-preview"
+azure_ai_default_deployment   = "your-default-deployment"
+azure_ai_fast_deployment      = "your-fast-deployment"
+azure_ai_reasoning_deployment = "your-reasoning-deployment"
 
 # -----------------------------------------------------------------------------
 # OAuth Configuration (Optional)
