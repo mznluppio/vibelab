@@ -5,6 +5,10 @@ vi.mock('./MermaidDiagram', () => ({
   MermaidDiagram: ({ code }: { code: string }) => <div data-testid="mermaid-diagram">{code}</div>,
 }));
 
+vi.mock('./VibeLabDiagram', () => ({
+  VibeLabDiagram: ({ code }: { code: string }) => <div data-testid="vibelab-diagram">{code}</div>,
+}));
+
 import { ChatMessage } from './ChatMessage';
 
 describe('ChatMessage Markdown', () => {
@@ -41,6 +45,22 @@ describe('ChatMessage Markdown', () => {
     );
     expect(code).toBeInTheDocument();
     expect(code.closest('pre')).not.toBeNull();
+  });
+
+  it('uses VibeLabDiagram only for completed vibelab-diagram fences in user or assistant messages', () => {
+    const source = '{"title":"Flow","preset":"business-process","direction":"LR","nodes":[{"id":"a","type":"start","label":"Start"}],"edges":[]}';
+    const { rerender } = render(<ChatMessage type="ai" content={`\`\`\`vibelab-diagram\n${source}\n\`\`\``} />);
+    expect(screen.getByTestId('vibelab-diagram')).toHaveTextContent('"title":"Flow"');
+    expect(screen.queryByTestId('mermaid-diagram')).not.toBeInTheDocument();
+
+    rerender(<ChatMessage type="user" content={`\`\`\`vibelab-diagram\n${source}\n\`\`\``} />);
+    expect(screen.getByTestId('vibelab-diagram')).toBeInTheDocument();
+  });
+
+  it('keeps VibeLab diagram source as code while the message is streaming', () => {
+    render(<ChatMessage type="ai" isStreaming content={'```vibelab-diagram\n{"title":"Flow"}\n```'} />);
+    expect(screen.queryByTestId('vibelab-diagram')).not.toBeInTheDocument();
+    expect(screen.getByText('{"title":"Flow"}').tagName).toBe('CODE');
   });
 
   it('uses the restrained user bubble style without an orange gradient', () => {

@@ -3,6 +3,7 @@ import remarkGfm from 'remark-gfm';
 import AgentStep from './AgentStep';
 import { type AgentMessageData } from '../types/agent';
 import { MermaidDiagram } from './chat/MermaidDiagram';
+import { VibeLabDiagram } from './chat/VibeLabDiagram';
 
 interface AgentMessageProps {
   agentData: AgentMessageData;
@@ -115,7 +116,7 @@ export default function AgentMessage({
                       : typeof classNames === 'string'
                         ? classNames
                         : '';
-                    return !isStreaming && /language-mermaid/.test(className) ? (
+                    return !isStreaming && /language-(mermaid|vibelab-diagram)/.test(className) ? (
                       children
                     ) : (
                       <pre>{children}</pre>
@@ -123,10 +124,13 @@ export default function AgentMessage({
                   },
                   // Style code
                   code: ({ children, className }) => {
-                    const language = /language-(\w+)/.exec(className ?? '')?.[1];
+                    const language = /language-([\w-]+)/.exec(className ?? '')?.[1];
                     const normalizedCode = String(children).replace(/\n$/, '');
                     if (!isStreaming && language === 'mermaid') {
                       return <MermaidDiagram code={normalizedCode} />;
+                    }
+                    if (!isStreaming && language === 'vibelab-diagram') {
+                      return <VibeLabDiagram code={normalizedCode} />;
                     }
                     const inline = !String(children).includes('\n');
                     return inline ? (

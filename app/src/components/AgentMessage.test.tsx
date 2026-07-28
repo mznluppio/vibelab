@@ -5,6 +5,10 @@ vi.mock('./chat/MermaidDiagram', () => ({
   MermaidDiagram: ({ code }: { code: string }) => <div data-testid="mermaid-diagram">{code}</div>,
 }));
 
+vi.mock('./chat/VibeLabDiagram', () => ({
+  VibeLabDiagram: ({ code }: { code: string }) => <div data-testid="vibelab-diagram">{code}</div>,
+}));
+
 import AgentMessage from './AgentMessage';
 
 describe('AgentMessage Markdown', () => {
@@ -17,5 +21,16 @@ describe('AgentMessage Markdown', () => {
     );
 
     expect(screen.getByTestId('mermaid-diagram')).toHaveTextContent('flowchart LR A-->B');
+  });
+
+  it('uses VibeLabDiagram for a completed structured diagram response', () => {
+    render(
+      <AgentMessage
+        agentData={{ steps: [], iterations: 1, tool_calls_made: 0, completion_reason: 'complete' }}
+        finalResponse={'```vibelab-diagram\n{"title":"Flow","preset":"technical-dark","direction":"LR","nodes":[{"id":"a","type":"start","label":"Start"}],"edges":[]}\n```'}
+      />
+    );
+
+    expect(screen.getByTestId('vibelab-diagram')).toHaveTextContent('"preset":"technical-dark"');
   });
 });
