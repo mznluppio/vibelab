@@ -27,6 +27,14 @@ litellm_settings:
     ttl: 600
 
 model_list:
+  # Legacy agent-model alias; routes to the configured Azure Kimi deployment.
+  - model_name: kimi-k2.5
+    litellm_params:
+      model: "os.environ/AZURE_AI_DEFAULT_MODEL"
+      api_base: "os.environ/AZURE_API_BASE"
+      api_key: "os.environ/AZURE_API_KEY"
+      api_version: "os.environ/AZURE_API_VERSION"
+
   - model_name: vibelab-default
     litellm_params:
       model: "os.environ/AZURE_AI_DEFAULT_MODEL"
