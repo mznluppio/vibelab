@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Copy, Check, ArrowClockwise } from '@phosphor-icons/react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -6,6 +6,7 @@ import type { SerializedAttachment } from '../../types/agent';
 import { AttachmentChip } from './AttachmentChip';
 import { MermaidDiagram } from './MermaidDiagram';
 import { VibeLabDiagram } from './VibeLabDiagram';
+import { useAuth } from '../../contexts/AuthContext';
 
 interface ChatMessageProps {
   type: 'user' | 'ai';
@@ -42,7 +43,13 @@ export function ChatMessage({
   isStreaming = false,
 }: ChatMessageProps) {
   const isUser = type === 'user';
+  const { user } = useAuth();
   const [copied, setCopied] = useState(false);
+  const [userAvatarFailed, setUserAvatarFailed] = useState(false);
+
+  useEffect(() => {
+    setUserAvatarFailed(false);
+  }, [user?.avatar_url]);
 
   const handleCopy = () => {
     const text = typeof content === 'string' ? content : '';
@@ -64,13 +71,31 @@ export function ChatMessage({
     }
   })();
 
-  // 60-30-10: User avatar (10% accent), AI avatar (30% secondary surface)
+  const userDisplayName = user?.name || user?.username || user?.email || 'User';
+  const userInitials = userDisplayName
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join('') || 'U';
+
   const defaultAvatar = isUser ? (
-    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[var(--primary)] to-[#ff8533] flex items-center justify-center shadow-lg shadow-[var(--primary)]/20">
-      <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 256 256">
-        <path d="M230.92,212c-15.23-26.33-38.7-45.21-66.09-54.16a72,72,0,1,0-73.66,0C63.78,166.78,40.31,185.66,25.08,212a8,8,0,1,0,13.85,8c18.84-32.56,52.14-52,89.07-52s70.23,19.44,89.07,52a8,8,0,1,0,13.85-8ZM72,96a56,56,0,1,1,56,56A56.06,56.06,0,0,1,72,96Z" />
-      </svg>
-    </div>
+    user?.avatar_url && !userAvatarFailed ? (
+      <img
+        src={user.avatar_url}
+        alt={`${userDisplayName}'s avatar`}
+        className="w-8 h-8 rounded-full object-cover border border-[var(--border)]"
+        onError={() => setUserAvatarFailed(true)}
+      />
+    ) : (
+      <div
+        role="img"
+        aria-label={`${userDisplayName}'s avatar`}
+        className="w-8 h-8 rounded-full bg-[var(--surface-hover)] border border-[var(--border)] text-[10px] font-semibold text-[var(--text)] flex items-center justify-center"
+      >
+        {userInitials}
+      </div>
+    )
   ) : agentAvatarUrl ? (
     <img
       src={agentAvatarUrl}

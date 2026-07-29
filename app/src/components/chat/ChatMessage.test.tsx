@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('./MermaidDiagram', () => ({
@@ -9,9 +9,32 @@ vi.mock('./VibeLabDiagram', () => ({
   VibeLabDiagram: ({ code }: { code: string }) => <div data-testid="vibelab-diagram">{code}</div>,
 }));
 
+let authUser: { name?: string; username?: string; email: string; avatar_url?: string } | null = null;
+vi.mock('../../contexts/AuthContext', () => ({
+  useAuth: () => ({ user: authUser }),
+}));
+
 import { ChatMessage } from './ChatMessage';
 
 describe('ChatMessage Markdown', () => {
+  it('uses the authenticated user avatar and falls back to initials after an image error', () => {
+    authUser = {
+      name: 'Ada Lovelace',
+      email: 'ada@example.test',
+      avatar_url: 'https://example.test/ada.png',
+    };
+    const { rerender } = render(<ChatMessage type="user" content="Hello" />);
+
+    const avatar = screen.getByAltText("Ada Lovelace's avatar");
+    expect(avatar).toHaveAttribute('src', 'https://example.test/ada.png');
+    fireEvent.error(avatar);
+    expect(screen.getByRole('img', { name: "Ada Lovelace's avatar" })).toHaveTextContent('AL');
+
+    authUser = { name: 'Grace Hopper', email: 'grace@example.test' };
+    rerender(<ChatMessage type="user" content="Hello" />);
+    expect(screen.getByRole('img', { name: "Grace Hopper's avatar" })).toHaveTextContent('GH');
+  });
+
   it('uses MermaidDiagram only for fenced mermaid code', () => {
     render(<ChatMessage type="ai" content={'```mermaid\nflowchart LR\nA-->B\n```'} />);
 
@@ -64,6 +87,7 @@ describe('ChatMessage Markdown', () => {
   });
 
   it('uses the restrained user bubble style without an orange gradient', () => {
+    authUser = null;
     const { container } = render(<ChatMessage type="user" content="A short message" />);
 
     const bubble = container.querySelector('.message-bubble');
