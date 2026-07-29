@@ -2,8 +2,8 @@ import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('@paper-design/shaders-react', () => ({
-  PulsingBorder: ({ className, 'aria-hidden': ariaHidden }: { className?: string; 'aria-hidden'?: boolean }) => (
-    <div data-testid="shader" className={className} aria-hidden={ariaHidden} />
+  PulsingBorder: ({ className, thickness, 'aria-hidden': ariaHidden }: { className?: string; thickness?: number; 'aria-hidden'?: boolean }) => (
+    <div data-testid="shader" className={className} data-thickness={thickness} aria-hidden={ariaHidden} />
   ),
 }));
 
@@ -24,6 +24,19 @@ describe('PromptInputPulsingBorder', () => {
     const shader = await screen.findByTestId('shader');
     expect(shader).toHaveAttribute('aria-hidden', 'true');
     expect(shader.className).toContain('pointer-events-none');
+    expect(shader).toHaveAttribute('data-thickness', '0.05');
+    expect(screen.getByTestId('prompt-input-pulsing-border')).toHaveClass('p-px');
+    getContext.mockRestore();
+  });
+
+  it('keeps the static border when WebGL is unavailable', () => {
+    const getContext = vi
+      .spyOn(HTMLCanvasElement.prototype, 'getContext')
+      .mockReturnValue(null);
+    render(<PromptInputPulsingBorder active={false}><textarea aria-label="Prompt" /></PromptInputPulsingBorder>);
+
+    expect(screen.getByTestId('prompt-input-pulsing-border')).toHaveClass('bg-[var(--border)]');
+    expect(screen.queryByTestId('shader')).not.toBeInTheDocument();
     getContext.mockRestore();
   });
 });
