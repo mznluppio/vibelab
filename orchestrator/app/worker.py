@@ -324,10 +324,22 @@ async def _create_agent_runner(
             agent_slug=getattr(agent_model, "slug", None),
         )
     else:
-        from .agent.tools.registry import get_tool_registry
+        from .agent.tools.registry import create_scoped_tool_registry, get_tool_registry
+
+        declared_tools = getattr(agent_model, "tools", None)
+        tool_configs = getattr(agent_model, "tool_configs", None)
+        # Marketplace agents declare their exact capability set.  Respect it
+        # at runtime instead of advertising the global registry to the model;
+        # otherwise Assist to Build can select unrelated tools such as
+        # request_workspace before its workflow gate rejects them.
+        in_tree_registry = (
+            create_scoped_tool_registry(declared_tools, tool_configs)
+            if isinstance(declared_tools, list)
+            else get_tool_registry()
+        )
 
         sub_registry = _build_submodule_registry(
-            get_tool_registry(),
+            in_tree_registry,
             approval_handler=approval_handler,
             agent_slug=getattr(agent_model, "slug", None),
         )
@@ -898,6 +910,9 @@ async def execute_agent_task(ctx: dict, payload_dict: dict):
                         view_context=view_context,
                         project_id=UUID(project_id),
                         container_id=(UUID(payload.container_id) if payload.container_id else None),
+                        base_tool_names=(
+                            agent_model.tools if isinstance(getattr(agent_model, "tools", None), list) else None
+                        ),
                     )
 
             # 7. Create agent via adapter (submodule runner)

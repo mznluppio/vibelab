@@ -1822,6 +1822,9 @@ async def agent_chat_stream(
                     view_context=view_context,
                     project_id=request.project_id,
                     container_id=request.container_id,
+                    base_tool_names=(
+                        agent_model.tools if isinstance(getattr(agent_model, "tools", None), list) else None
+                    ),
                 )
                 logger.info(
                     f"[SSE-AGENT] Created view-scoped registry for view: {view_context.value}"

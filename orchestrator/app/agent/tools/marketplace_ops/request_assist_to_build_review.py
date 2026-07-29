@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 from typing import Any
@@ -35,6 +36,103 @@ _GROUP_KEYS = {"id", "label", "description", "variant"}
 _ANNOTATION_KEYS = {"id", "nodeId", "label", "tone"}
 _SAFE_ID = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$")
 
+# This is the tool-facing form of the same deliberately small contract that
+# ``_validate_workflow_diagram`` persists and VibeLabDiagram renders.  Keep
+# it explicit: a bare ``object`` schema caused models to fall back to the
+# legacy ``type/process/from`` diagram shape.
+_WORKFLOW_DIAGRAM_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["title", "preset", "direction", "nodes", "edges"],
+    "properties": {
+        "title": {"type": "string", "description": "Short diagram title (1-120 characters)."},
+        "subtitle": {"type": "string", "description": "Optional context (1-180 characters)."},
+        "preset": {"type": "string", "enum": sorted(_DIAGRAM_PRESETS)},
+        "direction": {"type": "string", "enum": sorted(_DIAGRAM_DIRECTIONS)},
+        "nodes": {
+            "type": "array",
+            "minItems": 3,
+            "maxItems": 12,
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["id", "type", "label"],
+                "properties": {
+                    "id": {"type": "string", "description": "Unique slug-like node identifier."},
+                    "type": {"type": "string", "enum": sorted(_DIAGRAM_NODE_TYPES)},
+                    "label": {"type": "string", "description": "Short visible node label."},
+                    "description": {"type": "string"},
+                    "icon": {"type": "string", "enum": sorted(_DIAGRAM_ICONS)},
+                    "groupId": {"type": "string"},
+                    "emphasis": {"type": "boolean"},
+                },
+            },
+        },
+        "edges": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 60,
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["source", "target"],
+                "properties": {
+                    "source": {"type": "string", "description": "Source node id (never `from`)."},
+                    "target": {"type": "string", "description": "Target node id (never `to`)."},
+                    "label": {"type": "string"},
+                    "variant": {"type": "string", "enum": ["solid", "dashed", "dotted"]},
+                    "animated": {"type": "boolean"},
+                },
+            },
+        },
+        "groups": {
+            "type": "array",
+            "maxItems": 12,
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["id", "label"],
+                "properties": {
+                    "id": {"type": "string"},
+                    "label": {"type": "string"},
+                    "description": {"type": "string"},
+                    "variant": {"type": "string", "enum": ["default", "muted", "highlight"]},
+                },
+            },
+        },
+        "annotations": {
+            "type": "array",
+            "maxItems": 30,
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["id", "nodeId", "label"],
+                "properties": {
+                    "id": {"type": "string"},
+                    "nodeId": {"type": "string"},
+                    "label": {"type": "string"},
+                    "tone": {"type": "string", "enum": ["info", "success", "warning"]},
+                },
+            },
+        },
+    },
+}
+
+_WORKFLOW_DIAGRAM_EXAMPLE = {
+    "title": "Current status reporting",
+    "preset": "business-process",
+    "direction": "LR",
+    "nodes": [
+        {"id": "monitor", "type": "system", "label": "Monitor service"},
+        {"id": "incident", "type": "decision", "label": "Incident detected?"},
+        {"id": "notify", "type": "action", "label": "Notify employees"},
+    ],
+    "edges": [
+        {"source": "monitor", "target": "incident"},
+        {"source": "incident", "target": "notify", "label": "Yes"},
+    ],
+}
+
 
 def _is_safe_text(value: Any, maximum: int) -> bool:
     return isinstance(value, str) and bool(value.strip()) and len(value) <= maximum and not any(
@@ -60,9 +158,12 @@ def _has_banned_diagram_content(value: Any) -> bool:
 def _validate_workflow_diagram(diagram: Any) -> str | None:
     """Strict server counterpart to the presentation-safe VibeLab diagram contract."""
     if not isinstance(diagram, dict):
-        return "diagram must be a structured object"
+        return f"diagram: expected an object, received {type(diagram).__name__}"
     if set(diagram) - _ROOT_KEYS or _has_banned_diagram_content(diagram):
-        return "diagram contains unsupported fields or content"
+        unsupported = sorted(set(diagram) - _ROOT_KEYS)
+        if unsupported:
+            return f"diagram: unsupported keys {unsupported}; allowed keys are {sorted(_ROOT_KEYS)}"
+        return "diagram: unsupported presentation content"
     nodes = diagram.get("nodes")
     edges = diagram.get("edges")
     groups = diagram.get("groups", [])
@@ -78,16 +179,16 @@ def _validate_workflow_diagram(diagram: Any) -> str | None:
         or not isinstance(groups, list)
         or not isinstance(annotations, list)
     ):
-        return "diagram does not match the VibeLab schema"
+        return "diagram: expected title, preset, direction, nodes and edges using the VibeLab schema"
     if "subtitle" in diagram and not _is_safe_text(diagram["subtitle"], 180):
         return "diagram subtitle is invalid"
     if not 3 <= len(nodes) <= 12 or not edges or len(edges) > 60 or len(groups) > 12 or len(annotations) > 30:
-        return "diagram requires 3 to 12 nodes and at least one valid connection"
+        return "diagram.nodes: expected 3 to 12 nodes and diagram.edges: expected at least one connection"
 
     node_ids: set[str] = set()
     for node in nodes:
         if not isinstance(node, dict) or set(node) - _NODE_KEYS:
-            return "diagram contains an invalid node"
+            return "diagram.nodes: expected objects with only id, type, label, description, icon, groupId and emphasis"
         node_id = node.get("id")
         if (
             not isinstance(node_id, str)
@@ -100,12 +201,12 @@ def _validate_workflow_diagram(diagram: Any) -> str | None:
             or ("emphasis" in node and not isinstance(node["emphasis"], bool))
             or node_id in node_ids
         ):
-            return "diagram contains an invalid node"
+            return f"diagram.nodes[{len(node_ids)}]: expected a valid id, VibeLab node type and short label"
         node_ids.add(node_id)
 
     for edge in edges:
         if not isinstance(edge, dict) or set(edge) - _EDGE_KEYS:
-            return "diagram contains an invalid connection"
+            return "diagram.edges: expected objects with source and target (never from/to)"
         if (
             edge.get("source") not in node_ids
             or edge.get("target") not in node_ids
@@ -113,7 +214,7 @@ def _validate_workflow_diagram(diagram: Any) -> str | None:
             or ("variant" in edge and edge["variant"] not in {"solid", "dashed", "dotted"})
             or ("animated" in edge and not isinstance(edge["animated"], bool))
         ):
-            return "diagram contains an invalid connection"
+            return "diagram.edges: expected source and target to reference existing node ids"
 
     group_ids = set()
     for group in groups:
@@ -123,27 +224,35 @@ def _validate_workflow_diagram(diagram: Any) -> str | None:
             or not isinstance(group.get("id"), str)
             or not _SAFE_ID.fullmatch(group["id"])
         ):
-            return "diagram contains an invalid group"
+            return "diagram.groups: expected objects with id and label"
         if group["id"] in group_ids or not _is_safe_text(group.get("label"), 80):
-            return "diagram contains an invalid group"
+            return "diagram.groups: expected unique valid group ids and labels"
         if ("description" in group and not _is_safe_text(group["description"], 180)) or (
             "variant" in group and group["variant"] not in {"default", "muted", "highlight"}
         ):
-            return "diagram contains an invalid group"
+            return "diagram.groups: expected an optional valid description and variant"
         group_ids.add(group["id"])
     if any(node.get("groupId") not in group_ids for node in nodes if "groupId" in node):
-        return "diagram references an unknown group"
+        return "diagram.nodes[].groupId: expected a group id declared in diagram.groups"
 
     for annotation in annotations:
         if not isinstance(annotation, dict) or set(annotation) - _ANNOTATION_KEYS:
-            return "diagram contains an invalid annotation"
+            return "diagram.annotations: expected objects with id, nodeId and label"
         if (
             not _is_safe_text(annotation.get("id"), 64)
             or annotation.get("nodeId") not in node_ids
             or not _is_safe_text(annotation.get("label"), 80)
             or ("tone" in annotation and annotation["tone"] not in {"info", "success", "warning"})
         ):
-            return "diagram contains an invalid annotation"
+            return "diagram.annotations: expected nodeId to reference an existing node"
+    return None
+
+
+def _validate_string_list(value: Any, path: str) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        return f"{path}: expected an array of strings"
     return None
 
 
@@ -201,11 +310,26 @@ async def request_assist_to_build_review_executor(
     if diagram_error:
         return error_output(
             message=(
-                f"The {stage.replace('_', '-').upper()} artifact is missing or invalid: {diagram_error}. "
-                "Return the complete artifact again with a valid mandatory structured workflow diagram."
+                f"Validation failed at {diagram_error}. Return the complete {stage.replace('_', '-').upper()} "
+                "artifact with a valid diagram matching this exact tool schema. Keep summary_markdown, "
+                "assumptions, risks and requirements unchanged unless this validation requires a change."
+            ),
+            suggestion=(
+                "Use title, preset, direction, nodes and edges; nodes use id/type/label and edges use "
+                "source/target. Do not send legacy type/process/data/from/to fields."
             ),
             stage=stage,
         )
+    for field_name in ("assumptions", "risks", "requirements"):
+        field_error = _validate_string_list(params.get(field_name), field_name)
+        if field_error:
+            return error_output(
+                message=(
+                    f"Validation failed at {field_error}. Return the complete {stage.replace('_', '-').upper()} "
+                    "artifact and keep every valid field unchanged."
+                ),
+                stage=stage,
+            )
 
     payload = {
         "stage": stage,
@@ -288,15 +412,21 @@ def register_request_assist_to_build_review_tool(registry) -> None:
     registry.register(
         Tool(
             name="request_assist_to_build_review",
-            description="Show the required AS-IS or TO-BE process checkpoint and wait for the user's response.",
+            description=(
+                "Show the required AS-IS or TO-BE process checkpoint and wait for the user's response. "
+                "diagram is a strict VibeLab workflow object: title, preset, direction, 3-12 nodes and "
+                "at least one edge are required. Nodes use id/type/label; edges use source/target. "
+                "Unknown fields, coordinates, styles, CSS, HTML, SVG, JavaScript and legacy type/process/data/from/to fields are forbidden."
+            ),
             category=ToolCategory.PLANNING,
             parameters={
                 "type": "object",
+                "additionalProperties": False,
                 "properties": {
                     "stage": {"type": "string", "enum": ["as_is", "to_be"]},
                     "title": {"type": "string"},
                     "summary_markdown": {"type": "string"},
-                    "diagram": {"type": "object"},
+                    "diagram": _WORKFLOW_DIAGRAM_SCHEMA,
                     "assumptions": {"type": "array", "items": {"type": "string"}},
                     "risks": {"type": "array", "items": {"type": "string"}},
                     "requirements": {"type": "array", "items": {"type": "string"}},
@@ -304,6 +434,9 @@ def register_request_assist_to_build_review_tool(registry) -> None:
                 "required": ["stage", "summary_markdown", "diagram"],
             },
             executor=request_assist_to_build_review_executor,
+            examples=[
+                "Valid diagram: " + json.dumps(_WORKFLOW_DIAGRAM_EXAMPLE),
+            ],
             # The checkpoint payload and final review outcome are JSON-clean.
             state_serializable=True,
             # The DB-backed approval wait owns no socket, PTY, or process handle.

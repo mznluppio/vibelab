@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
 from app.agent.tools.marketplace_ops import request_assist_to_build_review as review_tool
@@ -54,6 +56,35 @@ def test_assist_to_build_review_tool_declares_checkpoint_annotations():
     assert tool is not None
     assert tool.state_serializable is True
     assert tool.holds_external_state is False
+    diagram_schema = tool.parameters["properties"]["diagram"]
+    assert diagram_schema["required"] == ["title", "preset", "direction", "nodes", "edges"]
+    assert diagram_schema["additionalProperties"] is False
+    assert diagram_schema["properties"]["nodes"]["items"]["required"] == ["id", "type", "label"]
+    assert diagram_schema["properties"]["edges"]["items"]["required"] == ["source", "target"]
+    assert "source/target" in tool.description
+    assert "legacy type/process/data/from/to" in tool.description
+
+
+@pytest.mark.asyncio
+async def test_assist_to_build_runtime_only_exposes_declared_tools():
+    from app.worker import _create_agent_runner
+
+    agent_model = SimpleNamespace(
+        slug="assist-to-build",
+        system_prompt="Assist to Build",
+        tools=["read_file", "request_assist_to_build_review"],
+        tool_configs=None,
+        config=None,
+    )
+    runner = await _create_agent_runner(
+        agent_model=agent_model,
+        model_adapter=None,
+        tools_override=None,
+        settings=SimpleNamespace(compaction_summary_model=""),
+    )
+
+    assert runner.tools.get("request_assist_to_build_review") is not None
+    assert runner.tools.get("request_workspace") is None
 
 
 def test_pre_build_guard_releases_only_after_to_be_approval():
@@ -135,14 +166,59 @@ async def test_as_is_review_rejects_missing_or_invalid_required_diagram(monkeypa
         {"stage": "as_is", "summary_markdown": "Current process"}, context
     )
     assert missing["success"] is False
-    assert "mandatory structured workflow diagram" in missing["message"]
+    assert "Validation failed at diagram:" in missing["message"]
 
     invalid = await review_tool.request_assist_to_build_review_executor(
         {"stage": "as_is", "summary_markdown": "Current process", "diagram": {"title": "No flow"}},
         context,
     )
     assert invalid["success"] is False
-    assert "invalid" in invalid["message"]
+    assert "Validation failed at diagram:" in invalid["message"]
+
+
+@pytest.mark.asyncio
+async def test_as_is_review_returns_a_precise_repair_instruction_for_legacy_diagrams(monkeypatch):
+    manager = _FakeManager("approve_as_is")
+    monkeypatch.setattr(review_tool, "get_pending_input_manager", lambda: manager)
+    context = _workflow()
+
+    result = await review_tool.request_assist_to_build_review_executor(
+        {
+            "stage": "as_is",
+            "summary_markdown": "Current process",
+            "diagram": {
+                "type": "business-process",
+                "title": "Legacy flow",
+                "nodes": [],
+                "edges": [],
+            },
+        },
+        context,
+    )
+
+    assert result["success"] is False
+    assert "diagram: unsupported keys ['type']" in result["message"]
+    assert "complete AS-IS artifact" in result["message"]
+    assert "source/target" in result["suggestion"]
+
+
+@pytest.mark.asyncio
+async def test_as_is_review_rejects_non_string_artifact_lists(monkeypatch):
+    manager = _FakeManager("approve_as_is")
+    monkeypatch.setattr(review_tool, "get_pending_input_manager", lambda: manager)
+
+    result = await review_tool.request_assist_to_build_review_executor(
+        {
+            "stage": "as_is",
+            "summary_markdown": "Current process",
+            "diagram": _diagram(),
+            "risks": [{"name": "legacy object"}],
+        },
+        _workflow(),
+    )
+
+    assert result["success"] is False
+    assert "risks: expected an array of strings" in result["message"]
 
 
 @pytest.mark.asyncio
