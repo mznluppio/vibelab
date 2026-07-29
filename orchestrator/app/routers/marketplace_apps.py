@@ -334,6 +334,12 @@ async def fork_marketplace_app(
     user: User = Depends(current_active_user),
     hub_client: HubClient = Depends(_get_hub_client),
 ) -> ForkResponse:
+    # A fork materializes a new project the user owns and can open like any
+    # other Workspace, so the platform Workspace-creation policy applies.
+    from ..permissions import require_workspace_creation
+
+    await require_workspace_creation(db, user)
+
     # Ensure the source version belongs to the declared app (caller-supplied
     # source_app_version_id is the authoritative fork root per service API).
     src = (

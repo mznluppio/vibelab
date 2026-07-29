@@ -41,6 +41,8 @@ interface TeamContextValue {
   canAccessAutomations: boolean;
   /** Effective platform permission to create a Team; backend remains authoritative. */
   canCreateTeams: boolean;
+  /** Effective platform permission to create a Workspace; backend remains authoritative. */
+  canCreateWorkspaces: boolean;
   loading: boolean;
   refreshTeams: () => Promise<void>;
   /** Increments on every team switch — use in useEffect deps to trigger re-fetches. */
@@ -56,12 +58,14 @@ export function TeamProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [teamSwitchKey, setTeamSwitchKey] = useState(0);
   const [canCreateTeams, setCanCreateTeams] = useState(false);
+  const [canCreateWorkspaces, setCanCreateWorkspaces] = useState(false);
 
   const loadTeams = useCallback(async () => {
     if (!isAuthenticated) {
       setTeams([]);
       setActiveTeam(null);
       setCanCreateTeams(false);
+      setCanCreateWorkspaces(false);
       setLoading(false);
       return;
     }
@@ -72,6 +76,7 @@ export function TeamProvider({ children }: { children: React.ReactNode }) {
       ]);
       setTeams(data);
       setCanCreateTeams(capabilities.can_create_teams);
+      setCanCreateWorkspaces(capabilities.can_create_workspaces);
 
       const savedSlug = localStorage.getItem('tesslate_active_team');
       const saved = data.find((t: TeamList) => t.slug === savedSlug);
@@ -147,6 +152,7 @@ export function TeamProvider({ children }: { children: React.ReactNode }) {
         canAccessMarketplace,
         canAccessAutomations,
         canCreateTeams,
+        canCreateWorkspaces,
         loading,
         refreshTeams: loadTeams,
         teamSwitchKey,

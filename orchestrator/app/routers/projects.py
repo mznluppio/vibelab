@@ -355,9 +355,17 @@ async def get_projects(
 
     # Hide installed-app runtime projects from the normal Projects list —
     # those are rendered in Library > Apps instead. Forks (app_source) remain.
-    from ..services.apps.project_scopes import exclude_app_instances_clause
+    # Internal system Workspaces (`~workspace~`, `~automations~`) are agent /
+    # automation plumbing and are likewise not user Workspaces.
+    from ..services.apps.project_scopes import (
+        exclude_app_instances_clause,
+        exclude_internal_workspaces_clause,
+    )
 
-    project_kind_filter = exclude_app_instances_clause()
+    project_kind_filter = and_(
+        exclude_app_instances_clause(),
+        exclude_internal_workspaces_clause(),
+    )
 
     # Admins / superusers see all projects in the team
     if (member and member.role == "admin") or getattr(current_user, "is_superuser", False):
@@ -666,8 +674,13 @@ async def create_project_from_payload(
             detail="A template must be selected to create a project. Please select a template and try again.",
         )
 
-    # Team permission check (create).
-    from ..permissions import check_team_permission
+    # Platform Workspace-creation policy (superuser / per-user override /
+    # platform default). Covers every caller of this helper: the public API,
+    # the desktop import endpoint, and the agent's ``request_workspace``
+    # create-empty branch.
+    from ..permissions import check_team_permission, require_workspace_creation
+
+    await require_workspace_creation(db, current_user)
 
     if current_user.default_team_id:
         await check_team_permission(
@@ -3538,11 +3551,14 @@ async def fork_project(
     Creates a new project with the same files as the original.
     """
     # Get source project (RBAC check)
-    from ..permissions import Permission, get_project_with_access
+    from ..permissions import Permission, get_project_with_access, require_workspace_creation
 
     source_project, _role = await get_project_with_access(
         db, project_id, current_user.id, Permission.PROJECT_VIEW
     )
+
+    # A fork is a new Workspace: same creation policy as create_project.
+    await require_workspace_creation(db, current_user)
 
     # Enforce project limit (same check as create_project)
     await enforce_project_limit(current_user, db)

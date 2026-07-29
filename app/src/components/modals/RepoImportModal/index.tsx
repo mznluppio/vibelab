@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Download, X } from '@phosphor-icons/react';
+import { useTeam } from '../../../contexts/TeamContext';
 import { gitProvidersApi } from '../../../lib/git-providers-api';
 import { gitApi } from '../../../lib/git-api';
 import { ConfirmDialog } from '../ConfirmDialog';
@@ -24,6 +25,7 @@ interface RepoImportModalProps {
 }
 
 export function RepoImportModal({ isOpen, onClose, projectId, onSuccess, onCreateProject, initialRepoUrl }: RepoImportModalProps) {
+  const { canCreateWorkspaces } = useTeam();
   const [repoUrl, setRepoUrl] = useState('');
   const [projectName, setProjectName] = useState('');
   const [isImporting, setIsImporting] = useState(false);
@@ -150,11 +152,15 @@ export function RepoImportModal({ isOpen, onClose, projectId, onSuccess, onCreat
     }
   };
 
+  // `isNewProjectMode` means the import mints a new Workspace, so the platform
+  // Workspace-creation policy applies. Importing into an existing project does
+  // not create anything and stays available.
   const canImport =
     repoUrl.trim().length > 0 &&
     !isImporting &&
     resolver.status !== 'detecting' &&
-    resolver.status !== 'fetching-repo';
+    resolver.status !== 'fetching-repo' &&
+    (!isNewProjectMode || canCreateWorkspaces);
 
   if (!isOpen && !showConfirm) return null;
 
@@ -298,6 +304,12 @@ export function RepoImportModal({ isOpen, onClose, projectId, onSuccess, onCreat
                 onSelectRepo={handleBrowseSelectRepo}
                 disabled={isImporting}
               />
+
+              {isNewProjectMode && !canCreateWorkspaces && (
+                <p className="text-sm text-[var(--text-muted)]">
+                  Workspace creation is disabled for your account. Contact a platform administrator.
+                </p>
+              )}
             </div>
 
             {/* Actions */}

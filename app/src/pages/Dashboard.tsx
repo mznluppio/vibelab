@@ -56,9 +56,10 @@ interface Project {
 export default function Dashboard() {
   const navigate = useNavigate();
   const { theme, toggleTheme } = useTheme();
-  const { activeTeam, can, teamSwitchKey } = useTeam();
+  const { activeTeam, can, teamSwitchKey, canCreateWorkspaces } = useTeam();
   const isAdmin = can('team.edit');
-  const canCreateProject = can('project.create');
+  // Team role AND the platform Workspace-creation policy must both allow it.
+  const canCreateProject = can('project.create') && canCreateWorkspaces;
   const canDeleteProject = can('project.delete');
   const [projects, setProjects] = useState<Project[]>([]);
   const [accessProject, setAccessProject] = useState<Project | null>(null);

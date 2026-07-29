@@ -30,6 +30,7 @@ import logging
 from typing import Any
 from uuid import UUID, uuid4
 
+from fastapi import HTTPException
 from sqlalchemy import or_, select
 
 from ....config import get_settings
@@ -112,8 +113,12 @@ async def _list_user_workspaces(db, user_id: UUID) -> list[Project]:
     Per the plan §"Decisions (locked)": "all user-owned workspaces" — no
     filtering by ``compute_tier``. Already-attached workspaces are visible
     but the UI marks them.
+
+    Excludes internal system Workspaces — they are agent / automation
+    plumbing, not something the user picks from a list.
     """
     from ....models_team import ProjectMembership
+    from ....services.apps.project_scopes import exclude_internal_workspaces_clause
 
     member_subq = select(ProjectMembership.project_id).where(ProjectMembership.user_id == user_id)
     rows = await db.execute(
@@ -122,7 +127,8 @@ async def _list_user_workspaces(db, user_id: UUID) -> list[Project]:
             or_(
                 Project.owner_id == user_id,
                 Project.id.in_(member_subq),
-            )
+            ),
+            exclude_internal_workspaces_clause(),
         )
         .order_by(Project.updated_at.desc())
     )
@@ -313,6 +319,15 @@ async def request_workspace_executor(
         name = (response.get("name") or "").strip() or "New workspace"
         try:
             target = await _create_empty_workspace(db, user_id=user_id, name=name)
+        except HTTPException as exc:
+            # Platform policy denial (403) — surface the reason verbatim so the
+            # agent tells the user to ask an administrator instead of retrying.
+            logger.info(
+                "[request_workspace] empty workspace creation denied for user=%s: %s",
+                user_id,
+                exc.detail,
+            )
+            return error_output(message=str(exc.detail))
         except Exception as exc:
             logger.exception("[request_workspace] empty workspace creation failed")
             return error_output(message=f"Failed to create empty workspace: {exc}")

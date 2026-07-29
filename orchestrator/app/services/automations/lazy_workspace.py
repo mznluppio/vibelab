@@ -40,6 +40,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...models import PROJECT_KIND_WORKSPACE, Project
 from ...models_team import Team
+from ..apps.project_scopes import INTERNAL_WORKSPACE_AUTOMATIONS_NAME
 
 if TYPE_CHECKING:  # pragma: no cover
     pass
@@ -50,7 +51,7 @@ logger = logging.getLogger(__name__)
 # Reserved name. Tilde-prefixed so it sorts to the bottom of project
 # listings and never collides with a user-supplied project name (the UI
 # rejects names starting with '~').
-_WORKSPACE_NAME = "~automations~"
+_WORKSPACE_NAME = INTERNAL_WORKSPACE_AUTOMATIONS_NAME
 
 
 __all__ = [

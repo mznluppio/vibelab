@@ -263,8 +263,17 @@ async def get_team_capabilities(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(current_active_user),
 ):
-    """Return effective team-governance capabilities for the current user."""
-    return {"can_create_teams": await can_create_team(db, user)}
+    """Return the current user's effective platform-governance capabilities.
+
+    The frontend uses these to hide creation affordances it must not offer;
+    the server-side checks remain authoritative.
+    """
+    from ..permissions import can_create_workspace
+
+    return {
+        "can_create_teams": await can_create_team(db, user),
+        "can_create_workspaces": await can_create_workspace(db, user),
+    }
 
 
 # ── Invitation public routes (must be before /{team_slug} to avoid collision) ──
@@ -1114,7 +1123,9 @@ async def change_project_member_role(
         raise HTTPException(status_code=404, detail="Project member not found")
 
     if user_id == project.owner_id and body.role != "admin":
-        raise HTTPException(status_code=400, detail="The project owner must retain administrator access")
+        raise HTTPException(
+            status_code=400, detail="The project owner must retain administrator access"
+        )
 
     old_role = pm.role
     pm.role = body.role
@@ -1174,7 +1185,9 @@ async def remove_project_member(
         raise HTTPException(status_code=404, detail="Project member not found")
 
     if user_id == project.owner_id:
-        raise HTTPException(status_code=400, detail="The project owner must retain administrator access")
+        raise HTTPException(
+            status_code=400, detail="The project owner must retain administrator access"
+        )
 
     pm.is_active = False
 

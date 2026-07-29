@@ -25,7 +25,10 @@ from ..database import get_db
 from ..models import Chat, Project, User
 from ..models_automations import AutomationDefinition
 from ..models_team import ProjectMembership, TeamMembership
-from ..services.apps.project_scopes import exclude_app_instances_clause
+from ..services.apps.project_scopes import (
+    exclude_app_instances_clause,
+    exclude_internal_workspaces_clause,
+)
 from ..users import current_active_user
 
 router = APIRouter(prefix="/api/sidebar", tags=["sidebar"])
@@ -67,7 +70,10 @@ async def _visible_projects_query(user: User, db: AsyncSession):
     if not member and not is_superuser:
         return None
 
-    project_kind_filter = exclude_app_instances_clause()
+    project_kind_filter = and_(
+        exclude_app_instances_clause(),
+        exclude_internal_workspaces_clause(),
+    )
     base = select(Project).where(and_(Project.team_id == team_id, project_kind_filter))
     if (member and member.role == "admin") or is_superuser:
         return base
@@ -112,9 +118,7 @@ def _serialize_automation(automation: AutomationDefinition) -> dict:
             str(automation.target_project_id) if automation.target_project_id else None
         ),
         "workspace_project_id": (
-            str(automation.workspace_project_id)
-            if automation.workspace_project_id
-            else None
+            str(automation.workspace_project_id) if automation.workspace_project_id else None
         ),
         "created_at": automation.created_at.isoformat() if automation.created_at else None,
         "updated_at": automation.updated_at.isoformat() if automation.updated_at else None,
@@ -265,9 +269,7 @@ async def sidebar_tree(
                 )
             )
         else:
-            automation_filter.append(
-                AutomationDefinition.owner_user_id == current_user.id
-            )
+            automation_filter.append(AutomationDefinition.owner_user_id == current_user.id)
 
         automation_rows = await db.execute(
             select(AutomationDefinition)

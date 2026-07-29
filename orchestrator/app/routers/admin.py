@@ -58,41 +58,53 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 class TeamGovernanceUpdate(BaseModel):
     automatically_create_personal_teams: bool | None = None
     allow_user_team_creation: bool | None = None
+    allow_user_workspace_creation: bool | None = None
 
 
 class TeamCreationOverrideUpdate(BaseModel):
     can_create_teams_override: bool | None = None
 
 
-@router.get("/platform/team-governance")
+class WorkspaceCreationOverrideUpdate(BaseModel):
+    can_create_workspaces_override: bool | None = None
+
+
+def _governance_payload(settings) -> dict[str, bool]:
+    return {
+        "automatically_create_personal_teams": settings.automatically_create_personal_teams,
+        "allow_user_team_creation": settings.allow_user_team_creation,
+        "allow_user_workspace_creation": settings.allow_user_workspace_creation,
+    }
+
+
+# ``/platform/team-governance`` is the original path and stays registered so
+# already-deployed clients keep working; the policy now also covers Workspace
+# creation, hence the neutrally-named canonical path.
+@router.get("/platform/governance")
+@router.get("/platform/team-governance", include_in_schema=False)
 async def get_team_governance(
     admin: User = Depends(current_superuser),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, bool]:
-    """Return the minimal platform-wide Team governance policy."""
+    """Return the platform-wide Team / Workspace governance policy."""
     settings = await get_platform_settings(db)
-    return {
-        "automatically_create_personal_teams": settings.automatically_create_personal_teams,
-        "allow_user_team_creation": settings.allow_user_team_creation,
-    }
+    return _governance_payload(settings)
 
 
-@router.patch("/platform/team-governance")
+@router.patch("/platform/governance")
+@router.patch("/platform/team-governance", include_in_schema=False)
 async def update_team_governance(
     body: TeamGovernanceUpdate,
     admin: User = Depends(current_superuser),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, bool]:
-    """Update platform-wide Team governance policy (superuser only)."""
+    """Update the platform-wide governance policy (superuser only)."""
     settings = await get_platform_settings(db, create=True)
     changes = body.model_dump(exclude_unset=True)
     for field, value in changes.items():
         setattr(settings, field, value)
     await db.commit()
-    return {
-        "automatically_create_personal_teams": settings.automatically_create_personal_teams,
-        "allow_user_team_creation": settings.allow_user_team_creation,
-    }
+    return _governance_payload(settings)
 
 
 # ============================================================================
@@ -1933,6 +1945,7 @@ async def list_users(
                     "is_verified": user.is_verified,
                     "is_superuser": user.is_superuser,
                     "can_create_teams_override": user.can_create_teams_override,
+                    "can_create_workspaces_override": user.can_create_workspaces_override,
                     "total_credits": team.total_credits if team else 0,
                     "bundled_credits": team.bundled_credits if team else 0,
                     "purchased_credits": team.purchased_credits if team else 0,
@@ -2138,6 +2151,7 @@ async def get_user_detail(
             "is_verified": user.is_verified,
             "is_superuser": user.is_superuser,
             "can_create_teams_override": user.can_create_teams_override,
+            "can_create_workspaces_override": user.can_create_workspaces_override,
             "active_teams": [
                 {"id": str(team_id), "name": name, "slug": slug, "role": role}
                 for team_id, name, slug, role in active_teams
@@ -2200,6 +2214,35 @@ async def update_user_team_creation_override(
         },
     )
     return {"can_create_teams_override": target.can_create_teams_override}
+
+
+@router.patch("/users/{user_id}/workspace-creation")
+async def update_user_workspace_creation_override(
+    user_id: str,
+    body: WorkspaceCreationOverrideUpdate,
+    admin: User = Depends(current_superuser),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, bool | None]:
+    """Set or clear a user-specific exception to the Workspace creation policy."""
+    target = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+    if target is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    previous = target.can_create_workspaces_override
+    target.can_create_workspaces_override = body.can_create_workspaces_override
+    await db.commit()
+    await log_admin_action(
+        db,
+        admin,
+        "user.workspace_creation_override_changed",
+        "user",
+        target.id,
+        extra_data={
+            "previous": previous,
+            "current": target.can_create_workspaces_override,
+        },
+    )
+    return {"can_create_workspaces_override": target.can_create_workspaces_override}
 
 
 @router.get("/users/{user_id}/projects")

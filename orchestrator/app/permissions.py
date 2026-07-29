@@ -368,6 +368,40 @@ async def can_create_team(db: AsyncSession, user: User) -> bool:
     return bool(settings.allow_user_team_creation)
 
 
+async def can_create_workspace(db: AsyncSession, user: User) -> bool:
+    """Resolve the server-authoritative Workspace creation capability.
+
+    Same precedence as :func:`can_create_team`: superuser, then the
+    per-user administrator override, then the platform default.
+    """
+    if getattr(user, "is_superuser", False):
+        return True
+
+    override = getattr(user, "can_create_workspaces_override", None)
+    if override is not None:
+        return bool(override)
+
+    settings = await get_platform_settings(db)
+    return bool(settings.allow_user_workspace_creation)
+
+
+async def require_workspace_creation(db: AsyncSession, user: User) -> None:
+    """Raise ``HTTPException(403)`` unless *user* may create a Workspace.
+
+    Every Workspace creation path — empty, from a Base, ZIP / Git import,
+    clone, duplicate, Marketplace install or fork, Assist to Build, and the
+    direct API — must funnel through this check.  Internal plumbing that
+    mints a hidden system Workspace (agent tool scope, automations) is
+    deliberately exempt: it is not a user-visible Workspace.
+    """
+    if await can_create_workspace(db, user):
+        return
+    raise HTTPException(
+        status_code=403,
+        detail="Workspace creation is disabled for your account. Contact a platform administrator.",
+    )
+
+
 async def check_team_permission(
     db: AsyncSession,
     team_id: UUID,

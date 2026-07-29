@@ -30,3 +30,27 @@ def exclude_app_instances_clause() -> ColumnElement[bool]:
 def only_app_instances_clause() -> ColumnElement[bool]:
     """WHERE clause matching ONLY installed-app runtime projects."""
     return Project.project_kind == PROJECT_KIND_APP_RUNTIME
+
+
+# Internal system Workspaces. These are plumbing, not user Workspaces: they
+# exist purely so project-scoped agent tools (file I/O, bash, credentials) and
+# scheduled automations always resolve a valid scope. They are minted lazily by
+# `services.lazy_chat_workspace` / `services.automations.lazy_workspace`, are
+# exempt from the platform Workspace-creation policy for that reason, and must
+# never surface in a user-facing Workspace collection.
+INTERNAL_WORKSPACE_CHAT_NAME = "~workspace~"
+INTERNAL_WORKSPACE_AUTOMATIONS_NAME = "~automations~"
+INTERNAL_WORKSPACE_NAMES: tuple[str, ...] = (
+    INTERNAL_WORKSPACE_CHAT_NAME,
+    INTERNAL_WORKSPACE_AUTOMATIONS_NAME,
+)
+
+
+def exclude_internal_workspaces_clause() -> ColumnElement[bool]:
+    """WHERE clause filtering out lazily-minted internal system Workspaces.
+
+    Pair with `exclude_app_instances_clause()` on every query that returns a
+    Workspace collection to a user, so no Workspace the user never asked for
+    appears in their list.
+    """
+    return Project.name.notin_(INTERNAL_WORKSPACE_NAMES)
