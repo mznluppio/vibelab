@@ -52,19 +52,22 @@ export function PromptInputPulsingBorder({
   const animate = canAnimate && !reducedMotion;
 
   return (
-    <div className="relative" data-testid="prompt-input-pulsing-border">
+    <div
+      className="relative rounded-[var(--radius)] bg-[var(--border)] p-px"
+      data-testid="prompt-input-pulsing-border"
+    >
       {canAnimate && (
         <ShaderFallbackBoundary>
           <Suspense fallback={null}>
             <LazyPulsingBorder
               aria-hidden="true"
-              className="pointer-events-none absolute inset-0 z-0 rounded-[var(--radius)] opacity-70"
+              className="pointer-events-none absolute inset-0 z-0 rounded-[var(--radius)] opacity-80"
               width="100%"
               height="100%"
               colors={['#0dc1fd']}
               colorBack="rgba(0, 0, 0, 0)"
               roundness={0.3}
-              thickness={0}
+              thickness={0.05}
               softness={0.75}
               aspectRatio="auto"
               intensity={active ? 0.2 : 0.06}
@@ -86,7 +89,7 @@ export function PromptInputPulsingBorder({
           </Suspense>
         </ShaderFallbackBoundary>
       )}
-      <div className="relative z-[1]">{children}</div>
+      <div className="relative z-[1] rounded-[calc(var(--radius)-1px)]">{children}</div>
     </div>
   );
 }
