@@ -21,6 +21,23 @@ def _workflow(**extra):
     }
 
 
+def _diagram():
+    return {
+        "title": "Current workflow",
+        "preset": "business-process",
+        "direction": "LR",
+        "nodes": [
+            {"id": "start", "type": "start", "label": "Request"},
+            {"id": "review", "type": "step", "label": "Manual review"},
+            {"id": "end", "type": "end", "label": "Complete"},
+        ],
+        "edges": [
+            {"source": "start", "target": "review"},
+            {"source": "review", "target": "end"},
+        ],
+    }
+
+
 def test_pre_build_guard_blocks_mutation_even_in_allow_mode():
     context = {**_workflow(), "edit_mode": "allow"}
     denied = block_pre_build_tool("write_file", context)
@@ -96,7 +113,7 @@ async def test_as_is_review_emits_existing_approval_envelope_and_resumes(monkeyp
     context = {**_workflow(), "chat_id": "chat-1", "task_id": "task-1", "pubsub": pubsub}
 
     result = await review_tool.request_assist_to_build_review_executor(
-        {"stage": "as_is", "summary_markdown": "Current process", "mermaid": "flowchart LR\nA-->B"},
+        {"stage": "as_is", "summary_markdown": "Current process", "diagram": _diagram()},
         context,
     )
 
@@ -105,6 +122,27 @@ async def test_as_is_review_emits_existing_approval_envelope_and_resumes(monkeyp
     assert context["assist_to_build_workflow"]["as_is_approved"] is True
     assert pubsub.events[0][1]["data"]["kind"] == "assist_to_build_review"
     assert pubsub.events[0][1]["data"]["summary"]["stage"] == "as_is"
+    assert pubsub.events[0][1]["data"]["summary"]["diagram"] == _diagram()
+
+
+@pytest.mark.asyncio
+async def test_as_is_review_rejects_missing_or_invalid_required_diagram(monkeypatch):
+    manager = _FakeManager("approve_as_is")
+    monkeypatch.setattr(review_tool, "get_pending_input_manager", lambda: manager)
+    context = _workflow()
+
+    missing = await review_tool.request_assist_to_build_review_executor(
+        {"stage": "as_is", "summary_markdown": "Current process"}, context
+    )
+    assert missing["success"] is False
+    assert "mandatory structured workflow diagram" in missing["message"]
+
+    invalid = await review_tool.request_assist_to_build_review_executor(
+        {"stage": "as_is", "summary_markdown": "Current process", "diagram": {"title": "No flow"}},
+        context,
+    )
+    assert invalid["success"] is False
+    assert "invalid" in invalid["message"]
 
 
 @pytest.mark.asyncio
@@ -113,7 +151,7 @@ async def test_to_be_review_unlocks_build_and_request_changes_does_not(monkeypat
     monkeypatch.setattr(review_tool, "get_pending_input_manager", lambda: manager)
     context = _workflow(as_is_approved=True, stage="to_be")
     first = await review_tool.request_assist_to_build_review_executor(
-        {"stage": "to_be", "summary_markdown": "Future process"}, context
+        {"stage": "to_be", "summary_markdown": "Future process", "diagram": _diagram()}, context
     )
     assert first["outcome"] == "request_changes"
     assert first["comment"] == "Clarify the handoff"
@@ -121,7 +159,7 @@ async def test_to_be_review_unlocks_build_and_request_changes_does_not(monkeypat
 
     manager.response = "approve_to_be_and_build"
     second = await review_tool.request_assist_to_build_review_executor(
-        {"stage": "to_be", "summary_markdown": "Revised future process"}, context
+        {"stage": "to_be", "summary_markdown": "Revised future process", "diagram": _diagram()}, context
     )
     assert second["outcome"] == "approve_to_be_and_build"
     assert block_pre_build_tool("write_file", context) is None
