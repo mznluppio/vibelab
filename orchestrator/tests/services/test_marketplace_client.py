@@ -29,6 +29,11 @@ import httpx
 import pytest
 
 from app.services import marketplace_client as mc
+from tests._test_database import (
+    get_test_database_url,
+    probe_test_database,
+    sibling_database_url,
+)
 
 HUB_ID_HEADER = mc.HUB_ID_HEADER
 
@@ -512,7 +517,7 @@ def marketplace_service():
     """Boot the real Wave-2 marketplace service against a fresh test DB.
 
     Requires:
-      - PostgreSQL on localhost:5433 (the orchestrator's standard test DB).
+      - The orchestrator's standard test PostgreSQL (see tests/_test_database.py).
       - The marketplace package's own venv at packages/tesslate-marketplace/.venv.
 
     Skips if either is unavailable.
@@ -523,14 +528,12 @@ def marketplace_service():
     if not venv_python.exists():
         pytest.skip(f"marketplace venv not found at {venv_python}")
 
-    # Verify postgres reachable.
-    try:
-        with socket.create_connection(("localhost", 5433), timeout=2):
-            pass
-    except OSError:
-        pytest.skip("postgres test container not reachable on :5433")
+    # Verify the test postgres answers and identifies itself.
+    ok, reason = probe_test_database(get_test_database_url())
+    if not ok:
+        pytest.skip(f"postgres test container not reachable: {reason}")
 
-    db_url = "postgresql+asyncpg://tesslate_test:testpass@localhost:5433/marketplace_client_test"
+    db_url = sibling_database_url("marketplace_client_test")
 
     # Drop & recreate the database so each test run is fresh. DROP/CREATE
     # DATABASE cannot run inside a transaction, so issue them separately.

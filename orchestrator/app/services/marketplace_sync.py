@@ -927,6 +927,7 @@ class MarketplaceSyncWorker:
             common_fields["agent_type"] = _agent_field("agent_type")
             common_fields["model"] = _agent_field("model")
             common_fields["tools"] = _agent_field("tools")
+            common_fields["config"] = _agent_field("config")
             common_fields["mode"] = _agent_field("mode")
             common_fields["is_forkable"] = bool(_agent_field("is_forkable"))
 

@@ -17,16 +17,14 @@ These tests stub out the marketplace HTTP round-trip by patching
 from __future__ import annotations
 
 import asyncio
-import os
 import uuid
 
 import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-_ASYNC_DB_URL = os.environ.get(
-    "DATABASE_URL",
-    "postgresql+asyncpg://tesslate_test:testpass@localhost:5433/tesslate_test",
-)
+from tests._test_database import get_test_database_url
+
+_ASYNC_DB_URL = get_test_database_url()
 
 
 def _run_db(coro_fn, *args, **kwargs):

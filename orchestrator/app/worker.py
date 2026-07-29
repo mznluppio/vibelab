@@ -245,11 +245,16 @@ async def _contract_gate_hook(tool_name, parameters, context, tool):
     when the gate denies the call (same shape as the in-tree path).
     """
     from .agent.tools.registry import check_contract_gate
-    from .services.assist_to_build import block_pre_build_tool
+    from .services.assist_to_build import block_pre_build_tool, is_build_unlocked
 
     assist_result = block_pre_build_tool(tool_name, context)
     if assist_result is not None:
         return assist_result
+
+    # A TO-BE approval is the explicit build consent for this fixed workflow.
+    # It must not be defeated by an earlier client-side Plan/Ask preference.
+    if is_build_unlocked(context):
+        context["edit_mode"] = "allow"
 
     return await check_contract_gate(
         tool_name=tool_name,
@@ -293,6 +298,12 @@ def _build_submodule_registry(
                     "as_is_approved": False,
                     "to_be_approved": False,
                 }
+            if agent_slug == "assist-to-build":
+                from .services.assist_to_build import model_visible_tools
+
+                visible_tools = model_visible_tools(context)
+                if visible_tools is not None:
+                    context["model_visible_tools"] = list(visible_tools)
             return await _contract_gate_hook(tool_name, parameters, context, tool)
 
         sub = SubmoduleRegistry(
@@ -1342,6 +1353,11 @@ async def execute_agent_task(ctx: dict, payload_dict: dict):
                 "parent_task_id": payload.parent_task_id,
                 "assist_to_build_workflow": _assist_to_build_workflow,
             }
+
+            if _assist_to_build_workflow:
+                from .services.assist_to_build import model_visible_tools
+
+                context["model_visible_tools"] = list(model_visible_tools(context) or ())
 
             # Inject MCP server configs so adapter executors can connect per-call
             if mcp_context and mcp_context.get("mcp_configs"):

@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING
 from uuid import UUID
 
 from fastapi import HTTPException
-from sqlalchemy import and_, select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 if TYPE_CHECKING:
@@ -402,6 +402,37 @@ async def require_workspace_creation(db: AsyncSession, user: User) -> None:
     )
 
 
+async def require_agent_task_access(
+    task_id: str,
+    user_id: UUID,
+    db: AsyncSession | None = None,
+    permission: Permission = Permission.CHAT_VIEW,
+):
+    """Authorize access to a running agent task's event stream.
+
+    Agent event streams are keyed by ``task_id`` alone, so anything that
+    subscribes to one must first establish that the task belongs to the caller
+    — and, when the task is bound to a Workspace and a session is available,
+    that the caller still has access to that Workspace (so revoking access
+    also cuts the live stream).
+
+    Answers 404 in every failure case: the existence of another user's task is
+    itself information.
+    """
+    from .services.task_manager import get_task_manager
+
+    task = await get_task_manager().get_task_async(task_id)
+    if task is None or str(task.user_id) != str(user_id):
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    project_id = (task.metadata or {}).get("project_id") if task.metadata else None
+    if db is not None and project_id:
+        # Raises 404/403 with the same semantics as any other Workspace read.
+        await get_project_with_access(db, str(project_id), user_id, permission)
+
+    return task
+
+
 async def check_team_permission(
     db: AsyncSession,
     team_id: UUID,
@@ -577,6 +608,57 @@ async def get_effective_project_role(
 
     # visibility == "team" — inherit team role
     return team_membership.role
+
+
+def accessible_project_ids(user: User):
+    """Return a subquery of the project ids *user* may read.
+
+    The SQL counterpart of :func:`get_effective_project_role`, for endpoints
+    that list rows belonging to many projects at once. Filtering must happen in
+    the query — a Python-side filter after the fact still loads and counts rows
+    the caller cannot see, and a client-side one shows them.
+
+    A superuser matches every project. Everyone else matches a project when they
+    own it (legacy compat), hold an explicit project membership, administer its
+    team, or the project is team-visible inside a team they actively belong to.
+    """
+    from .models import Project
+    from .models_team import ProjectMembership, TeamMembership
+
+    if getattr(user, "is_superuser", False):
+        return select(Project.id)
+
+    own_memberships = select(ProjectMembership.project_id).where(
+        and_(
+            ProjectMembership.user_id == user.id,
+            ProjectMembership.is_active.is_(True),
+        )
+    )
+    admin_team_ids = select(TeamMembership.team_id).where(
+        and_(
+            TeamMembership.user_id == user.id,
+            TeamMembership.is_active.is_(True),
+            TeamMembership.role == "admin",
+        )
+    )
+    member_team_ids = select(TeamMembership.team_id).where(
+        and_(
+            TeamMembership.user_id == user.id,
+            TeamMembership.is_active.is_(True),
+        )
+    )
+
+    return select(Project.id).where(
+        or_(
+            Project.owner_id == user.id,
+            Project.id.in_(own_memberships),
+            Project.team_id.in_(admin_team_ids),
+            and_(
+                Project.team_id.in_(member_team_ids),
+                Project.visibility == "team",
+            ),
+        )
+    )
 
 
 async def get_project_with_access(

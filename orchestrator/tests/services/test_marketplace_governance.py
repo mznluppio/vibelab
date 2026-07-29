@@ -13,18 +13,15 @@ Covers the helpers in ``app.services.marketplace_governance``:
 from __future__ import annotations
 
 import asyncio
-import os
 import uuid
 
 import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.services import marketplace_governance as gov
+from tests._test_database import get_test_database_url
 
-_ASYNC_DB_URL = os.environ.get(
-    "DATABASE_URL",
-    "postgresql+asyncpg://tesslate_test:testpass@localhost:5433/tesslate_test",
-)
+_ASYNC_DB_URL = get_test_database_url()
 
 
 def _run_db(coro_fn, *args, **kwargs):

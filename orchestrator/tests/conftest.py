@@ -40,12 +40,24 @@ def pytest_configure(config):
     Pytest hook called before test collection.
     Sets up test environment variables and registers custom markers.
     """
-    # CRITICAL: Set test environment variables BEFORE any app imports
-    # Integration tests use port 5433 (docker-compose.test.yml)
-    # Unit/mocked tests don't actually connect to DB
-    os.environ["DATABASE_URL"] = (
-        "postgresql+asyncpg://tesslate_test:testpass@localhost:5433/tesslate_test"
-    )
+    # CRITICAL: Set test environment variables BEFORE any app imports.
+    # DATABASE_URL in particular cannot be fixed up later: app/main.py does
+    # `from .database import engine`, so the engine object — and the port it
+    # dials — is frozen at import time. resolve_test_database_url() therefore
+    # picks the port here, and tests/integration/conftest.py starts the
+    # container on whatever it chose. Unit/mocked tests never connect.
+    from tests._test_database import resolve_test_database_url
+
+    resolve_test_database_url()
+
+    # App startup shells out to bare `alembic`, so the interpreter's own script
+    # directory has to be on PATH. It isn't when pytest is launched as
+    # `.venv/bin/python -m pytest` from a shell where the venv was never
+    # activated — which is how CI and most local runs invoke it.
+    _bin_dir = str(Path(sys.executable).parent)
+    if _bin_dir not in os.environ.get("PATH", "").split(os.pathsep):
+        os.environ["PATH"] = _bin_dir + os.pathsep + os.environ.get("PATH", "")
+
     os.environ["SECRET_KEY"] = "test-secret-key-for-testing-only"
     os.environ["DEPLOYMENT_MODE"] = "docker"
     os.environ["LITELLM_API_BASE"] = "http://localhost:4000/v1"

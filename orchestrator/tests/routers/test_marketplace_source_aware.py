@@ -24,12 +24,13 @@ exercise here lives in the orchestrator's local catalog cache.
 from __future__ import annotations
 
 import asyncio
-import os
 import uuid
 
 import pytest
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+from tests._test_database import get_test_database_url
 
 # Stable UUIDs for the fake federated sources we insert in setup. Using
 # fixed values lets us re-run the suite without pollution between tests
@@ -49,10 +50,7 @@ _TESSLATE_AGENT_ID = uuid.UUID("55555555-6666-7777-8888-999999999999")
 # ``test_builtin_skill_guard.py`` pattern works around it by running each
 # DB step on a throwaway loop with a fresh engine — we mirror the same
 # approach here so the seed step can't poison the TestClient's loop.
-_ASYNC_DB_URL = os.environ.get(
-    "DATABASE_URL",
-    "postgresql+asyncpg://tesslate_test:testpass@localhost:5433/tesslate_test",
-)
+_ASYNC_DB_URL = get_test_database_url()
 
 
 def _run_db(coro_fn, *args, **kwargs):

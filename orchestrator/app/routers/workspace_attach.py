@@ -27,7 +27,6 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth_unified import get_authenticated_user
@@ -85,22 +84,15 @@ async def _validate_attach_target(
         raise HTTPException(
             status_code=400, detail=f"Invalid project_id: {project_id_raw!r}"
         ) from exc
-    project = await db.get(Project, project_id)
-    if project is None:
-        raise HTTPException(status_code=404, detail="Workspace not found")
-    if project.owner_id == current_user.id or getattr(current_user, "is_superuser", False):
-        return project
-    # Membership union — same logic the agent tool used when listing.
-    from ..models_team import ProjectMembership
+    # Attaching points the agent's file tools at this Workspace, so authorize
+    # through the shared RBAC helper: the hand-rolled owner-or-explicit-
+    # membership union missed team-visible Workspaces and, more importantly,
+    # ignored the ``is_active`` flag, so a revoked member kept attaching.
+    from ..permissions import Permission, get_project_with_access
 
-    row = await db.execute(
-        select(ProjectMembership).where(
-            ProjectMembership.project_id == project.id,
-            ProjectMembership.user_id == current_user.id,
-        )
+    project, _role = await get_project_with_access(
+        db, str(project_id), current_user.id, Permission.PROJECT_EDIT
     )
-    if row.scalar_one_or_none() is None:
-        raise HTTPException(status_code=403, detail="Not authorized for this workspace")
     return project
 
 

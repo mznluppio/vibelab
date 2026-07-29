@@ -3945,7 +3945,10 @@ export const createLogStreamWebSocket = (projectSlug: string): WebSocket => {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     wsUrl = `${protocol}//${window.location.host}`;
   }
-  return new WebSocket(`${wsUrl}/api/projects/${projectSlug}/logs/stream`);
+  // Same query-param JWT the terminal socket uses: container logs are
+  // workspace-scoped data, so the socket must identify the caller.
+  const params = new URLSearchParams({ token: localStorage.getItem('token') || '' });
+  return new WebSocket(`${wsUrl}/api/projects/${projectSlug}/logs/stream?${params}`);
 };
 
 // ── Teams & RBAC ──────────────────────────────────────────────────────────

@@ -12,6 +12,7 @@ interface AgentMessageProps {
   agentAvatarUrl?: string;
   toolCallsCollapsed?: boolean;
   isStreaming?: boolean;
+  nonTechnical?: boolean;
 }
 
 export default function AgentMessage({
@@ -20,6 +21,7 @@ export default function AgentMessage({
   agentAvatarUrl,
   toolCallsCollapsed,
   isStreaming = false,
+  nonTechnical = false,
 }: AgentMessageProps) {
   // In development, show all steps (to display debug panels)
   // In production, only show steps with meaningful content
@@ -61,8 +63,9 @@ export default function AgentMessage({
                 step={step}
                 totalSteps={agentData.iterations}
                 toolCallsCollapsed={
-                  agentData.completion_reason !== 'in_progress' ? toolCallsCollapsed : false
+                  nonTechnical || (agentData.completion_reason !== 'in_progress' ? toolCallsCollapsed : false)
                 }
+                nonTechnical={nonTechnical}
               />
             ))}
           </div>
@@ -71,7 +74,7 @@ export default function AgentMessage({
         {/* In Progress Indicator - animated dots while agent is still working */}
         {agentData.completion_reason === 'in_progress' && (
           <>
-            {agentData.currentThinking && (
+            {agentData.currentThinking && !nonTechnical && (
               <div
                 className={`px-3 py-2 text-xs text-[var(--text)]/50 italic max-h-20 overflow-hidden ${stepsToDisplay.length > 0 ? 'mt-2' : ''}`}
               >

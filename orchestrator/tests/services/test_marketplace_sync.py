@@ -47,14 +47,17 @@ from app.services.marketplace_sync import (
     _DEFAULT_MANIFEST_SCHEMA_VERSION,
     MarketplaceSyncWorker,
 )
+from tests._test_database import (
+    get_test_database_url,
+    probe_test_database,
+    sibling_database_url,
+)
 
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 
-_ORCHESTRATOR_TEST_DB_URL = (
-    "postgresql+asyncpg://tesslate_test:testpass@localhost:5433/tesslate_test"
-)
+_ORCHESTRATOR_TEST_DB_URL = get_test_database_url()
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -115,13 +118,11 @@ def marketplace_service():
     if not venv_python.exists():
         pytest.skip(f"marketplace venv not found at {venv_python}")
 
-    try:
-        with socket.create_connection(("localhost", 5433), timeout=2):
-            pass
-    except OSError:
-        pytest.skip("postgres test container not reachable on :5433")
+    ok, reason = probe_test_database(get_test_database_url())
+    if not ok:
+        pytest.skip(f"postgres test container not reachable: {reason}")
 
-    db_url = f"postgresql+asyncpg://tesslate_test:testpass@localhost:5433/{MARKETPLACE_DB_NAME}"
+    db_url = sibling_database_url(MARKETPLACE_DB_NAME)
 
     # Provision a clean DB. DROP/CREATE require autocommit (no transaction).
     for stmt in (

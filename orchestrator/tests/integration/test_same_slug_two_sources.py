@@ -24,11 +24,12 @@ the cache rows by hand rather than spin up a marketplace service.
 from __future__ import annotations
 
 import asyncio
-import os
 import uuid
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+from tests._test_database import get_test_database_url
 
 _TESSLATE_OFFICIAL_ID = uuid.UUID("00000000-0000-0000-0000-000000000001")
 _COMMUNITY_SOURCE_ID = uuid.UUID("aabbccdd-1111-2222-3333-444455556666")
@@ -37,10 +38,7 @@ _COMMUNITY_AGENT_ID = uuid.UUID("bbbb2222-3333-4444-5555-666677778888")
 _SHARED_SLUG = "wave5-coder"
 
 
-_ASYNC_DB_URL = os.environ.get(
-    "DATABASE_URL",
-    "postgresql+asyncpg://tesslate_test:testpass@localhost:5433/tesslate_test",
-)
+_ASYNC_DB_URL = get_test_database_url()
 
 
 def _run_db(coro_fn, *args, **kwargs):

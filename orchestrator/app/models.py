@@ -20,7 +20,7 @@ from sqlalchemy import (
     UniqueConstraint,
     text,
 )
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, backref, mapped_column, relationship
 from sqlalchemy.sql import expression, func
 
 from app.types.guid import GUID
@@ -3277,7 +3277,14 @@ class AgentSchedule(Base):
     )
 
     user = relationship("User", backref="agent_schedules")
-    project = relationship("Project", backref="agent_schedules")
+    # ``agent_schedules`` was removed by migration 0074_hard_reset.  Keep
+    # this legacy mapping only for pre-reset compatibility code, but never
+    # load it while deleting a project: deployed databases correctly no
+    # longer contain the table.
+    project = relationship(
+        "Project",
+        backref=backref("agent_schedules", passive_deletes=True),
+    )
     trigger_events = relationship(
         "ScheduleTriggerEvent",
         back_populates="schedule",

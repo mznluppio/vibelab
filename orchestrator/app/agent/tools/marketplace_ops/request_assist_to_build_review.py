@@ -386,8 +386,28 @@ async def request_assist_to_build_review_executor(
         workflow["as_is_approved"] = True
         workflow["stage"] = "to_be"
     elif response == "approve_to_be_and_build":
+        # Unit-level workflow callers do not own a database; real chat runs
+        # always do, and must provision the configured Base before unlocking.
+        if context.get("db") is not None:
+            try:
+                from ....services.assist_to_build import ensure_assist_build_workspace
+
+                await ensure_assist_build_workspace(context)
+            except Exception:
+                logger.exception("Assist to Build workspace provisioning failed")
+                return error_output(
+                    message="The application starter is unavailable. Contact your VibeLab administrator.",
+                    stage="to_be",
+                )
         workflow["to_be_approved"] = True
         workflow["stage"] = "build"
+        # The approval is the workflow's one explicit consent. This internal
+        # execution setting deliberately does not overwrite the user's saved
+        # composer preference; it applies to this in-flight Assist run only.
+        context["edit_mode"] = "allow"
+        from ....services.assist_to_build import model_visible_tools
+
+        context["model_visible_tools"] = list(model_visible_tools(context) or ())
     else:
         workflow["stage"] = stage
     await _persist_checkpoint(

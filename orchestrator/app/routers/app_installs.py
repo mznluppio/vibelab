@@ -202,6 +202,14 @@ async def install_endpoint(
     user: User = Depends(current_active_user),
     hub_client: HubClient = Depends(_get_hub_client),
 ) -> InstallResponse:
+    # ``team_id`` comes from the client and becomes the owning team of the
+    # runtime project the install mints, so it must be a team the caller
+    # actually belongs to — otherwise an install can be force-attached to a
+    # foreign team and exposed to its members.
+    from ..permissions import Permission, check_team_permission
+
+    await check_team_permission(db, payload.team_id, user.id, Permission.PROJECT_CREATE)
+
     try:
         try:
             result = await install_app(

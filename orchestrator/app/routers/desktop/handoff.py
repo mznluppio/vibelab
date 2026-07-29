@@ -7,10 +7,12 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...database import get_db
-from ...models import User
+from ...models import AgentTask, User
+from ...permissions import Permission, get_project_with_access
 from ...services.cloud_client import CircuitOpenError, NotPairedError
 from ...users import current_active_user
 
@@ -25,10 +27,20 @@ class HandoffPullBody(BaseModel):
 @router.post("/agents/{ticket_id}/handoff/push")
 async def agents_handoff_push(
     ticket_id: uuid.UUID,
-    _user: User = Depends(current_active_user),
+    user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     from ...services import handoff_client
+
+    # A push uploads the ticket's Workspace diff and trajectory to the cloud,
+    # so require read access to that Workspace first — otherwise any session
+    # could exfiltrate another tenant's source by ticket id.
+    ticket = (
+        await db.execute(select(AgentTask).where(AgentTask.id == ticket_id))
+    ).scalar_one_or_none()
+    if ticket is None:
+        raise HTTPException(status_code=404, detail="ticket not found")
+    await get_project_with_access(db, str(ticket.project_id), user.id, Permission.FILE_READ)
 
     try:
         bundle = await handoff_client.push(db, ticket_id=ticket_id)
@@ -46,10 +58,14 @@ async def agents_handoff_push(
 @router.post("/agents/handoff/pull")
 async def agents_handoff_pull(
     body: HandoffPullBody,
-    _user: User = Depends(current_active_user),
+    user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     from ...services import handoff_client
+
+    # A pull writes a ticket (and its diff) into the target Workspace, so the
+    # caller must be allowed to edit it — ``project_id`` is client-supplied.
+    await get_project_with_access(db, str(body.project_id), user.id, Permission.PROJECT_EDIT)
 
     try:
         bundle = await handoff_client.download_from_cloud(body.cloud_task_id)

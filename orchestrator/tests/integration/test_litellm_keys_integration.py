@@ -23,6 +23,7 @@ from app.services.apps.key_lifecycle import (
     KeyState,
     KeyTier,
 )
+from tests._test_database import get_test_database_url
 
 pytestmark = pytest.mark.integration
 
@@ -67,14 +68,10 @@ class FakeDelegate:
 
 @pytest_asyncio.fixture
 async def db() -> AsyncSession:
-    import os
-
     from sqlalchemy.ext.asyncio import AsyncSession as _AsyncSession
     from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-    url = os.environ.get(
-        "DATABASE_URL", "postgresql+asyncpg://tesslate_test:testpass@localhost:5433/tesslate_test"
-    )
+    url = get_test_database_url()
     engine = create_async_engine(url, pool_pre_ping=True)
     factory = async_sessionmaker(engine, class_=_AsyncSession, expire_on_commit=False)
     async with factory() as session:

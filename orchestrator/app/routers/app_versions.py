@@ -88,12 +88,21 @@ async def publish_endpoint(
     user: User = Depends(current_active_user),
     hub_client: HubClient = Depends(_get_hub_client),
 ) -> PublishResponse:
+    # Publishing reads the source Workspace's volume and mints a marketplace
+    # listing from it, so the caller must be authorized to edit that Workspace.
+    # Without this the endpoint publishes any project whose UUID is known.
+    from ..permissions import Permission, get_project_with_access
+
+    project, _role = await get_project_with_access(
+        db, str(payload.project_id), user.id, Permission.PROJECT_EDIT
+    )
+
     try:
         try:
             result = await publish_version(
                 db,
                 creator_user_id=user.id,
-                project_id=payload.project_id,
+                project_id=project.id,
                 manifest_source=payload.manifest,
                 hub_client=hub_client,
                 app_id=payload.app_id,
@@ -133,12 +142,15 @@ async def publish_endpoint(
     )
 
 
-@router.get("/{app_version_id}", response_model=AppVersionResponse)
-async def get_app_version(
-    app_version_id: UUID,
-    db: AsyncSession = Depends(get_db),
-    user: User = Depends(current_active_user),
-) -> AppVersionResponse:
+async def _load_version_with_access(
+    app_version_id: UUID, user: User, db: AsyncSession
+) -> tuple[AppVersion, MarketplaceApp, bool]:
+    """Load a version plus its parent app, enforcing read access.
+
+    A version is readable by its creator, by a platform admin, or by anyone
+    once the parent app is public and approved. Anything else answers 404 so
+    the existence of another creator's unpublished version is not disclosed.
+    """
     version_row = (
         await db.execute(select(AppVersion).where(AppVersion.id == app_version_id))
     ).scalar_one_or_none()
@@ -146,9 +158,7 @@ async def get_app_version(
         raise HTTPException(status_code=404, detail="app_version not found")
 
     app_row = (
-        await db.execute(
-            select(MarketplaceApp).where(MarketplaceApp.id == version_row.app_id)
-        )
+        await db.execute(select(MarketplaceApp).where(MarketplaceApp.id == version_row.app_id))
     ).scalar_one_or_none()
     if app_row is None:
         raise HTTPException(status_code=404, detail="app not found")
@@ -158,6 +168,19 @@ async def get_app_version(
 
     if not (is_owner_or_admin or is_public):
         raise HTTPException(status_code=404, detail="app_version not found")
+
+    return version_row, app_row, is_owner_or_admin
+
+
+@router.get("/{app_version_id}", response_model=AppVersionResponse)
+async def get_app_version(
+    app_version_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(current_active_user),
+) -> AppVersionResponse:
+    version_row, app_row, is_owner_or_admin = await _load_version_with_access(
+        app_version_id, user, db
+    )
 
     resp = AppVersionResponse.model_validate(version_row)
     # Hide manifest_json for non-owners on non-public apps (belt + suspenders).
@@ -172,11 +195,10 @@ async def check_app_version_compat(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(current_active_user),
 ) -> CompatReportResponse:
-    version_row = (
-        await db.execute(select(AppVersion).where(AppVersion.id == app_version_id))
-    ).scalar_one_or_none()
-    if version_row is None:
-        raise HTTPException(status_code=404, detail="app_version not found")
+    # Same read gate as the version detail endpoint: the report is derived from
+    # the manifest, so it must not be computable for someone else's private
+    # version.
+    version_row, _app_row, _is_owner = await _load_version_with_access(app_version_id, user, db)
 
     manifest = version_row.manifest_json or {}
     manifest_schema = (

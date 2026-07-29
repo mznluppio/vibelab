@@ -280,7 +280,16 @@ async def subscribe_agent_events(
     """
     from starlette.responses import StreamingResponse as StarletteStreamingResponse
 
+    from ..database import AsyncSessionLocal
+    from ..permissions import require_agent_task_access
     from ..services.pubsub import get_pubsub
+
+    # Same ownership + Workspace-access gate the status endpoint applies: the
+    # stream key is only a task id, so without this any valid API key could read
+    # another tenant's agent output. Its own short-lived session avoids pinning a
+    # request-scoped one for the whole stream.
+    async with AsyncSessionLocal() as auth_db:
+        await require_agent_task_access(task_id, user.id, auth_db)
 
     pubsub = get_pubsub()
     if not pubsub:

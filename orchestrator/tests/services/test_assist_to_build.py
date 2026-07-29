@@ -8,7 +8,11 @@ import pytest
 
 from app.agent.tools.marketplace_ops import request_assist_to_build_review as review_tool
 from app.agent.tools.registry import ToolRegistry
-from app.services.assist_to_build import block_pre_build_tool, merge_workflow_metadata
+from app.services.assist_to_build import (
+    block_pre_build_tool,
+    merge_workflow_metadata,
+    model_visible_tools,
+)
 
 
 def _workflow(**extra):
@@ -90,6 +94,16 @@ async def test_assist_to_build_runtime_only_exposes_declared_tools():
 def test_pre_build_guard_releases_only_after_to_be_approval():
     context = _workflow(to_be_approved=True, stage="build")
     assert block_pre_build_tool("write_file", context) is None
+
+
+def test_model_only_sees_build_capabilities_after_to_be_approval():
+    before = _workflow()
+    assert "write_file" not in (model_visible_tools(before) or ())
+    assert "bash_exec" not in (model_visible_tools(before) or ())
+
+    after = _workflow(to_be_approved=True, stage="build")
+    assert "write_file" in (model_visible_tools(after) or ())
+    assert "bash_exec" in (model_visible_tools(after) or ())
 
 
 def test_workflow_metadata_keeps_checkpoints_and_final_approval_state():
@@ -225,7 +239,7 @@ async def test_as_is_review_rejects_non_string_artifact_lists(monkeypatch):
 async def test_to_be_review_unlocks_build_and_request_changes_does_not(monkeypatch):
     manager = _FakeManager({"response": "request_changes", "comment": "Clarify the handoff"})
     monkeypatch.setattr(review_tool, "get_pending_input_manager", lambda: manager)
-    context = _workflow(as_is_approved=True, stage="to_be")
+    context = {**_workflow(as_is_approved=True, stage="to_be"), "edit_mode": "plan"}
     first = await review_tool.request_assist_to_build_review_executor(
         {"stage": "to_be", "summary_markdown": "Future process", "diagram": _diagram()}, context
     )
@@ -239,3 +253,5 @@ async def test_to_be_review_unlocks_build_and_request_changes_does_not(monkeypat
     )
     assert second["outcome"] == "approve_to_be_and_build"
     assert block_pre_build_tool("write_file", context) is None
+    assert context["edit_mode"] == "allow"
+    assert "write_file" in context["model_visible_tools"]

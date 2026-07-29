@@ -1030,7 +1030,7 @@ async def update_agent(
         # Built-in skills are seed-managed — no UI edit path.
         from .marketplace import _reject_if_builtin
 
-        _reject_if_builtin(agent)
+        _reject_if_builtin(agent, admin)
 
         # Check if admin can edit this agent
         if not can_edit_agent(agent):

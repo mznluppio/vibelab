@@ -18,6 +18,8 @@ from uuid import UUID, uuid4
 
 import pytest
 
+from tests._test_database import get_test_database_url
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -49,7 +51,7 @@ async def _create_project_and_container(
     # Own engine per call, bound to the current test loop — avoids leaking
     # asyncpg connections across the TestClient and test loops.
     engine = create_async_engine(
-        "postgresql+asyncpg://tesslate_test:testpass@localhost:5433/tesslate_test",
+        get_test_database_url(),
         pool_pre_ping=True,
     )
     Session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
@@ -348,7 +350,7 @@ def test_patch_config_applies_merge_semantics(authenticated_client):
         )
 
         engine = create_async_engine(
-            "postgresql+asyncpg://tesslate_test:testpass@localhost:5433/tesslate_test",
+            get_test_database_url(),
             pool_pre_ping=True,
         )
         Session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
@@ -430,7 +432,7 @@ async def _create_consumer_with_env_injection(
     from app.models import Container, ContainerConnection
 
     engine = create_async_engine(
-        "postgresql+asyncpg://tesslate_test:testpass@localhost:5433/tesslate_test",
+        get_test_database_url(),
         pool_pre_ping=True,
     )
     Session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
@@ -556,7 +558,7 @@ def test_patch_internal_container_restarts_itself(authenticated_client, monkeypa
         from app.models_team import TeamMembership
 
         engine = create_async_engine(
-            "postgresql+asyncpg://tesslate_test:testpass@localhost:5433/tesslate_test",
+            get_test_database_url(),
             pool_pre_ping=True,
         )
         Session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)

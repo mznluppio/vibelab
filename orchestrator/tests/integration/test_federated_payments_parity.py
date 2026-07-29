@@ -56,11 +56,9 @@ from app.services.marketplace_client import MarketplaceClient
 from app.services.marketplace_federation import (
     dispatch_purchase,
 )
+from tests._test_database import get_test_database_url
 
-_ASYNC_DB_URL = os.environ.get(
-    "DATABASE_URL",
-    "postgresql+asyncpg://tesslate_test:testpass@localhost:5433/tesslate_test",
-)
+_ASYNC_DB_URL = get_test_database_url()
 
 
 # ---------------------------------------------------------------------------

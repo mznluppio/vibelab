@@ -2665,6 +2665,7 @@ export function ChatContainer({
                     agentAvatarUrl={message.agentAvatarUrl}
                     toolCallsCollapsed={toolCallsCollapsed}
                     isStreaming={agentExecuting && message.agentData.completion_reason === 'in_progress'}
+                    nonTechnical={currentAgent.name === 'Assist to Build'}
                   />
                 </div>
               );

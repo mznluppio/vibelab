@@ -22,11 +22,12 @@ mode returns the right row.
 from __future__ import annotations
 
 import asyncio
-import os
 import uuid
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+from tests._test_database import get_test_database_url
 
 _TESSLATE_OFFICIAL_ID = uuid.UUID("00000000-0000-0000-0000-000000000001")
 _COMMUNITY_SOURCE_ID = uuid.UUID("ddccbbaa-9999-8888-7777-665544332211")
@@ -40,10 +41,7 @@ _COMMUNITY_ONLY_AGENT_ID = uuid.UUID("11112222-aaaa-bbbb-cccc-ddddeeee0003")
 _COMMUNITY_ONLY_SLUG = "wave5-community-only-agent"
 
 
-_ASYNC_DB_URL = os.environ.get(
-    "DATABASE_URL",
-    "postgresql+asyncpg://tesslate_test:testpass@localhost:5433/tesslate_test",
-)
+_ASYNC_DB_URL = get_test_database_url()
 
 
 def _run_db(coro_fn, *args, **kwargs):

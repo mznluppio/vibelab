@@ -17,6 +17,8 @@ from uuid import UUID, uuid4
 
 import pytest
 
+from tests._test_database import get_test_database_url
+
 
 class _EventRecorder:
     def __init__(self) -> None:
@@ -40,7 +42,7 @@ async def _create_project(
     from app.models_team import TeamMembership
 
     engine = create_async_engine(
-        "postgresql+asyncpg://tesslate_test:testpass@localhost:5433/tesslate_test",
+        get_test_database_url(),
         pool_pre_ping=True,
     )
     Session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
@@ -99,7 +101,7 @@ def test_end_to_end_pause_and_resume_via_router(authenticated_client, monkeypatc
             )
 
             engine = create_async_engine(
-                "postgresql+asyncpg://tesslate_test:testpass@localhost:5433/tesslate_test",
+                get_test_database_url(),
                 pool_pre_ping=True,
             )
             Session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
@@ -201,7 +203,7 @@ def test_wait_for_input_false_returns_immediately_without_pausing(
             )
 
             engine = create_async_engine(
-                "postgresql+asyncpg://tesslate_test:testpass@localhost:5433/tesslate_test",
+                get_test_database_url(),
                 pool_pre_ping=True,
             )
             Session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)

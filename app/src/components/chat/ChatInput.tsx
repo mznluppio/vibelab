@@ -1332,7 +1332,9 @@ export function ChatInput({
         active={!viewerMode && (isPromptFocused || Boolean(message.trim()) || isExecuting)}
       >
         <div
-          className={`flex flex-col bg-[var(--surface)] w-full ${isDocked ? '' : 'border border-[var(--border)] rounded-[var(--radius)] shadow-sm'}`}
+          // The radius always matches the pulsing border's inner edge — a square
+          // surface would paint over its rounded corners.
+          className={`flex flex-col bg-[var(--surface)] w-full rounded-[calc(var(--radius)-2px)] ${isDocked ? '' : 'shadow-sm'}`}
         >
         {/* First row: Growing textarea / Command chip */}
         <div

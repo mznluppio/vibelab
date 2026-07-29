@@ -4766,10 +4766,18 @@ async def purchase_additional_deploy_slot(
 # WebSocket endpoint for streaming container logs
 @router.websocket("/{project_slug}/logs/stream")
 async def stream_container_logs(
-    websocket: WebSocket, project_slug: str, db: AsyncSession = Depends(get_db)
+    websocket: WebSocket,
+    project_slug: str,
+    token: str | None = Query(None),
+    db: AsyncSession = Depends(get_db),
 ):
     """
     WebSocket endpoint to stream container logs in real-time.
+
+    Authenticated with the same query-param/cookie JWT scheme as the terminal
+    WebSocket, then authorized against the Workspace itself — container logs
+    routinely carry environment values and source snippets, so they must never
+    be reachable by slug alone.
 
     Protocol:
         Server -> Client: {"type": "containers", "data": [{id, name, status, type}]}
@@ -4782,22 +4790,36 @@ async def stream_container_logs(
     from fastapi import WebSocketDisconnect
 
     from ..services.orchestration import get_orchestrator
+    from .terminal import _validate_ws_auth
 
     await websocket.accept()
 
+    # Authorize before any project lookup: authenticate the socket, then resolve
+    # the Workspace through the shared RBAC helper. Re-runs on every reconnect
+    # because it lives in the connection handler.
     try:
-        # Get project with containers
-        result = await db.execute(
-            select(Project)
-            .options(selectinload(Project.containers))
-            .where(Project.slug == project_slug)
-        )
-        project = result.scalar_one_or_none()
+        user_id = await _validate_ws_auth(token, websocket)
+    except ValueError as e:
+        await websocket.send_json({"type": "error", "message": f"Unauthorized: {e}"})
+        await websocket.close(code=1008)
+        return
 
-        if not project:
-            await websocket.send_json({"type": "error", "message": "Project not found"})
-            await websocket.close()
-            return
+    try:
+        from ..permissions import get_project_with_access
+
+        project, _role = await get_project_with_access(
+            db, project_slug, user_id, Permission.CONTAINER_VIEW
+        )
+    except HTTPException:
+        # 404 (no access at all) and 403 (insufficient role) are reported
+        # identically here so the socket never discloses which one it was.
+        await websocket.send_json({"type": "error", "message": "Project not found"})
+        await websocket.close(code=1008)
+        return
+
+    try:
+        # Eager-load containers now that access is established.
+        await db.refresh(project, ["containers"])
 
         # Send container list to client
         containers_data = [

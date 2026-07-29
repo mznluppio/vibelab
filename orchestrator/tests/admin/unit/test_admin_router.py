@@ -12,6 +12,7 @@ Tests cover:
 """
 
 from datetime import datetime, timedelta
+from types import SimpleNamespace
 from unittest.mock import Mock
 from uuid import uuid4
 
@@ -201,6 +202,50 @@ class TestUserManagement:
 
         # Assert
         assert mock_regular_user.deleted_at is not None
+
+
+@pytest.mark.unit
+class TestAgentManagement:
+    """Regression coverage for administrative marketplace-agent updates."""
+
+    @pytest.mark.asyncio
+    async def test_superuser_can_update_builtin_agent(self):
+        """The admin guard must receive the current superuser context."""
+        from app.routers.admin import AgentUpdate, update_agent
+
+        agent = SimpleNamespace(
+            id=uuid4(),
+            name="Assist to Build",
+            slug="assist-to-build",
+            is_builtin=True,
+            created_by_user_id=None,
+            forked_by_user_id=None,
+        )
+
+        class Result:
+            def scalar_one_or_none(self):
+                return agent
+
+        class Db:
+            async def execute(self, _query):
+                return Result()
+
+            async def commit(self):
+                pass
+
+            async def refresh(self, _agent):
+                pass
+
+            async def rollback(self):
+                pass
+
+        admin = SimpleNamespace(username="admin", is_superuser=True)
+        response = await update_agent(
+            str(agent.id), AgentUpdate(name="Updated Assist to Build"), admin, Db()
+        )
+
+        assert agent.name == "Updated Assist to Build"
+        assert response["message"] == "Agent updated successfully"
 
 
 # ============================================================================

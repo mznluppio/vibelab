@@ -19,6 +19,8 @@ from uuid import UUID, uuid4
 import pytest
 from sqlalchemy import text
 
+from tests._test_database import get_test_database_url
+
 
 def _insert_legacy_container(
     conn,
@@ -91,7 +93,7 @@ def test_backfill_upgrade_moves_base64_secrets_to_encrypted_secrets(authenticate
         from app.models_team import TeamMembership
 
         engine = create_async_engine(
-            "postgresql+asyncpg://tesslate_test:testpass@localhost:5433/tesslate_test",
+            get_test_database_url(),
             pool_pre_ping=True,
         )
         Session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
@@ -110,7 +112,7 @@ def test_backfill_upgrade_moves_base64_secrets_to_encrypted_secrets(authenticate
         loop.close()
 
     # Use a sync engine (no asyncpg) — the migration's bind is sync.
-    sync_url = "postgresql://tesslate_test:testpass@localhost:5433/tesslate_test"
+    sync_url = get_test_database_url().replace("+asyncpg", "")
     try:
         sync_engine = create_engine(sync_url)
     except Exception:

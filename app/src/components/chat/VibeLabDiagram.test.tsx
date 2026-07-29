@@ -79,7 +79,7 @@ describe('VibeLabDiagram', () => {
 
     expect(screen.getByText('Agentic delivery')).toBeInTheDocument();
     expect(screen.getByTestId('vibelab-react-flow')).toHaveAttribute('data-node-count', '2');
-    expect(screen.getByTestId('vibelab-react-flow')).toHaveAttribute('data-pan-on-drag', '[1]');
+    expect(screen.getByTestId('vibelab-react-flow')).toHaveAttribute('data-pan-on-drag', 'true');
     expect(screen.getByTestId('vibelab-react-flow')).toHaveAttribute(
       'data-zoom-on-scroll',
       'false'
@@ -100,6 +100,7 @@ describe('VibeLabDiagram', () => {
     });
 
     expect(screen.queryByRole('button', { name: 'Reset diagram view' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Export diagram' })).toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: 'Copy diagram source' })).toHaveLength(1);
     fireEvent.click(screen.getByRole('button', { name: 'Copy diagram source' }));
     await waitFor(() => expect(navigator.clipboard.writeText).toHaveBeenCalledWith(source));
@@ -107,6 +108,7 @@ describe('VibeLabDiagram', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Expand diagram' }));
     expect(screen.getByRole('dialog')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Fit expanded diagram' })).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Export diagram' })).toHaveLength(1);
     expect(screen.getAllByTestId('vibelab-react-flow')[1]).toHaveAttribute(
       'data-pan-on-drag',
       'true'

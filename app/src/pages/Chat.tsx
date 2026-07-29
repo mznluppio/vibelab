@@ -16,10 +16,10 @@ import type { ChatAgent } from '../types/chat';
 import type { SerializedAttachment, ChatMention } from '../types/agent';
 
 const LANDING_SUGGESTIONS = [
-  'Analyze my codebase',
-  'Help me debug an issue',
-  'Write a new feature',
-  'Explain how something works',
+  'Create an internal project status dashboard',
+  'Build a quarterly KPI reporting page',
+  'Design a client onboarding workflow',
+  'Create an incident tracking and escalation page',
 ];
 
 export default function Chat() {
@@ -533,11 +533,14 @@ export default function Chat() {
               </div>
             </div>
 
+            {/* No overflow clipping and no border of its own: the input owns its
+                frame (see PromptInputPulsingBorder) and its toolbar drop-ups
+                (edit mode, "+", settings, mentions) open upwards past this box. */}
             <div
               className="absolute left-1/2 -translate-x-1/2 bottom-6 z-30
                          w-[min(760px,calc(100%-48px))]
-                         bg-[var(--bg)] border border-[var(--border-hover)]
-                         rounded-[var(--radius)] overflow-hidden
+                         bg-[var(--bg)]
+                         rounded-[var(--radius)]
                          max-md:bottom-0 max-md:left-0 max-md:right-0 max-md:translate-x-0
                          max-md:w-full max-md:rounded-b-none"
             >

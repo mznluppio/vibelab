@@ -20,11 +20,12 @@ session).
 from __future__ import annotations
 
 import asyncio
-import os
 import uuid
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+from tests._test_database import get_test_database_url
 
 # Stable UUIDs for the fake sources / apps so re-runs are deterministic.
 _OFFICIAL_ID = uuid.UUID("00000000-0000-0000-0000-000000000001")
@@ -43,10 +44,7 @@ _PRIVATE_APP_VERSION_ID = uuid.UUID("22222222-aaaa-bbbb-cccc-000000000003")
 _UNTRUSTED_APP_VERSION_ID = uuid.UUID("22222222-aaaa-bbbb-cccc-000000000004")
 
 
-_ASYNC_DB_URL = os.environ.get(
-    "DATABASE_URL",
-    "postgresql+asyncpg://tesslate_test:testpass@localhost:5433/tesslate_test",
-)
+_ASYNC_DB_URL = get_test_database_url()
 
 
 def _run_db(coro_fn, *args, **kwargs):

@@ -15,7 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import get_settings
-from ..models import Project, ShellSession
+from ..models import ShellSession
 from ..services.pty_broker import PTYSession, get_pty_broker
 
 logger = logging.getLogger(__name__)
@@ -63,15 +63,23 @@ class ShellSessionManager:
         """
         from fastapi import HTTPException, status
 
-        # 1. Validate user owns project
-        result = await db.execute(
-            select(Project).where(Project.id == project_id, Project.owner_id == user_id)
-        )
-        project = result.scalar_one_or_none()
-        if not project:
+        # 1. Authorize the caller on the project through the shared Workspace
+        # RBAC helper. Owner-only both refused legitimate team members and, by
+        # never consulting membership state, would keep opening shells for a
+        # former owner-by-accident; a shell is full code execution inside the
+        # Workspace, so it demands the terminal permission specifically.
+        from ..permissions import Permission, get_project_with_access
+
+        try:
+            project, _role = await get_project_with_access(
+                db, str(project_id), user_id, Permission.TERMINAL_ACCESS
+            )
+        except HTTPException as exc:
+            # Preserve the previous single "not found or access denied" answer so
+            # session creation never distinguishes the two cases.
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN, detail="Project not found or access denied"
-            )
+            ) from exc
 
         # 2. Check user session limits
         user_sessions = await self._get_user_active_sessions(user_id, db)
