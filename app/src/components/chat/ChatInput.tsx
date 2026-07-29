@@ -41,6 +41,7 @@ import { AttachmentStrip } from './AttachmentStrip';
 import { PlusMenu } from './PlusMenu';
 import { MentionPicker, type MentionPickerFile } from './MentionPicker';
 import { VoiceInput } from './VoiceInput';
+import { PromptInputPulsingBorder } from './PromptInputPulsingBorder';
 
 // Width thresholds for responsive collapse
 // Below VERY_COMPACT: Only essential icons (agent icon, menu, send button)
@@ -168,6 +169,7 @@ export function ChatInput({
   const [commandIndex, setCommandIndex] = useState(0);
   const [compactLevel, setCompactLevel] = useState<'normal' | 'compact' | 'veryCompact'>('normal');
   const [containerWidth, setContainerWidth] = useState(Infinity);
+  const [isPromptFocused, setIsPromptFocused] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const containerRef = useRef<HTMLFormElement>(null);
   const settingsRef = useRef<HTMLDivElement>(null);
@@ -1156,6 +1158,12 @@ export function ChatInput({
       ref={containerRef}
       className={`chat-input-wrapper flex-shrink-0 relative ${isDragging ? 'ring-2 ring-[var(--primary)]/40 rounded-[var(--radius-medium)]' : ''}`}
       onSubmit={handleSubmit}
+      onFocusCapture={() => setIsPromptFocused(true)}
+      onBlurCapture={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+          setIsPromptFocused(false);
+        }
+      }}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
@@ -1320,9 +1328,12 @@ export function ChatInput({
           this comment as a navigation breadcrumb. */}
 
       {/* Two-row layout */}
-      <div
-        className={`flex flex-col bg-[var(--surface)] w-full ${isDocked ? '' : 'border border-[var(--border)] rounded-[var(--radius)] shadow-sm'}`}
+      <PromptInputPulsingBorder
+        active={!viewerMode && (isPromptFocused || Boolean(message.trim()) || isExecuting)}
       >
+        <div
+          className={`flex flex-col bg-[var(--surface)] w-full ${isDocked ? '' : 'border border-[var(--border)] rounded-[var(--radius)] shadow-sm'}`}
+        >
         {/* First row: Growing textarea / Command chip */}
         <div
           className={`px-3 flex items-center border-b transition-colors ${
@@ -1607,7 +1618,8 @@ export function ChatInput({
             )}
           </button>
         </div>
-      </div>
+        </div>
+      </PromptInputPulsingBorder>
     </form>
   );
 }
