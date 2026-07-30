@@ -27,7 +27,7 @@ from fastapi import (
     status,
 )
 from fastapi.responses import FileResponse, JSONResponse
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, delete as sql_delete, func, or_, select
 from sqlalchemy import update as sql_update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -2631,12 +2631,14 @@ async def _perform_project_deletion(
 
         task.update_progress(50, 100, "Removing project from database...")
 
-        # 3. Delete project from database. Snapshot rows are NOT cascaded (passive_deletes=True
-        #    on the relationship) — the DB-level ondelete="SET NULL" nullifies their project_id.
+        # 3. Delete project from database. Use Core DML so deletion follows the
+        #    database's FK policies without loading deprecated ORM relationships
+        #    whose tables are no longer part of the migrated schema. Snapshot rows
+        #    are NOT cascaded — their DB-level ondelete="SET NULL" nullifies project_id.
         project_result = await db.execute(select(Project).where(Project.id == project_id))
         project = project_result.scalar_one_or_none()
         if project:
-            await db.delete(project)
+            await _delete_project_row(db, project_id)
             await db.commit()
             logger.info("[DELETE] Deleted project from database")
 
@@ -2708,6 +2710,18 @@ async def _perform_project_deletion(
         raise
     finally:
         await db_gen.aclose()
+
+
+async def _delete_project_row(db: AsyncSession, project_id: UUID) -> bool:
+    """Delete one project through the database's FK policies.
+
+    The migrated schema deliberately no longer contains several legacy
+    automation tables that are still represented by deprecated ORM models.
+    Core DML prevents SQLAlchemy from loading those legacy relationships while
+    preserving the database-level cascade and SET NULL rules.
+    """
+    result = await db.execute(sql_delete(Project).where(Project.id == project_id))
+    return bool(result.rowcount)
 
 
 @router.delete("/{project_slug}")

@@ -135,3 +135,41 @@ def test_create_empty_workspace_short_circuits(migrated_sqlite, tmp_path: Path) 
     assert row.environment_status == "active"
 
     asyncio.run(engine.dispose())
+
+
+def test_delete_project_row_uses_migrated_schema(migrated_sqlite, tmp_path: Path) -> None:
+    """Project deletion must not load the legacy agent_schedules ORM relation.
+
+    Alembic 0074 removed that table, so this migrated database mirrors the
+    production schema where an ORM instance delete previously failed.
+    """
+    from app.models import Project
+    from app.routers.projects import _delete_project_row, create_project_from_payload
+    from app.schemas import ProjectCreate
+
+    engine = create_async_engine(migrated_sqlite, future=True)
+    _install_sqlite_now(engine)
+    maker = async_sessionmaker(engine, expire_on_commit=False)
+    user = _make_user()
+
+    async def _run() -> tuple[uuid.UUID, bool]:
+        async with maker() as db:
+            project_result = await create_project_from_payload(
+                ProjectCreate(name="delete-empty", source_type="empty"),
+                current_user=user,
+                db=db,
+            )
+            project_id = project_result["project"].id
+            deleted = await _delete_project_row(db, project_id)
+            await db.commit()
+            return project_id, deleted
+
+    project_id, deleted = asyncio.run(_run())
+    assert deleted is True
+
+    async def _load() -> Project | None:
+        async with maker() as db:
+            return await db.get(Project, project_id)
+
+    assert asyncio.run(_load()) is None
+    asyncio.run(engine.dispose())
