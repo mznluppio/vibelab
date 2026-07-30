@@ -425,6 +425,7 @@ class TestApplySetupConfig:
         assert result["success"] is True
         assert result["container_ids"] == ["uuid-1", "uuid-2"]
         assert result["primary_container_id"] == "uuid-1"
+        assert result["next_tool"] == "project_start"
 
 
 # ---------------------------------------------------------------------------

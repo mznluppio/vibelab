@@ -110,6 +110,11 @@ async def apply_setup_config_executor(
         message=f"Synced {len(response.container_ids)} container(s) from config",
         container_ids=response.container_ids,
         primary_container_id=response.primary_container_id,
+        next_tool="project_start",
+        suggestion=(
+            "Call project_start next to bring the configured application online and verify its preview, "
+            "unless the user explicitly asked to configure without starting it"
+        ),
     )
 
 
@@ -123,7 +128,9 @@ def register_setup_config_tool(registry):
                 "container/connection/deployment/preview graph to match. Use this instead "
                 "of write_file for config.json — it is the single source of truth and "
                 "syncs every related record in one transaction. Validates startup commands. "
-                "Returns the resulting container_ids."
+                "After configuring an application, call project_start immediately to bring it online and "
+                "verify its preview, unless the user explicitly asked for configuration only. "
+                "Returns the resulting container_ids and next_tool."
             ),
             category=ToolCategory.PROJECT,
             parameters=_PARAMETERS,

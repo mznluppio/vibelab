@@ -1664,6 +1664,12 @@ function ProjectPageInner() {
     disabled: !canChat,
     initialChatId: initialChatIdFromRoute ?? null,
     onOpenConfigTab: () => dock.openTool('config'),
+    onProjectStarted: () => {
+      if (!slug) return;
+      dock.openTool('preview');
+      navigate(`/project/${slug}/builder`);
+      loadContainer();
+    },
   } as const;
 
   // ---------------------------------------------------------------------------

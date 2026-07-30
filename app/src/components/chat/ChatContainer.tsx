@@ -118,6 +118,12 @@ interface ChatContainerProps {
    * pause banner can take the user to the relevant card with one click.
    */
   onOpenConfigTab?: () => void;
+  /**
+   * Fired once a successful agent run has started the project environment.
+   * The parent can then reveal its preview without changing project lifecycle
+   * semantics for other agent tasks.
+   */
+  onProjectStarted?: () => void;
 }
 
 export function ChatContainer({
@@ -145,6 +151,7 @@ export function ChatContainer({
   disabled: disabledProp,
   initialChatId = null,
   onOpenConfigTab,
+  onProjectStarted,
 }: ChatContainerProps) {
   const navigate = useNavigate();
   const { hasRole } = useAuth();
@@ -305,6 +312,7 @@ export function ChatContainer({
   const animatedMessagesRef = useRef<Set<string>>(new Set());
   const isMountedRef = useRef(true);
   const agentTaskIdRef = useRef<string | null>(null);
+  const projectStartedDuringTaskRef = useRef(false);
   const currentChatIdRef = useRef<string | null>(currentChatId);
   useEffect(() => {
     currentChatIdRef.current = currentChatId;
@@ -1271,6 +1279,7 @@ export function ChatContainer({
     };
     setMessages((prev) => [...prev, userMessage]);
     setAgentExecuting(true);
+    projectStartedDuringTaskRef.current = false;
 
     // Create abort controller
     const controller = new AbortController();
@@ -1412,6 +1421,9 @@ export function ChatContainer({
             });
 
             const tcResult = tc.result as Record<string, unknown> | undefined;
+            if (tc.name === 'project_start' && tcResult?.success === true) {
+              projectStartedDuringTaskRef.current = true;
+            }
             if (
               tc.name === 'kanban' &&
               (tcResult?.result as Record<string, unknown> | undefined)?.success !== false
@@ -1474,6 +1486,14 @@ export function ChatContainer({
             // Side effects
             const toolCalls = rawToolCalls;
             const toolResults = rawToolResults;
+            if (
+              toolCalls.some(
+                (tc: { name: string }, idx: number) =>
+                  tc.name === 'project_start' && toolResults[idx]?.success === true
+              )
+            ) {
+              projectStartedDuringTaskRef.current = true;
+            }
             if (
               toolCalls.some(
                 (tc: { name: string }, idx: number) =>
@@ -1568,6 +1588,10 @@ export function ChatContainer({
               }
 
               toast.success('Task completed successfully');
+              if (projectStartedDuringTaskRef.current) {
+                projectStartedDuringTaskRef.current = false;
+                onProjectStarted?.();
+              }
             }
           } else if (event.type === 'credits_used') {
             // Dispatch custom event so UserDropdown and other UI can update
