@@ -64,7 +64,7 @@ export default function Chat() {
   const currentModelSupportsVision = currentModelId ? modelVisionMap[currentModelId] : undefined;
 
   // Edit mode
-  const [editMode, setEditMode] = useState<EditMode>('ask');
+  const [editMode, setEditMode] = useState<EditMode>('allow');
 
   // Tool calls collapsed by default
   const [toolCallsCollapsed, setToolCallsCollapsed] = useState(true);

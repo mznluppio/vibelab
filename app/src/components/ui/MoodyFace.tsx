@@ -133,7 +133,9 @@ export function MoodyFace({
       const dy = e.clientY - cy;
       // Normalize against a soft 400px radius, cap to ±12% of face size
       const norm = (v: number) => Math.max(-1, Math.min(1, v / 400));
-      setPointerOffset({ x: norm(dx) * 12, y: norm(dy) * 16 });
+      // Keep every mood's eye geometry inside the face, including the widest
+      // "surprised" and "dead" shapes.
+      setPointerOffset({ x: norm(dx) * 4, y: norm(dy) * 4 });
     };
     window.addEventListener('pointermove', onMove, { passive: true });
     return () => window.removeEventListener('pointermove', onMove);
@@ -175,7 +177,7 @@ export function MoodyFace({
       ref={faceRef}
       role="img"
       aria-label="Agent"
-      className={`relative inline-block bg-current align-middle ${className}`}
+      className={`relative inline-block overflow-hidden bg-current align-middle ${className}`}
       style={{
         width: `${size}px`,
         height: `${size}px`,

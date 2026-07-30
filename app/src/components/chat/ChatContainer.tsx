@@ -231,7 +231,7 @@ export function ChatContainer({
   const currentModelSupportsVision = currentModelId ? modelVisionMap[currentModelId] : undefined;
   const [editMode, setEditMode] = useState<EditMode>(() => {
     const stored = localStorage.getItem(`editMode:${projectId}`);
-    return stored === 'ask' || stored === 'allow' || stored === 'plan' ? stored : 'ask';
+    return stored === 'ask' || stored === 'allow' || stored === 'plan' ? stored : 'allow';
   });
   const editModeRef = useRef<EditMode>(editMode);
   useEffect(() => {
