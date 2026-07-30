@@ -18,7 +18,7 @@ from typing import Any
 
 from sqlalchemy import select
 
-from ....models import MarketplaceAgent, UserPurchasedAgent
+from ....models import MarketplaceAgent, User, UserPurchasedAgent
 from ....services.automations.scopes import MARKETPLACE_AUTHOR
 from ....services.marketplace_constants import LOCAL_SOURCE_ID
 from ..output_formatter import error_output, success_output
@@ -74,6 +74,10 @@ async def create_agent_executor(params: dict[str, Any], context: dict[str, Any])
     user_id = context.get("user_id")
     if db is None or user_id is None:
         return error_output(message="missing db/user_id in execution context")
+
+    user = await db.get(User, user_id)
+    if user is None:
+        return error_output(message="user not found in execution context")
 
     # Scope check — defense in depth. The view-scoped registry should
     # already strip this tool when the run lacks the scope, but we
@@ -136,6 +140,7 @@ async def create_agent_executor(params: dict[str, Any], context: dict[str, Any])
     db.add(
         UserPurchasedAgent(
             user_id=user_id,
+            team_id=user.default_team_id,
             agent_id=agent.id,
             purchase_type="free",
             is_active=True,

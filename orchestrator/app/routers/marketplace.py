@@ -1789,7 +1789,11 @@ async def fork_agent(
 
     # Automatically add to user's library
     purchase = UserPurchasedAgent(
-        user_id=current_user.id, agent_id=forked_agent.id, purchase_type="free", is_active=True
+        user_id=current_user.id,
+        team_id=current_user.default_team_id,
+        agent_id=forked_agent.id,
+        purchase_type="free",
+        is_active=True,
     )
     db.add(purchase)
     await db.commit()
@@ -1910,7 +1914,11 @@ async def create_custom_agent(
 
     # Automatically add to user's library
     purchase = UserPurchasedAgent(
-        user_id=current_user.id, agent_id=custom_agent.id, purchase_type="free", is_active=True
+        user_id=current_user.id,
+        team_id=current_user.default_team_id,
+        agent_id=custom_agent.id,
+        purchase_type="free",
+        is_active=True,
     )
     db.add(purchase)
     await db.commit()
@@ -2047,6 +2055,7 @@ async def update_custom_agent(
             # Add to user's library
             purchase = UserPurchasedAgent(
                 user_id=current_user.id,
+                team_id=current_user.default_team_id,
                 agent_id=forked_agent.id,
                 purchase_type="free",
                 is_active=True,
