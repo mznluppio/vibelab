@@ -212,9 +212,17 @@ export function NavigationSidebar({
     pollMs: 30_000,
     enabled: isAuthenticated,
   });
-  const { activeTeam, teams, switchTeam, refreshTeams, can, teamSwitchKey } = useTeam();
+  const {
+    activeTeam,
+    teams,
+    switchTeam,
+    refreshTeams,
+    can,
+    canAccessMarketplace,
+    canAccessAutomations,
+    teamSwitchKey,
+  } = useTeam();
   const canChat = can('chat.send');
-  const canAccessAdminNavigation = user?.is_superuser === true || activeTeam?.role === 'admin';
   const [showUserDropdown, setShowUserDropdown] = useState(false);
   const [creditBalance, setCreditBalance] = useState<CreditBalanceResponse | null>(null);
   const [imgError, setImgError] = useState(false);
@@ -773,7 +781,7 @@ export function NavigationSidebar({
               </button>
             </Tooltip>
 
-            {canAccessAdminNavigation && <Tooltip
+            {canAccessAutomations && <Tooltip
               content={
                 pendingApprovalsCount > 0
                   ? `Automations · ${pendingApprovalsCount} pending approval${pendingApprovalsCount === 1 ? '' : 's'}`
@@ -839,7 +847,7 @@ export function NavigationSidebar({
               </button>
             </Tooltip>
 
-            {canAccessAdminNavigation && <Tooltip content="Marketplace" shortcut={`${modKey} M`} side="right" delay={200}>
+            {canAccessMarketplace && <Tooltip content="Marketplace" shortcut={`${modKey} M`} side="right" delay={200}>
               <button
                 onClick={() => navigate('/marketplace?type=app')}
                 className={

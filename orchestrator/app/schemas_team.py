@@ -26,6 +26,8 @@ class TeamUpdate(BaseModel):
         pattern=r"^[a-z0-9][a-z0-9-]*[a-z0-9]$",
     )
     avatar_url: str | None = None
+    marketplace_access_for_non_admins: bool | None = None
+    automations_access_for_non_admins: bool | None = None
 
 
 class TeamRead(BaseModel):
@@ -45,6 +47,8 @@ class TeamRead(BaseModel):
     signup_bonus_credits: int
     deployed_projects_count: int
     support_tier: str
+    marketplace_access_for_non_admins: bool
+    automations_access_for_non_admins: bool
     created_at: datetime
 
 
@@ -57,6 +61,8 @@ class TeamList(BaseModel):
     avatar_url: str | None = None
     is_personal: bool
     subscription_tier: str
+    marketplace_access_for_non_admins: bool
+    automations_access_for_non_admins: bool
     role: str | None = None  # populated from membership
 
 

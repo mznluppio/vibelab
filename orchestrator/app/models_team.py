@@ -57,6 +57,15 @@ class Team(Base):
     # Appearance
     theme_preset = Column(String, nullable=True, default="default-dark")
 
+    # Administrators always retain access. These settings opt editors and
+    # viewers into the corresponding product surfaces for this team.
+    marketplace_access_for_non_admins = Column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    automations_access_for_non_admins = Column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+
     # Model preferences
     disabled_models = Column(
         JSON, nullable=True, default=list

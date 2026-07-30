@@ -17,7 +17,7 @@ Team CRUD, memberships, invitations, project access control, and audit log. Back
 | POST | `/` | platform administrator | Create a team (caller becomes admin, 201). |
 | GET | `/` | user | List teams the caller belongs to (with role). |
 | GET | `/{team_slug}` | member | Team details. |
-| PATCH | `/{team_slug}` | admin | Update team fields. |
+| PATCH | `/{team_slug}` | admin | Update team fields and non-admin Marketplace/Automations access. |
 | DELETE | `/{team_slug}` | admin | Delete non-personal team (204). |
 | POST | `/{team_slug}/switch` | member | Set the user's default/active team. |
 
@@ -62,6 +62,7 @@ Team CRUD, memberships, invitations, project access control, and audit log. Back
 ## Auth
 
 - `POST /` additionally requires `User.is_superuser`; the sidebar hides this action for all other users.
+- Team administrators can opt editors and viewers into Marketplace and Automations in Team Settings. Both settings default to disabled.
 - `current_active_user` plus role check via `check_team_permission` / `get_project_with_access`.
 - Invite token preview is public; acceptance requires auth.
 - All state changes append to `AuditLog`.

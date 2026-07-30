@@ -433,7 +433,7 @@ async def update_team(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(current_active_user),
 ):
-    """Update team name/slug/avatar. Admin only."""
+    """Update team settings. Admin only."""
     team = await _resolve_team(db, team_slug)
     await check_team_permission(db, team.id, user.id, Permission.TEAM_EDIT)
 
@@ -451,6 +451,13 @@ async def update_team(
     if "avatar_url" in provided:
         changes["avatar_url"] = provided["avatar_url"]
         team.avatar_url = provided["avatar_url"]
+    for setting in (
+        "marketplace_access_for_non_admins",
+        "automations_access_for_non_admins",
+    ):
+        if setting in provided:
+            changes[setting] = provided[setting]
+            setattr(team, setting, provided[setting])
 
     if changes:
         await log_event(

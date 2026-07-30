@@ -444,6 +444,9 @@ services:
       # In dev mode, config.ts reads from import.meta.env.VITE_*
       # In production (Docker/K8s), config.ts reads from window._env_
       - VITE_API_URL=${VITE_API_URL:-http://localhost:8000}
+      # Vite's server-side proxy runs inside this container, so it must use
+      # the Compose service hostname rather than the browser-facing URL.
+      - VITE_BACKEND_URL=${VITE_BACKEND_URL:-http://orchestrator:8000}
       - VITE_PUBLIC_POSTHOG_KEY=${VITE_PUBLIC_POSTHOG_KEY:-}
       - VITE_PUBLIC_POSTHOG_HOST=${VITE_PUBLIC_POSTHOG_HOST:-https://app.posthog.com}
       - APP_DOMAIN=${APP_DOMAIN:-localhost}
