@@ -53,9 +53,14 @@ services:
     container_name: vibelab-minimal-orchestrator
     ports: !override
       - "${BACKEND_PORT:-8001}:8000"
+    environment:
+      BASE_CACHE_VOLUME_NAME: vibelab-minimal-base-cache
+      DOCKER_PROJECTS_VOLUME_NAME: vibelab-minimal-projects-data
 
   worker:
     container_name: vibelab-minimal-worker
+    environment:
+      DOCKER_PROJECTS_VOLUME_NAME: vibelab-minimal-projects-data
 
   app:
     container_name: vibelab-minimal-app

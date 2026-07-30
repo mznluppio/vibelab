@@ -9,16 +9,14 @@ import asyncio
 import logging
 import shutil
 from pathlib import Path
-from typing import TYPE_CHECKING
+
+import docker
 
 from sqlalchemy import select
 
 from ..config import get_settings
 from ..database import AsyncSessionLocal
 from ..models import MarketplaceBase
-
-if TYPE_CHECKING:
-    import docker
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +27,7 @@ class BaseCacheManager:
     def __init__(self, cache_dir: str = "/app/base-cache"):
         self.cache_dir = Path(cache_dir)
         # Use Docker volume name for mounting to dev containers
-        self.cache_volume_name = "tesslate-base-cache"
+        self.cache_volume_name = get_settings().base_cache_volume_name
         self._initialized = False
         self._docker_client: docker.DockerClient | None = None
         self.dev_server_image = "tesslate-devserver:latest"

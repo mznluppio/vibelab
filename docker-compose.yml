@@ -257,6 +257,8 @@ services:
       - CORS_ORIGINS=${CORS_ORIGINS:-${APP_PROTOCOL:-http}://${APP_DOMAIN:-localhost}}
       - ALLOWED_HOSTS=${ALLOWED_HOSTS:-${APP_DOMAIN:-localhost}}
       - DEV_SERVER_BASE_URL=${DEV_SERVER_BASE_URL:-}
+      - DOCKER_PROJECTS_VOLUME_NAME=${DOCKER_PROJECTS_VOLUME_NAME:-tesslate-projects-data}
+      - BASE_CACHE_VOLUME_NAME=${BASE_CACHE_VOLUME_NAME:-tesslate-base-cache}
       # OAuth Configuration (optional)
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
@@ -410,6 +412,7 @@ services:
       - AGENT_MAX_ITERATIONS=${AGENT_MAX_ITERATIONS:-0}
       - AGENT_MAX_COST_PER_RUN=${AGENT_MAX_COST_PER_RUN:-5.0}
       - APP_DOMAIN=${APP_DOMAIN:-localhost}
+      - DOCKER_PROJECTS_VOLUME_NAME=${DOCKER_PROJECTS_VOLUME_NAME:-tesslate-projects-data}
       - LEGRAND_OFFICIAL_BASE_URL=${LEGRAND_OFFICIAL_BASE_URL:-http://marketplace:8800}
       - PYTHONUNBUFFERED=1
     depends_on:

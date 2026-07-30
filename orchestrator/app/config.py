@@ -91,6 +91,12 @@ class Settings(BaseSettings):
     # Base URL for dev containers - set via environment
     dev_server_base_url: str = ""
 
+    # Docker shared-volume names. Defaults match the standard Compose stack;
+    # isolated local stacks can override them without sharing project sources
+    # or cached bases with another checkout.
+    docker_projects_volume_name: str = "tesslate-projects-data"
+    base_cache_volume_name: str = "tesslate-base-cache"
+
     # Deployment mode: "docker" | "kubernetes" | "local" | "desktop"
     # Use the orchestration module for type-safe access: from app.services.orchestration import is_docker_mode
     deployment_mode: str = "docker"

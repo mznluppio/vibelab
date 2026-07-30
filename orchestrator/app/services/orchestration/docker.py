@@ -129,6 +129,7 @@ class DockerOrchestrator(BaseOrchestrator):
 
         self.host_users_base = self._detect_host_users_path()
         self.use_volumes = use_volumes
+        self.projects_volume_name = self.settings.docker_projects_volume_name
 
         # Shared projects volume path — created by Docker/K8s at runtime;
         # skip silently if the process lacks permissions (e.g. test environments).
@@ -1689,7 +1690,7 @@ class DockerOrchestrator(BaseOrchestrator):
                 volumes = [
                     {
                         "type": "volume",
-                        "source": "tesslate-projects-data",
+                        "source": self.projects_volume_name,
                         "target": "/app",
                         "volume": {"subpath": project.slug},
                     }
@@ -1788,9 +1789,9 @@ class DockerOrchestrator(BaseOrchestrator):
 
         # Add shared projects-data volume as external
         if self.use_volumes:
-            compose_config["volumes"]["tesslate-projects-data"] = {
+            compose_config["volumes"][self.projects_volume_name] = {
                 "external": True,
-                "name": "tesslate-projects-data",
+                "name": self.projects_volume_name,
             }
 
         return compose_config
