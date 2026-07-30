@@ -43,6 +43,12 @@ services:
   litellm:
     container_name: vibelab-minimal-litellm
 
+  marketplace-postgres:
+    container_name: vibelab-minimal-marketplace-postgres
+
+  marketplace:
+    container_name: vibelab-minimal-marketplace
+
   orchestrator:
     container_name: vibelab-minimal-orchestrator
     ports: !override
@@ -74,3 +80,7 @@ volumes:
     name: vibelab-minimal-redis-data
   gateway-locks:
     name: vibelab-minimal-gateway-locks
+  marketplace-postgres-data:
+    name: vibelab-minimal-marketplace-postgres-data
+  marketplace-data:
+    name: vibelab-minimal-marketplace-data

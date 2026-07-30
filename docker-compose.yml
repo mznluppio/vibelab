@@ -160,6 +160,59 @@ services:
       retries: 12
       start_period: 30s
 
+  # The federated catalog is intentionally opt-in for local development.
+  # Start it with: docker compose --profile marketplace-dev up
+  marketplace-postgres:
+    profiles: ["marketplace-dev"]
+    image: postgres:15-alpine
+    container_name: tesslate-marketplace-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${MARKETPLACE_POSTGRES_DB:-marketplace}
+      POSTGRES_USER: ${MARKETPLACE_POSTGRES_USER:-marketplace}
+      POSTGRES_PASSWORD: ${MARKETPLACE_POSTGRES_PASSWORD:-marketplace_dev_pass}
+    volumes:
+      - marketplace-postgres-data:/var/lib/postgresql/data
+    networks:
+      - tesslate-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${MARKETPLACE_POSTGRES_USER:-marketplace} -d ${MARKETPLACE_POSTGRES_DB:-marketplace}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  marketplace:
+    profiles: ["marketplace-dev"]
+    build:
+      context: ./packages/tesslate-marketplace
+      dockerfile: Dockerfile
+    container_name: tesslate-marketplace
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${MARKETPLACE_POSTGRES_USER:-marketplace}:${MARKETPLACE_POSTGRES_PASSWORD:-marketplace_dev_pass}@marketplace-postgres:5432/${MARKETPLACE_POSTGRES_DB:-marketplace}
+      BUNDLE_STORAGE_DIR: /data/bundles
+      BUNDLE_BASE_URL: http://marketplace:8800
+      HUB_DISPLAY_NAME: VibeLab Official
+      OPENSAIL_ENV: dev
+      DISABLED_CAPABILITIES: pricing.read,pricing.write,pricing.checkout
+    volumes:
+      - marketplace-data:/data
+    command: >
+      sh -c "python scripts/init_db.py &&
+             exec uvicorn app.main:app --host 0.0.0.0 --port 8800"
+    depends_on:
+      marketplace-postgres:
+        condition: service_healthy
+    networks:
+      - tesslate-network
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8800/v1/manifest"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
   orchestrator:
     build:
       context: .
@@ -477,3 +530,7 @@ volumes:
     name: tesslate-redis-data
   gateway-locks:
     name: tesslate-gateway-locks
+  marketplace-postgres-data:
+    name: tesslate-marketplace-postgres-data
+  marketplace-data:
+    name: tesslate-marketplace-data

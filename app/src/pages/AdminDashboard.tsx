@@ -981,7 +981,7 @@ function AgentManagement() {
     }
   };
 
-  const loadAgentDetails = async (agentId: number) => {
+  const loadAgentDetails = async (agentId: string) => {
     try {
       const response = await fetch(`/api/admin/agents/${agentId}`, {
         headers: getAuthHeaders(),
@@ -1238,7 +1238,7 @@ function AgentManagement() {
                 <td className="px-6 py-4">
                   <div className="flex items-center justify-end space-x-2">
                     <button
-                      onClick={() => loadAgentDetails(Number(agent.id))}
+                      onClick={() => loadAgentDetails(agent.id)}
                       className="text-blue-400 hover:text-blue-300 text-sm"
                       title={agent.can_edit ? 'Edit agent' : 'View agent'}
                     >
