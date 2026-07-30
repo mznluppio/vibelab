@@ -99,6 +99,7 @@ export default function AdminDashboard() {
       'deployments',
       'bases',
       'agent-errors',
+      'platform-settings',
     ];
     if (
       activeTab !== 'overview' &&
@@ -354,6 +355,7 @@ export default function AdminDashboard() {
               { id: 'agents', label: 'Agents' },
               { id: 'bases', label: 'Bases' },
               { id: 'agent-errors', label: 'Agent Errors' },
+              { id: 'platform-settings', label: 'Settings' },
             ].map((tab) => (
               <button
                 key={tab.id}
@@ -384,6 +386,7 @@ export default function AdminDashboard() {
         {activeTab === 'projects-admin' && <ProjectAdmin />}
         {activeTab === 'billing' && <BillingAdmin />}
         {activeTab === 'deployments' && <DeploymentMonitor />}
+        {activeTab === 'platform-settings' && <PlatformSettings />}
 
         {/* Metrics Tabs */}
         {activeTab === 'overview' && summary && (
@@ -876,6 +879,95 @@ export default function AdminDashboard() {
         {activeTab === 'agent-errors' && <AgentErrorsFeed />}
       </div>
     </div>
+  );
+}
+
+// ============================================================================
+// Platform Settings
+// ============================================================================
+
+function PlatformSettings() {
+  const [showIntegrationCards, setShowIntegrationCards] = useState(false);
+  const [loadingSettings, setLoadingSettings] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/admin/settings/platform', {
+      headers: getAuthHeaders(),
+      credentials: 'include',
+    })
+      .then(async (response) => {
+        if (!response.ok) throw new Error('Failed to load platform settings');
+        return (await response.json()) as { show_home_integration_cards: boolean };
+      })
+      .then((settings) => {
+        if (!cancelled) setShowIntegrationCards(settings.show_home_integration_cards);
+      })
+      .catch((error) => {
+        console.error('Failed to load platform settings:', error);
+        if (!cancelled) toast.error('Failed to load platform settings');
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingSettings(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      const response = await fetch('/api/admin/settings/platform', {
+        method: 'PUT',
+        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ show_home_integration_cards: showIntegrationCards }),
+      });
+      if (!response.ok) throw new Error('Failed to save platform settings');
+      toast.success('Platform settings saved');
+    } catch (error) {
+      console.error('Failed to save platform settings:', error);
+      toast.error('Failed to save platform settings');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <section className="max-w-2xl rounded-lg border border-[var(--text)]/15 bg-gray-800 p-6">
+      <h2 className="text-xl font-semibold text-white">Home page</h2>
+      <p className="mt-1 text-sm text-gray-400">
+        Control optional onboarding cards shown on the Home page for every workspace member.
+      </p>
+      <label className="mt-6 flex cursor-pointer items-start gap-3 rounded-lg border border-[var(--text)]/15 bg-gray-700/40 p-4">
+        <input
+          type="checkbox"
+          checked={showIntegrationCards}
+          disabled={loadingSettings || saving}
+          onChange={(event) => setShowIntegrationCards(event.target.checked)}
+          className="mt-0.5 h-4 w-4 rounded border-gray-500 bg-gray-800 text-blue-600 focus:ring-blue-500"
+        />
+        <span>
+          <span className="block text-sm font-medium text-white">Show connector and channel cards</span>
+          <span className="mt-1 block text-xs text-gray-400">
+            Displays “Connect your connectors” and “Connect your channels” on Home.
+          </span>
+        </span>
+      </label>
+      <div className="mt-5 flex justify-end">
+        <button
+          type="button"
+          onClick={save}
+          disabled={loadingSettings || saving}
+          className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {saving ? 'Saving…' : 'Save settings'}
+        </button>
+      </div>
+    </section>
   );
 }
 

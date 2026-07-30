@@ -50,7 +50,7 @@ export default function MagicLinkConsume() {
       // protected route. Stashed by Login.tsx before sending the link.
       const redirect = sessionStorage.getItem(REDIRECT_KEY);
       sessionStorage.removeItem(REDIRECT_KEY);
-      navigate(redirect && redirect.startsWith('/') ? redirect : '/home', {
+      navigate(redirect && redirect.startsWith('/') ? redirect : '/chat', {
         replace: true,
       });
     } catch {

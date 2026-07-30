@@ -17,10 +17,10 @@ import type { ChatAgent } from '../types/chat';
 import type { SerializedAttachment, ChatMention } from '../types/agent';
 
 const LANDING_SUGGESTIONS = [
-  'Analyze my codebase',
-  'Help me debug an issue',
-  'Write a new feature',
-  'Explain how something works',
+  'Create an internal project status dashboard',
+  'Map our incident escalation process',
+  'Prepare a weekly operations report',
+  'Design a customer onboarding workflow',
 ];
 
 export default function Chat() {

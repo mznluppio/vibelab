@@ -397,6 +397,7 @@ export default function Home() {
 
   const [recent, setRecent] = useState<RecentProject[]>([]);
   const [recentLoading, setRecentLoading] = useState(true);
+  const [showIntegrationCards, setShowIntegrationCards] = useState(false);
 
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [showImportDialog, setShowImportDialog] = useState(false);
@@ -436,6 +437,24 @@ export default function Home() {
       cancelled = true;
     };
   }, [activeTeam?.slug, teamSwitchKey]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/platform-settings')
+      .then(async (response) => {
+        if (!response.ok) throw new Error('Failed to load platform settings');
+        return (await response.json()) as { show_home_integration_cards?: boolean };
+      })
+      .then((settings) => {
+        if (!cancelled) setShowIntegrationCards(settings.show_home_integration_cards === true);
+      })
+      .catch(() => {
+        // Keep the safe default: integration cards stay hidden when settings are unavailable.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Create-project handler — same flow as Dashboard.handleCreateProject.
   // Duplicated intentionally to keep blast radius to this file (see plan).
@@ -592,8 +611,12 @@ export default function Home() {
                 navigate('/chat', { state: { landingPrompt: '@agent-builder ' } })
               }
             />
-            <ConnectorsCard onClick={() => navigate('/marketplace/browse/mcp_server')} />
-            <ChannelsCard onClick={() => navigate('/library?tab=channels')} />
+            {showIntegrationCards && (
+              <>
+                <ConnectorsCard onClick={() => navigate('/marketplace/browse/mcp_server')} />
+                <ChannelsCard onClick={() => navigate('/library?tab=channels')} />
+              </>
+            )}
           </div>
 
           {/* Recent Projects — finder-style list */}

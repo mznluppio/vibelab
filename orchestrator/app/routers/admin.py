@@ -37,6 +37,7 @@ from ..models import (
     MarketplaceAgent,
     MarketplaceBase,
     Message,
+    PlatformSetting,
     Project,
     ProjectAgent,
     UsageLog,
@@ -52,6 +53,46 @@ from ..users import current_superuser
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/admin", tags=["admin"])
+
+HOME_INTEGRATION_CARDS_KEY = "home.integration_cards"
+
+
+class PlatformSettingsUpdate(BaseModel):
+    show_home_integration_cards: bool
+
+
+@router.get("/settings/platform")
+async def get_platform_settings(
+    admin: User = Depends(current_superuser), db: AsyncSession = Depends(get_db)
+) -> dict[str, bool]:
+    setting = await db.get(PlatformSetting, HOME_INTEGRATION_CARDS_KEY)
+    return {"show_home_integration_cards": bool(setting and setting.value is True)}
+
+
+@router.put("/settings/platform")
+async def update_platform_settings(
+    payload: PlatformSettingsUpdate,
+    admin: User = Depends(current_superuser),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, bool]:
+    setting = await db.get(PlatformSetting, HOME_INTEGRATION_CARDS_KEY)
+    if setting is None:
+        setting = PlatformSetting(
+            key=HOME_INTEGRATION_CARDS_KEY,
+            value=payload.show_home_integration_cards,
+        )
+        db.add(setting)
+    else:
+        setting.value = payload.show_home_integration_cards
+        setting.updated_at = datetime.utcnow()
+
+    await db.commit()
+    logger.info(
+        "Admin %s updated home integration cards visibility to %s",
+        admin.username,
+        payload.show_home_integration_cards,
+    )
+    return {"show_home_integration_cards": payload.show_home_integration_cards}
 
 
 # ============================================================================
