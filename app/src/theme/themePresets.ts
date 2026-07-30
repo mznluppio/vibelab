@@ -64,8 +64,8 @@ const DEFAULT_FALLBACK_THEME: Theme = {
       track: 'transparent',
     },
     code: {
-      inlineBackground: 'rgba(248, 149, 33, 0.15)',
-      inlineText: '#fbbf68',
+      inlineBackground: 'rgba(0, 85, 164, 0.15)',
+      inlineText: '#7dd3fc',
       blockBackground: 'rgba(0, 0, 0, 0.4)',
       blockBorder: 'rgba(255, 255, 255, 0.1)',
       blockText: '#e2e2e2',

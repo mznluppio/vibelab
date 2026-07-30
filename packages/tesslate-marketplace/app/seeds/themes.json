@@ -1003,7 +1003,7 @@
     "kind": "theme",
     "slug": "default-dark",
     "name": "Default Dark",
-    "description": "The default Tesslate dark theme with orange accents",
+    "description": "The default VibeLab dark theme with blue accents",
     "category": "general",
     "tags": [
       "dark",
@@ -1018,14 +1018,14 @@
     "price": 0,
     "extra_metadata": {
       "mode": "dark",
-      "author": "Tesslate",
+      "author": "VibeLab by Legrand",
       "version": "1.0.0",
       "theme_json": {
         "colors": {
-          "primary": "#F89521",
-          "primaryHover": "#fa9f35",
-          "primaryRgb": "248, 149, 33",
-          "accent": "#00D9FF",
+          "primary": "#0055A4",
+          "primaryHover": "#004580",
+          "primaryRgb": "0, 85, 164",
+          "accent": "#00A3E0",
           "background": "#111113",
           "surface": "#0a0a0a",
           "surfaceHover": "#1a1a1a",
@@ -1039,12 +1039,12 @@
             "text": "#ffffff",
             "border": "rgba(255, 255, 255, 0.06)",
             "hover": "rgba(255, 255, 255, 0.05)",
-            "active": "rgba(248, 149, 33, 0.15)"
+            "active": "rgba(0, 85, 164, 0.15)"
           },
           "input": {
             "background": "#1a1a1a",
             "border": "rgba(255, 255, 255, 0.1)",
-            "borderFocus": "#F89521",
+            "borderFocus": "#0055A4",
             "text": "#ffffff",
             "placeholder": "rgba(255, 255, 255, 0.4)"
           },
@@ -1054,8 +1054,8 @@
             "track": "transparent"
           },
           "code": {
-            "inlineBackground": "rgba(248, 149, 33, 0.1)",
-            "inlineText": "#F89521",
+            "inlineBackground": "rgba(0, 85, 164, 0.1)",
+            "inlineText": "#7dd3fc",
             "blockBackground": "rgba(0, 0, 0, 0.4)",
             "blockBorder": "rgba(255, 255, 255, 0.1)",
             "blockText": "#e2e2e2"
@@ -1102,7 +1102,7 @@
     "kind": "theme",
     "slug": "default-light",
     "name": "Default Light",
-    "description": "The default Tesslate light theme with orange accents",
+    "description": "The default VibeLab light theme with blue accents",
     "category": "general",
     "tags": [
       "light",
@@ -1117,14 +1117,14 @@
     "price": 0,
     "extra_metadata": {
       "mode": "light",
-      "author": "Tesslate",
+      "author": "VibeLab by Legrand",
       "version": "1.0.0",
       "theme_json": {
         "colors": {
-          "primary": "#F89521",
-          "primaryHover": "#e88a1d",
-          "primaryRgb": "248, 149, 33",
-          "accent": "#0891b2",
+          "primary": "#0055A4",
+          "primaryHover": "#004580",
+          "primaryRgb": "0, 85, 164",
+          "accent": "#00A3E0",
           "background": "#F5F6F7",
           "surface": "#ffffff",
           "surfaceHover": "#e8ebef",
@@ -1138,12 +1138,12 @@
             "text": "#1a1a1a",
             "border": "#e5e7eb",
             "hover": "#f3f4f6",
-            "active": "rgba(248, 149, 33, 0.15)"
+            "active": "rgba(0, 85, 164, 0.15)"
           },
           "input": {
             "background": "#ffffff",
             "border": "#d1d5db",
-            "borderFocus": "#F89521",
+            "borderFocus": "#0055A4",
             "text": "#1a1a1a",
             "placeholder": "#9ca3af"
           },
@@ -1153,8 +1153,8 @@
             "track": "transparent"
           },
           "code": {
-            "inlineBackground": "rgba(248, 149, 33, 0.1)",
-            "inlineText": "#c2570b",
+            "inlineBackground": "rgba(0, 85, 164, 0.1)",
+            "inlineText": "#0055A4",
             "blockBackground": "#f3f4f6",
             "blockBorder": "#e5e7eb",
             "blockText": "#374151"
