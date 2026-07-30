@@ -27,7 +27,7 @@ This module is intentionally narrow now. It owns only:
     ``auto_add_tesslate_agent_to_users`` sweep — the default is now
     derived in the listing endpoint, not stored per-user.
   * Library auto-add backfill for *helper* canonical agents (Librarian,
-    Agent Builder, Automation Builder, Service Integrator). These are
+    Agent Builder, Assist to Build, Automation Builder, Service Integrator). These are
     separate from the system default; they remain real marketplace
     items every user gets nudged toward. The actual logic lives in
     ``services.library_seeder``.
@@ -103,7 +103,7 @@ async def run_all_seeds():
             await db.rollback()
 
         # 3. Library auto-add for the *other* canonical helper agents
-        # (Librarian, Agent Builder, Automation Builder, Service
+        # (Librarian, Agent Builder, Assist to Build, Automation Builder, Service
         # Integrator). The system default is NOT in this loop — it's
         # implicit in the /my-agents listing and never written to
         # user_purchased_agents at signup. These helpers are still real

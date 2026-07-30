@@ -6,9 +6,11 @@ and edge cases. Uses mocked DB sessions — no database required.
 """
 
 import uuid
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from fastapi import HTTPException
 
 import app.models  # noqa: F401 — register all ORM models so mapper resolves cross-module relationships
 from app.permissions import (
@@ -449,6 +451,22 @@ class TestCreditServiceTeamBilling:
 
 
 class TestSchemaValidation:
+    @pytest.mark.asyncio
+    async def test_team_creation_requires_platform_administrator(self):
+        from app.routers.teams import create_team
+        from app.schemas_team import TeamCreate
+
+        with pytest.raises(HTTPException) as exc_info:
+            await create_team(
+                TeamCreate(name="Engineering", slug="engineering"),
+                request=SimpleNamespace(),
+                db=SimpleNamespace(),
+                user=SimpleNamespace(is_superuser=False),
+            )
+
+        assert exc_info.value.status_code == 403
+        assert exc_info.value.detail == "Only platform administrators can create teams"
+
     def test_team_create_valid(self):
         from app.schemas_team import TeamCreate
 

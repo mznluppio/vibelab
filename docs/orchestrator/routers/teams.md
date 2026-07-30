@@ -14,7 +14,7 @@ Team CRUD, memberships, invitations, project access control, and audit log. Back
 
 | Method | Path | Auth | Summary |
 |--------|------|------|---------|
-| POST | `/` | user | Create a team (caller becomes admin, 201). |
+| POST | `/` | platform administrator | Create a team (caller becomes admin, 201). |
 | GET | `/` | user | List teams the caller belongs to (with role). |
 | GET | `/{team_slug}` | member | Team details. |
 | PATCH | `/{team_slug}` | admin | Update team fields. |
@@ -61,6 +61,7 @@ Team CRUD, memberships, invitations, project access control, and audit log. Back
 
 ## Auth
 
+- `POST /` additionally requires `User.is_superuser`; the sidebar hides this action for all other users.
 - `current_active_user` plus role check via `check_team_permission` / `get_project_with_access`.
 - Invite token preview is public; acceptance requires auth.
 - All state changes append to `AuditLog`.

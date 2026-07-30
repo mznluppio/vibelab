@@ -1,5 +1,4 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { GearSix, CaretLeft, Check, MagnifyingGlass, Lightning } from '@phosphor-icons/react';
 import { marketplaceApi } from '../../lib/api';
 import { type ChatAgent } from '../../types/chat';
@@ -254,8 +253,6 @@ export function AgentSelector({
   const [isOpen, setIsOpen] = useState(false);
   const [configAgent, setConfigAgent] = useState<ChatAgent | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
-  const navigate = useNavigate();
-
   // Close dropdown on click outside or window losing focus (e.g. iframe click)
   useEffect(() => {
     if (!isOpen) return;
@@ -381,7 +378,7 @@ export function AgentSelector({
           ) : (
             <>
               <div className="px-4 py-2 text-xs text-gray-400 border-b border-[var(--border)]">
-                PURCHASED AGENTS
+                AGENTS
               </div>
 
               <div className="overflow-y-auto flex-1 min-h-0">
@@ -422,34 +419,6 @@ export function AgentSelector({
                     )}
                   </button>
                 ))}
-              </div>
-
-              <div className="border-t border-[var(--border)] p-3">
-                <div className="bg-[var(--surface-hover)] rounded-[var(--radius-medium)] p-3 border border-[var(--border)]">
-                  <div className="flex items-center gap-2 mb-2">
-                    <svg
-                      className="w-4 h-4 text-yellow-400"
-                      fill="currentColor"
-                      viewBox="0 0 256 256"
-                    >
-                      <path d="M239.75,90.81c0,.11,0,.21-.05.32a15.94,15.94,0,0,1-8.32,12l-70.74,38.12,34.81,94a16.42,16.42,0,0,1-.93,13.38,15.94,15.94,0,0,1-12.21,7.73,16.86,16.86,0,0,1-5.18-.05,15.93,15.93,0,0,1-10.93-8.17L128,173.26,89.8,248.15a15.93,15.93,0,0,1-10.93,8.17,16.86,16.86,0,0,1-5.18.05,15.94,15.94,0,0,1-12.21-7.73,16.42,16.42,0,0,1-.93-13.38l34.81-94L24.62,103.13a15.94,15.94,0,0,1-8.32-12c0-.11,0-.21-.05-.32A16,16,0,0,1,26.71,75.68L109.18,64,147.24,8.12a16.1,16.1,0,0,1,28.52,0L213.82,64l82.47,11.68A16,16,0,0,1,239.75,90.81Z" />
-                    </svg>
-                    <span className="font-semibold text-sm text-white">Unlock More AI Agents</span>
-                  </div>
-                  <p className="text-xs text-gray-300 mb-3">
-                    Get specialized agents for React, Vue, Python, DevOps, and more!
-                  </p>
-                  <button
-                    onClick={() => {
-                      setIsOpen(false);
-                      setConfigAgent(null);
-                      navigate('/marketplace');
-                    }}
-                    className="btn btn-primary w-full"
-                  >
-                    Browse Marketplace
-                  </button>
-                </div>
               </div>
             </>
           )}

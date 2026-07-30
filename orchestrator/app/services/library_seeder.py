@@ -6,7 +6,7 @@ orchestrator no longer ships the catalog rows themselves — the federation
 sync worker pulls them from the marketplace service. This module is
 strictly user-state seeding: it sweeps every user and inserts a
 ``UserPurchasedAgent`` row for each canonical agent the user is missing,
-so canonical agents (Tesslate Agent, Librarian, Agent Builder,
+so canonical agents (Tesslate Agent, Librarian, Agent Builder, Assist to Build,
 Automation Builder, Service Integrator) appear in every user's library
 and ``@``-mention picker without manual install.
 
@@ -39,6 +39,7 @@ logger = logging.getLogger(__name__)
 CANONICAL_AGENTS: list[tuple[str, str]] = [
     ("librarian", "Librarian"),
     ("agent-builder", "Agent Builder"),
+    ("assist-to-build", "Assist to Build"),
     ("automation-builder", "Automation Builder"),
     ("service-integrator", "Service Integrator"),
 ]

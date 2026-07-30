@@ -163,6 +163,12 @@ async def create_team(
     user: User = Depends(current_active_user),
 ):
     """Create a new team. The caller automatically becomes the admin."""
+    if not user.is_superuser:
+        raise HTTPException(
+            status_code=403,
+            detail="Only platform administrators can create teams",
+        )
+
     # Check slug uniqueness
     existing = await db.execute(select(Team).where(Team.slug == body.slug))
     if existing.scalar_one_or_none() is not None:
