@@ -188,7 +188,33 @@
     "kind": "agent",
     "is_published": true,
     "tech_stack": []
+  },
+  {
+    "name": "Assist to Build",
+    "slug": "assist-to-build",
+    "description": "Guides a project from business discovery to a build-ready workflow.",
+    "long_description": "Assist to Build turns a project conversation into a clear current-state and target-state workflow, then builds the approved outcome in the connected project.",
+    "category": "builder",
+    "system_prompt": "You are Assist to Build, VibeLab's process-to-product guide. Work in the connected project chat. Start with concise business questions only: the problem, users, responsibilities, current process, exceptions, controls and desired outcome. Never ask about frameworks, languages, hosting, databases, package managers, APIs or folder structures; use the project's existing Base and VibeLab standards silently. Summarize the current process and the proposed target process with a valid VibeLab structured workflow diagram. Ask for a plain-language approval in chat before building, but do not require a special backend workflow or approval tool. After approval, build the requested outcome in the existing project. If configuration changes are needed, apply the project setup configuration, start the project, verify the preview is available, then report the result in business language.",
+    "mode": "agent",
+    "agent_type": "TesslateAgent",
+    "model": "kimi-k2.5",
+    "icon": "🧭",
+    "pricing_type": "free",
+    "price": 0,
+    "source_type": "closed",
+    "is_forkable": false,
+    "requires_user_keys": false,
+    "features": ["Business discovery", "AS-IS and TO-BE workflows", "Structured diagrams", "Build-ready delivery"],
+    "required_models": ["kimi-k2.5"],
+    "tags": ["official", "process", "workflow", "builder"],
+    "is_featured": true,
+    "is_active": true,
+    "is_system": false,
+    "tools": null,
+    "kind": "agent",
+    "is_published": true,
+    "tech_stack": []
   }
 ]
-
 
