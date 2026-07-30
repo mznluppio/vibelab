@@ -83,6 +83,38 @@ services:
       retries: 5
     command: redis-server --maxmemory 256mb --maxmemory-policy volatile-lru --appendonly yes
 
+  # Central, private LLM gateway for local VibeLab development. The proxy has
+  # no host port: only backend services on tesslate-network can reach it.
+  litellm:
+    image: ghcr.io/berriai/litellm:main-v1.81.9-stable
+    container_name: vibelab-litellm
+    restart: unless-stopped
+    command: ["--port", "4000", "--config", "/app/config.yaml"]
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-tesslate_user}:${POSTGRES_PASSWORD:-dev_password_change_me}@postgres:5432/${POSTGRES_DB:-tesslate_dev}
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:?Set LITELLM_MASTER_KEY in .env}
+      AZURE_API_BASE: ${AZURE_API_BASE:?Set AZURE_API_BASE in .env}
+      AZURE_API_KEY: ${AZURE_API_KEY:?Set AZURE_API_KEY in .env}
+      AZURE_API_VERSION: ${AZURE_API_VERSION:?Set AZURE_API_VERSION in .env}
+      # LiteLLM resolves the entire provider-prefixed model value from env,
+      # keeping Azure deployment names out of the checked-in proxy config.
+      AZURE_AI_DEFAULT_MODEL: azure/${AZURE_AI_DEFAULT_DEPLOYMENT:?Set AZURE_AI_DEFAULT_DEPLOYMENT in .env}
+      AZURE_AI_FAST_MODEL: azure/${AZURE_AI_FAST_DEPLOYMENT:?Set AZURE_AI_FAST_DEPLOYMENT in .env}
+      AZURE_AI_REASONING_MODEL: azure/${AZURE_AI_REASONING_DEPLOYMENT:?Set AZURE_AI_REASONING_DEPLOYMENT in .env}
+    volumes:
+      - ./k8s/litellm/vibelab-azure-config.yaml:/app/config.yaml:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - tesslate-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4000/health/readiness', timeout=5).read()"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
   orchestrator:
     build:
       context: .
@@ -108,7 +140,7 @@ services:
       - DEPLOYMENT_MODE=docker
       - DEPLOYMENT_ENV=${DEPLOYMENT_ENV:-docker}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
-      - LITELLM_API_BASE=${LITELLM_API_BASE}
+      - LITELLM_API_BASE=http://litellm:4000/v1
       - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY}
       - LITELLM_DEFAULT_MODELS=${LITELLM_DEFAULT_MODELS}
       - LITELLM_TEAM_ID=${LITELLM_TEAM_ID}
@@ -217,6 +249,7 @@ services:
       - SMTP_SENDER_EMAIL=${SMTP_SENDER_EMAIL:-}
       - TWO_FA_ENABLED=${TWO_FA_ENABLED:-false}
       - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - LEGRAND_OFFICIAL_BASE_URL=${LEGRAND_OFFICIAL_BASE_URL:-http://marketplace:8800}
       - PYTHONUNBUFFERED=1
       - WATCHFILES_FORCE_POLLING=true
     depends_on:
@@ -269,7 +302,7 @@ services:
       - DEPLOYMENT_MODE=docker
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
-      - LITELLM_API_BASE=${LITELLM_API_BASE}
+      - LITELLM_API_BASE=http://litellm:4000/v1
       - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY}
       - LITELLM_DEFAULT_MODELS=${LITELLM_DEFAULT_MODELS}
       - LITELLM_TEAM_ID=${LITELLM_TEAM_ID}
@@ -279,6 +312,7 @@ services:
       - AGENT_MAX_ITERATIONS=${AGENT_MAX_ITERATIONS:-0}
       - AGENT_MAX_COST_PER_RUN=${AGENT_MAX_COST_PER_RUN:-5.0}
       - APP_DOMAIN=${APP_DOMAIN:-localhost}
+      - LEGRAND_OFFICIAL_BASE_URL=${LEGRAND_OFFICIAL_BASE_URL:-http://marketplace:8800}
       - PYTHONUNBUFFERED=1
     depends_on:
       postgres:
@@ -356,7 +390,7 @@ services:
       - DEPLOYMENT_MODE=docker
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
-      - LITELLM_API_BASE=${LITELLM_API_BASE}
+      - LITELLM_API_BASE=http://litellm:4000/v1
       - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY}
       - LITELLM_DEFAULT_MODELS=${LITELLM_DEFAULT_MODELS}
       - LITELLM_TEAM_ID=${LITELLM_TEAM_ID}
