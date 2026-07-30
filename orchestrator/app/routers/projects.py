@@ -6405,8 +6405,10 @@ async def _start_container_background_task(
                 container_info = info
                 break
         if container_info and container_info.get("running"):
-            # Container is already running - return immediately!
-            task.update_progress(100, 100, "Container already running")
+            # A compose process can be running while its application server is
+            # still booting (or restarting). Confirm the browser route before
+            # reporting this start request as successful.
+            task.update_progress(85, 100, "Waiting for container to be ready")
             # Use URL from orchestrator status if available, otherwise build it
             container_url = container_info.get("url")
             if not container_url:
@@ -6425,6 +6427,8 @@ async def _start_container_background_task(
                     protocol=protocol,
                     app_domain=settings.app_domain,
                 )
+            container_url = await _wait_for_container_http_health(project, container, task)
+            task.update_progress(100, 100, "Container ready")
             task.add_log(f"Container '{container.name}' is already running at {container_url}")
             logger.info(f"[COMPOSE] Container {container.name} already running, skipping startup")
 
@@ -6566,9 +6570,7 @@ async def _start_container_background_task(
                         app_domain=settings.app_domain,
                     )
 
-            # Give container a moment to fully initialize
-            await asyncio.sleep(2)
-            task.add_log("Container health check passed")
+        container_url = await _wait_for_container_http_health(project, container, task)
 
         # Stage 7: Complete (100%)
         task.update_progress(100, 100, "Container ready")
@@ -6793,39 +6795,27 @@ async def stop_single_container(
         raise HTTPException(status_code=500, detail=f"Failed to stop container: {str(e)}") from e
 
 
-@router.get("/{project_slug}/containers/{container_id}/health")
-async def check_container_health(
-    project_slug: str,
-    container_id: UUID,
-    current_user: User = Depends(get_authenticated_user),
-    db: AsyncSession = Depends(get_db),
-):
-    """
-    Check if a container's web server is responding to HTTP requests.
+async def _check_container_http_health(project: Project, container: Container) -> dict[str, Any]:
+    """Return the preview-route health of a started container.
 
-    This endpoint is used by the frontend to determine when a container is ready
-    to display in the preview iframe, avoiding 404/503 errors during startup.
-
-    Returns:
-        healthy: True if the container responds with 2xx/3xx status
-        status_code: HTTP status code from the container
-        url: The URL that was checked
-        error: Error message if check failed
+    Both the startup task and the browser preview use this probe, so a completed
+    startup always means the public preview route is responding.
     """
     import httpx
 
-    project = await get_project_by_slug(db, project_slug, current_user)
-
-    container = await db.get(Container, container_id)
-    if not container or container.project_id != project.id:
-        raise HTTPException(status_code=404, detail="Container not found")
-
     settings = get_settings()
 
-    # Get container directory (sanitized for K8s naming)
-    from ..services.compute_manager import resolve_k8s_container_dir
+    # Docker Compose routes by the sanitized service name, whereas Kubernetes
+    # routes by its stable directory identifier. Keep this probe aligned with
+    # the respective orchestrator's existing route generation.
+    if settings.deployment_mode == "docker":
+        from ..services.project_setup.naming import sanitize_name
 
-    container_dir = resolve_k8s_container_dir(container)
+        container_dir = sanitize_name(container.name)
+    else:
+        from ..services.compute_manager import resolve_k8s_container_dir
+
+        container_dir = resolve_k8s_container_dir(container)
 
     # Build container URL based on deployment mode
     if settings.deployment_mode == "desktop":
@@ -6908,6 +6898,42 @@ async def check_container_health(
     except Exception as e:
         logger.debug(f"[HEALTH CHECK] Error checking {health_check_url}: {e}")
         return {"healthy": False, "url": external_url, "error": str(e)}
+
+
+async def _wait_for_container_http_health(
+    project: Project, container: Container, task: "Task"
+) -> str:
+    """Wait until the existing preview health probe confirms the app is ready."""
+    for attempt in range(1, 46):
+        health = await _check_container_http_health(project, container)
+        if health["healthy"]:
+            task.add_log("Container health check passed")
+            return health["url"]
+
+        if attempt == 1 or attempt % 5 == 0:
+            detail = health.get("error") or f"HTTP {health.get('status_code', 'unknown')}"
+            task.add_log(f"Waiting for web server ({attempt}/45): {detail}")
+        await asyncio.sleep(2)
+
+    detail = health.get("error") or f"HTTP {health.get('status_code', 'unknown')}"
+    raise RuntimeError(f"Container web server did not become ready: {detail}")
+
+
+@router.get("/{project_slug}/containers/{container_id}/health")
+async def check_container_health(
+    project_slug: str,
+    container_id: UUID,
+    current_user: User = Depends(get_authenticated_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Check whether a container's browser preview route is responding."""
+    project = await get_project_by_slug(db, project_slug, current_user)
+
+    container = await db.get(Container, container_id)
+    if not container or container.project_id != project.id:
+        raise HTTPException(status_code=404, detail="Container not found")
+
+    return await _check_container_http_health(project, container)
 
 
 @router.post("/{project_slug}/containers/{container_id}/restart", status_code=202)
