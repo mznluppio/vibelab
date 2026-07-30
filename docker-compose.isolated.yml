@@ -1,0 +1,76 @@
+# Run a second local VibeLab checkout without replacing the primary stack.
+# Usage:
+#   APP_DOMAIN=vibelab-minimal.localhost APP_PORT=8081 APP_SECURE_PORT=8444 \
+#   TRAEFIK_DASHBOARD_PORT=8082 BACKEND_PORT=8001 FRONTEND_PORT=5174 \
+#   POSTGRES_PORT=5433 REDIS_PORT=6380 VITE_API_URL=http://localhost:8001 \
+#   docker compose -p vibelab-minimal -f docker-compose.yml -f docker-compose.isolated.yml up -d --build
+
+services:
+  traefik:
+    container_name: vibelab-minimal-traefik
+    ports: !override
+      - "${APP_PORT:-8081}:80"
+      - "${APP_SECURE_PORT:-8444}:443"
+      - "${TRAEFIK_DASHBOARD_PORT:-8082}:8080"
+    command: !override
+      - "--api.dashboard=true"
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--providers.docker.network=vibelab-minimal-network"
+      - "--providers.docker.constraints=Label(`com.tesslate.routable`,`true`)"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--certificatesresolvers.letsencrypt.acme.httpchallenge=true"
+      - "--certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web"
+      - "--certificatesresolvers.letsencrypt.acme.email=dev@localhost"
+      - "--certificatesresolvers.letsencrypt.acme.storage=/etc/traefik/acme.json"
+      - "--log.level=INFO"
+
+  postgres:
+    container_name: vibelab-minimal-postgres
+    ports: !override
+      - "${POSTGRES_PORT:-5433}:5432"
+
+  redis:
+    container_name: vibelab-minimal-redis
+    ports: !override
+      - "${REDIS_PORT:-6380}:6379"
+
+  litellm-db-bootstrap:
+    container_name: vibelab-minimal-litellm-db-bootstrap
+
+  litellm:
+    container_name: vibelab-minimal-litellm
+
+  orchestrator:
+    container_name: vibelab-minimal-orchestrator
+    ports: !override
+      - "${BACKEND_PORT:-8001}:8000"
+
+  worker:
+    container_name: vibelab-minimal-worker
+
+  app:
+    container_name: vibelab-minimal-app
+    ports: !override
+      - "${FRONTEND_PORT:-5174}:5173"
+
+  gateway:
+    container_name: vibelab-minimal-gateway
+
+networks:
+  tesslate-network:
+    name: vibelab-minimal-network
+
+volumes:
+  postgres-dev-data:
+    name: vibelab-minimal-postgres-data
+  base-cache:
+    name: vibelab-minimal-base-cache
+  projects-data:
+    name: vibelab-minimal-projects-data
+  redis-data:
+    name: vibelab-minimal-redis-data
+  gateway-locks:
+    name: vibelab-minimal-gateway-locks
