@@ -112,6 +112,7 @@ _FROZEN_INSTALL_PREFIX_RE = re.compile(
     r"^\s*(?:(?:pnpm|bun|yarn)\s+install\s+--frozen-lockfile|npm\s+ci)\s*&&\s*"
 )
 _BUN_RUN_ARGUMENT_SEPARATOR_RE = re.compile(r"(\bbun\s+run\s+\S+)\s+--\s+(?=--)")
+_PLACEHOLDER_STARTUP_COMMANDS = frozenset({"sleep infinity", "sleep inf", "tail -f /dev/null"})
 
 
 def normalize_startup_command(command: str) -> str:
@@ -125,6 +126,11 @@ def normalize_startup_command(command: str) -> str:
     """
     command = _FROZEN_INSTALL_PREFIX_RE.sub("", command)
     return _BUN_RUN_ARGUMENT_SEPARATOR_RE.sub(r"\1 ", command)
+
+
+def is_placeholder_startup_command(command: str | None) -> bool:
+    """Return whether *command* deliberately starts no application server."""
+    return bool(command and command.strip().lower() in _PLACEHOLDER_STARTUP_COMMANDS)
 
 
 def validate_startup_command(command: str) -> tuple[bool, str | None]:
@@ -710,7 +716,7 @@ def get_app_startup_config(project_path: str, app_name: str) -> tuple[list[str],
         app = tesslate_config.apps[app_name]
         port = app.port or 3000
 
-        if app.start:
+        if app.start and not is_placeholder_startup_command(app.start):
             # Build env var prefix if any
             env_prefix = ""
             if app.env:
@@ -728,11 +734,65 @@ def get_app_startup_config(project_path: str, app_name: str) -> tuple[list[str],
             command = f"{dir_prefix}{env_prefix}{deps_prefix}{app.start}"
             logger.info(f"[CONFIG] Using .tesslate/config.json for app '{app_name}': port={port}")
             return ["sh", "-c", command], port
-        else:
-            # No start command - keep container alive
-            logger.info(f"[CONFIG] App '{app_name}' has no start command, using sleep infinity")
-            return ["sh", "-c", "sleep infinity"], port
+        if is_placeholder_startup_command(app.start):
+            inferred = _infer_node_development_server(project_path, app)
+            if inferred is not None:
+                command, inferred_port = inferred
+                logger.warning(
+                    "[CONFIG] Replacing placeholder startup command for app '%s' with inferred dev server",
+                    app_name,
+                )
+                return ["sh", "-c", _install_deps_if_missing_command() + command], inferred_port
+
+        # No runnable command — retain the placeholder for genuine CLI/library projects.
+        logger.info(f"[CONFIG] App '{app_name}' has no runnable start command, using sleep infinity")
+        return ["sh", "-c", "sleep infinity"], port
 
     # Priority 2: Generic fallback (no config found)
     logger.info(f"[CONFIG] Using generic fallback for app '{app_name}'")
     return ["sh", "-c", "sleep infinity"], 3000
+
+
+def _infer_node_development_server(project_path: str, app: AppConfig) -> tuple[str, int] | None:
+    """Recover a runnable Node web app from a placeholder template config.
+
+    Marketplace bases sometimes use ``sleep infinity`` as a pre-setup
+    placeholder. That is valid for a library, but a Next.js or Vite project
+    with a ``dev`` script must expose its HTTP server instead. Infer only
+    well-known web frameworks so non-web projects keep their safe placeholder.
+    """
+    app_path = Path(project_path) / (app.directory or ".")
+    package_path = app_path / "package.json"
+    if not package_path.is_file():
+        return None
+
+    try:
+        package = json.loads(package_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+
+    scripts = package.get("scripts") if isinstance(package, dict) else None
+    if not isinstance(scripts, dict) or not isinstance(scripts.get("dev"), str):
+        return None
+
+    dependencies: dict[str, Any] = {}
+    for key in ("dependencies", "devDependencies"):
+        value = package.get(key)
+        if isinstance(value, dict):
+            dependencies.update(value)
+
+    if (app_path / "pnpm-lock.yaml").is_file():
+        runner = "pnpm"
+    elif (app_path / "bun.lock").is_file() or (app_path / "bun.lockb").is_file():
+        runner = "bun"
+    elif (app_path / "yarn.lock").is_file():
+        runner = "yarn"
+    else:
+        runner = "npm run"
+
+    if "next" in dependencies:
+        return f"{runner} dev --hostname 0.0.0.0", 3000
+    if "vite" in dependencies:
+        return f"{runner} dev -- --host 0.0.0.0", app.port or 5173
+
+    return None

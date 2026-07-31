@@ -13,8 +13,62 @@ from app.services.base_config_parser import (
     parse_tesslate_config,
     read_tesslate_config,
     serialize_config_to_json,
+    get_app_startup_config,
     write_tesslate_config,
 )
+
+
+class TestPlaceholderStartupRecovery:
+    def test_nextjs_placeholder_starts_the_dev_server(self, tmp_path):
+        (tmp_path / "package.json").write_text(
+            json.dumps(
+                {
+                    "scripts": {"dev": "next dev --turbopack"},
+                    "dependencies": {"next": "16.1.6"},
+                }
+            )
+        )
+        (tmp_path / "pnpm-lock.yaml").write_text("lockfileVersion: '9.0'\n")
+        config_dir = tmp_path / ".tesslate"
+        config_dir.mkdir()
+        (config_dir / "config.json").write_text(
+            json.dumps(
+                {
+                    "apps": {
+                        "workspace": {
+                            "directory": ".",
+                            "port": None,
+                            "start": "sleep infinity",
+                        }
+                    },
+                    "infrastructure": {},
+                    "primaryApp": "workspace",
+                }
+            )
+        )
+
+        command, port = get_app_startup_config(str(tmp_path), "workspace")
+
+        assert command[-1].endswith("pnpm dev --hostname 0.0.0.0")
+        assert port == 3000
+
+    def test_placeholder_without_a_web_app_stays_idle(self, tmp_path):
+        config_dir = tmp_path / ".tesslate"
+        config_dir.mkdir()
+        (config_dir / "config.json").write_text(
+            json.dumps(
+                {
+                    "apps": {"tool": {"directory": ".", "port": None, "start": "sleep infinity"}},
+                    "infrastructure": {},
+                    "primaryApp": "tool",
+                }
+            )
+        )
+
+        command, port = get_app_startup_config(str(tmp_path), "tool")
+
+        assert command == ["sh", "-c", "sleep infinity"]
+        assert port == 3000
 
 
 class TestParseNewConfigFields:

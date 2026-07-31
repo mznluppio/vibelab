@@ -1913,10 +1913,13 @@ class DockerOrchestrator(BaseOrchestrator):
         from ...services.base_config_parser import (
             get_app_startup_config,
             get_node_modules_fix_prefix,
+            is_placeholder_startup_command,
         )
 
         # Priority 1: Container DB record (set by setup-config or project creation)
-        if container.startup_command:
+        if container.startup_command and not is_placeholder_startup_command(
+            container.startup_command
+        ):
             port = container.effective_port
             deps_prefix = get_node_modules_fix_prefix()
             command = ["sh", "-c", deps_prefix + container.startup_command]
@@ -1924,6 +1927,12 @@ class DockerOrchestrator(BaseOrchestrator):
                 f"[DOCKER] Using startup_command from DB for '{container.name}': port={port}"
             )
             return command, port
+
+        if is_placeholder_startup_command(container.startup_command):
+            logger.info(
+                "[DOCKER] Ignoring placeholder startup_command for '%s'; checking project config",
+                container.name,
+            )
 
         # Priority 2: .tesslate/config.json (unified config)
         if self.use_volumes:
