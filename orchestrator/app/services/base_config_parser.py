@@ -108,6 +108,23 @@ SAFE_COMMAND_PREFIXES = [
 
 
 _SHELL_WRAPPER_RE = re.compile(r"""^\s*(?:sh|bash)\s+-c\s+['"]""")
+_FROZEN_INSTALL_PREFIX_RE = re.compile(
+    r"^\s*(?:(?:pnpm|bun|yarn)\s+install\s+--frozen-lockfile|npm\s+ci)\s*&&\s*"
+)
+_BUN_RUN_ARGUMENT_SEPARATOR_RE = re.compile(r"(\bbun\s+run\s+\S+)\s+--\s+(?=--)")
+
+
+def normalize_startup_command(command: str) -> str:
+    """Canonicalize safe, redundant startup-command syntax from templates.
+
+    Dependency installation is handled by the platform's startup prelude, so a
+    leading immutable install only slows every restart and can fail under
+    pnpm's non-interactive build policy. Bun also forwards arguments directly
+    to scripts; the npm-style ``bun run dev -- --hostname`` form makes Next.js
+    treat ``--hostname`` as a project directory.
+    """
+    command = _FROZEN_INSTALL_PREFIX_RE.sub("", command)
+    return _BUN_RUN_ARGUMENT_SEPARATOR_RE.sub(r"\1 ", command)
 
 
 def validate_startup_command(command: str) -> tuple[bool, str | None]:
@@ -189,7 +206,7 @@ def _install_deps_if_missing_command() -> str:
         'if [ -f "package.json" ] && [ ! -d "node_modules" ]; then '
         '  echo "[TESSLATE] Installing dependencies..." && '
         '  if [ -f "bun.lock" ] || [ -f "bun.lockb" ]; then bun install; '
-        '  elif [ -f "pnpm-lock.yaml" ]; then pnpm install; '
+        '  elif [ -f "pnpm-lock.yaml" ]; then pnpm install --config.dangerouslyAllowAllBuilds=true; '
         '  elif [ -f "yarn.lock" ]; then yarn install; '
         "  else npm install; "
         "  fi; "
@@ -434,11 +451,12 @@ def parse_tesslate_config(json_str: str) -> TesslateProjectConfig:
 
     # Parse apps
     for name, app_data in data.get("apps", {}).items():
-        start_cmd = app_data.get("start", "")
-        if start_cmd:
-            is_valid, error = validate_startup_command(start_cmd)
+        raw_start_cmd = app_data.get("start", "")
+        if raw_start_cmd:
+            is_valid, error = validate_startup_command(raw_start_cmd)
             if not is_valid:
                 raise ValueError(f"App '{name}' has invalid start command: {error}")
+        start_cmd = normalize_startup_command(raw_start_cmd)
 
         resources_raw = app_data.get("resources")
         resources = resources_raw if isinstance(resources_raw, dict) and resources_raw else None

@@ -32,7 +32,7 @@ def _node_install_command(directory: Path) -> str:
     if (directory / "bun.lock").exists() or (directory / "bun.lockb").exists():
         return "bun install --frozen-lockfile"
     if (directory / "pnpm-lock.yaml").exists():
-        return "pnpm install --frozen-lockfile"
+        return "pnpm install --frozen-lockfile --config.dangerouslyAllowAllBuilds=true"
     if (directory / "yarn.lock").exists():
         return "yarn install --frozen-lockfile"
     if (directory / "package-lock.json").exists():
