@@ -18,8 +18,8 @@ def _agent(**overrides):
     return SimpleNamespace(**values)
 
 
-def _user(user_id=None):
-    return SimpleNamespace(id=user_id or uuid4(), is_superuser=False)
+def _user(user_id=None, *, is_superuser=False):
+    return SimpleNamespace(id=user_id or uuid4(), is_superuser=is_superuser)
 
 
 def test_standard_user_cannot_edit_an_official_agent() -> None:
@@ -37,6 +37,22 @@ def test_assist_to_build_is_read_only_for_a_standard_user() -> None:
     official_source = SimpleNamespace(trust_level="official")
 
     assert can_edit_agent(agent, official_source, user) is False
+
+
+def test_superuser_can_edit_an_official_agent_from_the_library() -> None:
+    user = _user(is_superuser=True)
+    agent = _agent(created_by_user_id=user.id)
+    official_source = SimpleNamespace(trust_level="official")
+
+    assert can_edit_agent(agent, official_source, user) is True
+
+
+def test_superuser_cannot_edit_another_users_personal_agent() -> None:
+    creator = _user()
+    agent = _agent(created_by_user_id=creator.id)
+    local_source = SimpleNamespace(trust_level="local")
+
+    assert can_edit_agent(agent, local_source, _user(is_superuser=True)) is False
 
 
 def test_creator_can_edit_a_personal_agent() -> None:

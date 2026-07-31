@@ -34,8 +34,17 @@ def can_edit_agent(
     source: MarketplaceSource | None,
     user: User,
 ) -> bool:
-    """Whether the standard Library surface may expose agent editing."""
-    return not is_protected_agent(agent, source) and is_agent_owner(agent, user)
+    """Whether the standard Library surface may expose agent editing.
+
+    The Library and its mutation endpoint must agree: platform administrators
+    are allowed to maintain protected catalog rows, while personal agents stay
+    editable only by their creator.  This keeps the UI from hiding an action
+    that the API will accept, without granting administrators access to other
+    users' private agents.
+    """
+    if is_protected_agent(agent, source):
+        return bool(getattr(user, "is_superuser", False))
+    return is_agent_owner(agent, user)
 
 
 async def require_agent_mutation_access(
