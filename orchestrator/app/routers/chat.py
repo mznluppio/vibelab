@@ -102,6 +102,23 @@ async def _get_arq_pool():
         return None
 
 
+async def _has_active_arq_worker() -> bool:
+    """Return whether a recently alive ARQ worker can consume chat tasks.
+
+    Redis being reachable only proves that a task can be queued.  The worker
+    publishes a short-TTL heartbeat so callers receive a useful error instead
+    of an indefinitely streaming response when every worker is offline.
+    """
+    from ..services.cache_service import get_redis_client
+
+    try:
+        redis = await get_redis_client()
+        return bool(redis is not None and await redis.exists("tesslate:worker:heartbeat"))
+    except Exception:
+        logger.warning("[ARQ] Could not verify worker heartbeat", exc_info=True)
+        return False
+
+
 async def _bind_chat_attachments_to_message(
     db: AsyncSession,
     *,
@@ -2046,6 +2063,10 @@ async def agent_chat_stream(
             assistant_message = None  # initialized here so except block can reference it
 
             if arq_pool:
+                if not await _has_active_arq_worker():
+                    logger.error("[SSE-AGENT] Refusing task dispatch: no active ARQ worker")
+                    yield f"data: {json.dumps({'type': 'error', 'data': {'message': 'The agent worker is temporarily unavailable. Please retry in a moment.', 'code': 'agent_worker_unavailable'}})}\n\n"
+                    return
                 # --- QUEUE-BASED EXECUTION ---
                 # Enqueue to ARQ worker fleet. Worker handles agent.run(),
                 # DB persistence, and bash cleanup. We just relay events.

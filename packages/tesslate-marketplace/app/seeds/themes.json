@@ -1,6 +1,106 @@
 [
   {
     "kind": "theme",
+    "slug": "gmt26",
+    "name": "GMT26",
+    "description": "Light GMT26 theme with the team's signature purple and a subtle future-green accent",
+    "category": "professional",
+    "tags": [
+      "light",
+      "purple",
+      "gmt26",
+      "professional"
+    ],
+    "icon": "sparkle",
+    "is_active": true,
+    "is_published": true,
+    "is_featured": false,
+    "pricing_type": "free",
+    "price": 0,
+    "extra_metadata": {
+      "mode": "light",
+      "author": "GMT26",
+      "version": "1.0.0",
+      "theme_json": {
+        "colors": {
+          "primary": "#6F42E8",
+          "primaryHover": "#5B2FD2",
+          "primaryRgb": "111, 66, 232",
+          "accent": "#78B957",
+          "background": "#F8F7FF",
+          "surface": "#FFFFFF",
+          "surfaceHover": "#F1EEFF",
+          "text": "#211A33",
+          "textMuted": "#5E5772",
+          "textSubtle": "#7D7690",
+          "border": "#E5DFF5",
+          "borderHover": "#D2C7ED",
+          "sidebar": {
+            "background": "#F5F2FF",
+            "text": "#211A33",
+            "border": "#E5DFF5",
+            "hover": "#ECE7FC",
+            "active": "rgba(111, 66, 232, 0.14)"
+          },
+          "input": {
+            "background": "#FFFFFF",
+            "border": "#D8CFF0",
+            "borderFocus": "#6F42E8",
+            "text": "#211A33",
+            "placeholder": "#9189A5"
+          },
+          "scrollbar": {
+            "thumb": "#D8CFF0",
+            "thumbHover": "#BBA9E5",
+            "track": "transparent"
+          },
+          "code": {
+            "inlineBackground": "rgba(111, 66, 232, 0.10)",
+            "inlineText": "#5B2FD2",
+            "blockBackground": "#F4F1FC",
+            "blockBorder": "#E2DBF3",
+            "blockText": "#352957"
+          },
+          "status": {
+            "error": "#C9384B",
+            "errorRgb": "201, 56, 75",
+            "success": "#4E8B3B",
+            "successRgb": "78, 139, 59",
+            "warning": "#B7791F",
+            "warningRgb": "183, 121, 31",
+            "info": "#4F6EDB",
+            "infoRgb": "79, 110, 219"
+          },
+          "shadow": {
+            "small": "0 1px 2px rgba(55, 37, 98, 0.05)",
+            "medium": "0 4px 10px rgba(55, 37, 98, 0.08)",
+            "large": "0 12px 24px rgba(55, 37, 98, 0.10)"
+          }
+        },
+        "typography": {
+          "fontFamily": "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+          "fontFamilyMono": "JetBrains Mono, Menlo, Monaco, 'Courier New', monospace",
+          "fontSizeBase": "14px",
+          "lineHeight": "1.5"
+        },
+        "spacing": {
+          "radiusSmall": "4px",
+          "radiusMedium": "6px",
+          "radiusLarge": "8px",
+          "radiusXl": "12px"
+        },
+        "animation": {
+          "durationFast": "150ms",
+          "durationNormal": "200ms",
+          "durationSlow": "300ms",
+          "easing": "cubic-bezier(0.4, 0, 0.2, 1)"
+        },
+        "borderless": false
+      }
+    }
+  },
+  {
+    "kind": "theme",
     "slug": "andromeda",
     "name": "Andromeda",
     "description": "Dark theme with vivid red-orange and green accents inspired by the cosmos",

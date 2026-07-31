@@ -34,6 +34,32 @@ from .services.marketplace_sync import (
 
 logger = logging.getLogger(__name__)
 
+# A short-lived Redis heartbeat lets the API fail fast when an ARQ worker is
+# unavailable instead of accepting a chat turn that will remain queued forever.
+_WORKER_HEARTBEAT_KEY = "tesslate:worker:heartbeat"
+_WORKER_HEARTBEAT_TTL_SECONDS = 15
+_WORKER_HEARTBEAT_INTERVAL_SECONDS = 5
+
+
+async def _write_worker_heartbeat() -> None:
+    """Refresh the worker liveness marker without affecting job execution."""
+    from .services.cache_service import get_redis_client
+
+    redis = await get_redis_client()
+    if redis is not None:
+        await redis.set(_WORKER_HEARTBEAT_KEY, "1", ex=_WORKER_HEARTBEAT_TTL_SECONDS)
+
+
+async def _worker_heartbeat_loop() -> None:
+    """Keep the ARQ worker's liveness marker fresh for API-side preflight."""
+    while True:
+        try:
+            await _write_worker_heartbeat()
+        except Exception:
+            # A temporary cache failure must never take down the worker.
+            logger.warning("[WORKER] Failed to refresh worker heartbeat", exc_info=True)
+        await asyncio.sleep(_WORKER_HEARTBEAT_INTERVAL_SECONDS)
+
 
 def _convert_uuids_to_strings(obj):
     """Recursively convert UUID objects to strings in nested data structures."""
@@ -2797,6 +2823,11 @@ async def startup(ctx: dict):
     )
     logger.info("[WORKER] ARQ worker started")
 
+    # Publish before other startup work so incoming chat requests can tell
+    # that this worker is available even while optional warm-up is running.
+    await _write_worker_heartbeat()
+    ctx["worker_heartbeat_task"] = asyncio.create_task(_worker_heartbeat_loop())
+
     # Load prompt-caching eligible models from LiteLLM
     from .services.prompt_caching import refresh_eligible_models
 
@@ -2805,6 +2836,11 @@ async def startup(ctx: dict):
 
 async def shutdown(ctx: dict):
     """Worker shutdown hook — cleanup."""
+    heartbeat_task = ctx.get("worker_heartbeat_task")
+    if heartbeat_task is not None:
+        heartbeat_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await heartbeat_task
     logger.info("[WORKER] ARQ worker shutting down")
 
 
