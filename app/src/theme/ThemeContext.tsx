@@ -176,14 +176,15 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
       setAvailablePresets([...byMode.dark, ...byMode.light]);
     }
 
-    setThemePresetIdState(presetId);
-
-    // Save to API (non-blocking) - works with both token and cookie-based auth
+    // The API verifies that the caller is an administrator of the active Team.
+    // Avoid optimistic updates: editors must never see a local appearance
+    // that differs from the rest of their Team.
     try {
       await usersApi.updatePreferences({ theme_preset: presetId });
+      setThemePresetIdState(presetId);
+      setTeamThemePresetId(presetId);
     } catch {
-      // Don't block on API errors (will fail silently if not authenticated)
-      console.debug('Could not save theme to API');
+      console.debug('Could not update the Team theme');
     }
   }, [teamThemePresetId]);
 

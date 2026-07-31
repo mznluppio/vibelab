@@ -6,7 +6,9 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..database import get_db
-from ..models import User
+from ..models import Theme, User
+from ..models_team import Team
+from ..permissions import Permission, check_team_permission
 from ..services.apps.reserved_handles import (
     is_reserved as is_reserved_handle,
 )
@@ -111,12 +113,36 @@ async def update_user_preferences(
                 f"Updated diagram_model for user {current_user.id} to {preferences.diagram_model}"
             )
 
-        # User preferences must not mutate a Team-wide appearance. Team admins
-        # manage that explicitly through the Team settings endpoint.
+        # This compatibility endpoint is still used by existing theme pickers,
+        # but the active Team owns the selection and only its administrators
+        # may change it.
         if preferences.theme_preset is not None:
-            current_user.theme_preset = preferences.theme_preset
+            if current_user.default_team_id is None:
+                raise HTTPException(status_code=403, detail="An active team is required to change themes")
+
+            team = (
+                await db.execute(select(Team).where(Team.id == current_user.default_team_id))
+            ).scalar_one_or_none()
+            if team is None:
+                raise HTTPException(status_code=404, detail="Active team not found")
+
+            await check_team_permission(db, team.id, current_user.id, Permission.TEAM_EDIT)
+            theme = (
+                await db.execute(
+                    select(Theme).where(
+                        Theme.slug == preferences.theme_preset,
+                        Theme.is_active.is_(True),
+                    )
+                )
+            ).scalar_one_or_none()
+            if theme is None:
+                raise HTTPException(status_code=422, detail="Theme preset not found")
+
+            team.theme_preset = preferences.theme_preset
             logger.info(
-                f"Updated theme_preset for user {current_user.id} to {preferences.theme_preset}"
+                "Updated theme_preset for team %s to %s",
+                team.id,
+                preferences.theme_preset,
             )
 
         # Update chat position if provided
@@ -137,7 +163,10 @@ async def update_user_preferences(
         return {
             "message": "Preferences updated successfully",
             "diagram_model": current_user.diagram_model,
-            "theme_preset": current_user.theme_preset or "default-dark",
+            "theme_preset": (
+                team.theme_preset if preferences.theme_preset is not None else current_user.theme_preset
+            )
+            or "default-dark",
             "chat_position": current_user.chat_position or "center",
         }
     except HTTPException:

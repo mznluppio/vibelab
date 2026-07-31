@@ -1036,7 +1036,7 @@ export function NavigationSidebar({
             <div className="px-2 py-1 text-[10px] uppercase tracking-wider text-[var(--text-subtle)]">
               Library
             </div>
-            {LIBRARY_ITEMS.map(({ key, label, icon: Icon }) => {
+            {LIBRARY_ITEMS.filter(({ key }) => key !== 'themes' || can('team.edit')).map(({ key, label, icon: Icon }) => {
               const isActive = activeLibraryTab === key;
               // The agents row uses the moody face — keep it pinned to the
               // brand orange and signal selection with opacity, matching

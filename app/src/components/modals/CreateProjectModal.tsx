@@ -91,7 +91,9 @@ export function CreateProjectModal({
     if (!isOpen) return;
     let cancelled = false;
     Promise.all([
-      marketplaceApi.getAllBases({ limit: 50 }),
+      // Catalog browsing can be disabled for non-admin members, while the
+      // Team's installed bases must always be available for project creation.
+      marketplaceApi.getAllBases({ limit: 50 }).catch(() => ({ bases: [] })),
       marketplaceApi.getUserBases().catch(() => ({ bases: [] })),
     ])
       .then(([allBasesRes, userBasesRes]) => {

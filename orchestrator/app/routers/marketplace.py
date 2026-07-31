@@ -92,6 +92,17 @@ async def require_marketplace_feature_access(
 _MARKETPLACE_ACCESS = Depends(require_marketplace_feature_access)
 
 
+async def _require_active_team_administrator_dependency(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(current_active_user),
+) -> None:
+    """Adapt the permission helper for FastAPI's dependency injection."""
+    await require_active_team_administrator(db, user)
+
+
+_TEAM_ADMIN_ACCESS = Depends(_require_active_team_administrator_dependency)
+
+
 async def _is_active_team_administrator(db: AsyncSession, user: User) -> bool:
     """Return whether ``user`` may see technical model configuration."""
     if getattr(user, "is_superuser", False):
@@ -3871,6 +3882,7 @@ async def get_user_bases(
                 "default_branch": base.default_branch,
                 "category": base.category,
                 "icon": base.icon,
+                "visibility": base.visibility,
                 "pricing_type": base.pricing_type,
                 "features": base.features,
                 "tech_stack": base.tech_stack,
@@ -5069,7 +5081,7 @@ async def get_user_library_themes(
     return {"themes": themes}
 
 
-@router.post("/themes/{theme_id}/add")
+@router.post("/themes/{theme_id}/add", dependencies=[_TEAM_ADMIN_ACCESS])
 async def add_theme_to_library(
     theme_id: str,
     confirmed: bool = Query(default=False),
@@ -5140,7 +5152,7 @@ async def add_theme_to_library(
     }
 
 
-@router.delete("/themes/{theme_id}/remove")
+@router.delete("/themes/{theme_id}/remove", dependencies=[_TEAM_ADMIN_ACCESS])
 async def remove_theme_from_library(
     theme_id: str,
     db: AsyncSession = Depends(get_db),
@@ -5198,7 +5210,7 @@ async def remove_theme_from_library(
     }
 
 
-@router.post("/themes/{theme_id}/toggle")
+@router.post("/themes/{theme_id}/toggle", dependencies=[_TEAM_ADMIN_ACCESS])
 async def toggle_library_theme(
     theme_id: str,
     enabled: bool = Body(..., embed=True),
@@ -5240,7 +5252,7 @@ async def toggle_library_theme(
     }
 
 
-@router.post("/themes/create")
+@router.post("/themes/create", dependencies=[_TEAM_ADMIN_ACCESS])
 async def create_custom_theme(
     name: str = Body(...),
     description: str = Body(""),
@@ -5302,7 +5314,7 @@ async def create_custom_theme(
     return {"message": "Theme created successfully", "theme": item, "success": True}
 
 
-@router.patch("/themes/{theme_id}")
+@router.patch("/themes/{theme_id}", dependencies=[_TEAM_ADMIN_ACCESS])
 async def update_theme(
     theme_id: str,
     name: str | None = Body(None),
@@ -5369,7 +5381,7 @@ async def update_theme(
     return {"message": "Theme updated successfully", "theme": item, "success": True}
 
 
-@router.delete("/themes/{theme_id}")
+@router.delete("/themes/{theme_id}", dependencies=[_TEAM_ADMIN_ACCESS])
 async def delete_custom_theme(
     theme_id: str,
     db: AsyncSession = Depends(get_db),
@@ -5396,7 +5408,10 @@ async def delete_custom_theme(
     return {"message": "Theme deleted successfully", "success": True}
 
 
-@router.post("/themes/{theme_id}/publish", dependencies=[_MARKETPLACE_ACCESS])
+@router.post(
+    "/themes/{theme_id}/publish",
+    dependencies=[_MARKETPLACE_ACCESS, _TEAM_ADMIN_ACCESS],
+)
 async def publish_theme(
     theme_id: str,
     db: AsyncSession = Depends(get_db),
@@ -5417,7 +5432,10 @@ async def publish_theme(
     return {"message": "Theme published to marketplace", "success": True}
 
 
-@router.post("/themes/{theme_id}/unpublish", dependencies=[_MARKETPLACE_ACCESS])
+@router.post(
+    "/themes/{theme_id}/unpublish",
+    dependencies=[_MARKETPLACE_ACCESS, _TEAM_ADMIN_ACCESS],
+)
 async def unpublish_theme(
     theme_id: str,
     db: AsyncSession = Depends(get_db),
@@ -5438,7 +5456,10 @@ async def unpublish_theme(
     return {"message": "Theme unpublished from marketplace", "success": True}
 
 
-@router.post("/themes/{theme_id}/fork", dependencies=[_MARKETPLACE_ACCESS])
+@router.post(
+    "/themes/{theme_id}/fork",
+    dependencies=[_MARKETPLACE_ACCESS, _TEAM_ADMIN_ACCESS],
+)
 async def fork_theme(
     theme_id: str,
     db: AsyncSession = Depends(get_db),

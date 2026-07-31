@@ -128,7 +128,7 @@ interface InstalledMcpServer {
 export default function Library() {
   const navigate = useNavigate();
   const { theme, toggleTheme, themePresetId, setThemePreset } = useTheme();
-  const { teamSwitchKey } = useTeam();
+  const { teamSwitchKey, can } = useTeam();
   const [searchParams] = useSearchParams();
   const tabParam = searchParams.get('tab');
   // Normalize legacy tab aliases.
@@ -140,6 +140,8 @@ export default function Library() {
       ? 'models'
       : tabParam === 'connectors'
         ? 'mcp_servers'
+        : tabParam === 'themes' && !can('team.edit')
+          ? 'agents'
         : (tabParam as TabType) || 'agents';
   const [activeTab, setActiveTab] = useState<TabType>(normalizedTab);
 
