@@ -16,11 +16,9 @@ import { AnsiLine } from '../lib/ansi';
 import { Citations } from './chat/CitationCard';
 import { ReauthBanner } from './chat/ReauthBanner';
 import { CallAgentToolDisplay } from './chat/CallAgentToolDisplay';
-import { getNonTechnicalToolLabel } from './toolCallHelpers';
 
 interface ToolCallDisplayProps {
   toolCall: ToolCallDetail;
-  nonTechnical?: boolean;
 }
 
 const getToolIcon = (toolName: string) => {
@@ -80,7 +78,7 @@ const shouldTruncateOutput = (output: string): boolean => {
   return output.length > 500 || output.split('\n').length > 15;
 };
 
-export default function ToolCallDisplay({ toolCall, nonTechnical = false }: ToolCallDisplayProps) {
+export default function ToolCallDisplay({ toolCall }: ToolCallDisplayProps) {
   const [showFullOutput, setShowFullOutput] = useState(false);
   const isDevelopment = import.meta.env.DEV;
 
@@ -96,17 +94,6 @@ export default function ToolCallDisplay({ toolCall, nonTechnical = false }: Tool
   const { name, parameters, result } = toolCall;
   const hasResult = result !== undefined && result !== null;
   const success = result?.success ?? false;
-
-  if (nonTechnical) {
-    return (
-      <div className="flex items-center gap-2 rounded-lg border border-[var(--border-color)] bg-[var(--surface)]/30 px-3 py-2 text-xs">
-        {getToolIcon(name)}
-        <span className="flex-1 text-[var(--text)]/80">{getNonTechnicalToolLabel(name, parameters)}</span>
-        {hasResult && (success ? <CheckCircle size={14} className="text-[var(--status-success)]" /> : <XCircle size={14} className="text-[var(--status-error)]" />)}
-        {hasResult && !success && <span className="text-[var(--status-error)]">VibeLab could not start building the application. Contact your administrator.</span>}
-      </div>
-    );
-  }
 
   // MCP OAuth extras forwarded by services/mcp/bridge.py — look for them at
   // either the outer or nested level because the agent runner sometimes wraps

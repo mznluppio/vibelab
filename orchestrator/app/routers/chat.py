@@ -1671,19 +1671,17 @@ async def agent_chat_stream(
             container_directory = None
 
             if not request.project_id:
-                selected_agent = await db.get(MarketplaceAgent, request.agent_id) if request.agent_id else None
-                if selected_agent is None or selected_agent.slug != "assist-to-build":
-                    from ..services.lazy_chat_workspace import ensure_user_default_workspace
+                from ..services.lazy_chat_workspace import ensure_user_default_workspace
 
-                    try:
-                        workspace = await ensure_user_default_workspace(current_user.id, db)
-                        request.project_id = workspace.id
-                        await db.commit()
-                    except LookupError:
-                        logger.warning(
-                            "agent_chat_stream: user=%s has no personal team; running project-less",
-                            current_user.id,
-                        )
+                try:
+                    workspace = await ensure_user_default_workspace(current_user.id, db)
+                    request.project_id = workspace.id
+                    await db.commit()
+                except LookupError:
+                    logger.warning(
+                        "agent_chat_stream: user=%s has no personal team; running project-less",
+                        current_user.id,
+                    )
 
             if request.project_id:
                 # Verify project access via RBAC

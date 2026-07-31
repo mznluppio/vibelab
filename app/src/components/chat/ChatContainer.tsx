@@ -9,11 +9,6 @@ import { ChatMessage } from './ChatMessage';
 import { ChatInput } from './ChatInput';
 import { type EditMode } from './EditModeStatus';
 import { ApprovalRequestCard } from './ApprovalRequestCard';
-import {
-  AssistToBuildReviewCard,
-  type AssistToBuildReviewResponse,
-  type AssistToBuildReviewSummary,
-} from './AssistToBuildReviewCard';
 import { WorkspaceAttachCard } from './WorkspaceAttachCard';
 import { ChatSessionPopover } from './ChatSessionPopover';
 import { ToolDebugModal } from './ToolDebugModal';
@@ -51,7 +46,6 @@ interface Message {
     | 'user'
     | 'ai'
     | 'approval_request'
-    | 'assist_to_build_review_request'
     | 'workspace_attach_request';
   content: string;
   agentData?: AgentMessageData;
@@ -72,8 +66,6 @@ interface Message {
   toolName?: string;
   toolParameters?: Record<string, unknown>;
   toolDescription?: string;
-  assistToBuildReviewSummary?: AssistToBuildReviewSummary;
-  assistToBuildReviewResponse?: AssistToBuildReviewResponse;
   attachments?: SerializedAttachment[];
   // Workspace-attach (request_workspace tool) prompt fields.
   workspaceAttachInputId?: string;
@@ -406,28 +398,6 @@ export function ChatContainer({
           const agentAvatarUrl = agentData?.avatar_url;
           const agentType = msg.message_metadata.agent_type;
           const finalResponse = msg.content && msg.content.trim() ? msg.content : '';
-          const assistWorkflow = msg.message_metadata.assist_to_build_workflow;
-
-          // The worker stores review checkpoints on the assistant message so
-          // a refresh or restart retains the AS-IS/TO-BE audit trail.
-          if (assistWorkflow && Array.isArray(assistWorkflow.checkpoints)) {
-            assistWorkflow.checkpoints.forEach((checkpoint, checkpointIdx) => {
-              if (!checkpoint.approval_id || !checkpoint.title || !checkpoint.summary_markdown) {
-                return;
-              }
-              expandedMessages.push({
-                id: `msg-${idx}-assist-review-${checkpointIdx}`,
-                type: 'assist_to_build_review_request',
-                content: '',
-                approvalId: checkpoint.approval_id,
-                assistToBuildReviewSummary: checkpoint as AssistToBuildReviewSummary,
-                assistToBuildReviewResponse:
-                  typeof checkpoint.response === 'string'
-                    ? (checkpoint.response as AssistToBuildReviewResponse)
-                    : undefined,
-              });
-            });
-          }
 
           // Add each step as a separate message (filter out steps with no content)
           if (msg.message_metadata.steps && msg.message_metadata.steps.length > 0) {
@@ -609,18 +579,7 @@ export function ChatContainer({
               });
             } else if (data.type === 'approval_required') {
               const approvalData = data.data || data;
-              if (approvalData.kind === 'assist_to_build_review') {
-                setMessages((prev) => [
-                  ...prev,
-                  {
-                    id: `assist-to-build-review-${Date.now()}`,
-                    type: 'assist_to_build_review_request',
-                    content: '',
-                    approvalId: approvalData.approval_id,
-                    assistToBuildReviewSummary: approvalData.summary as AssistToBuildReviewSummary,
-                  },
-                ]);
-              } else if (editModeRef.current === 'allow') {
+              if (editModeRef.current === 'allow') {
                 chatApi
                   .sendApprovalResponse(approvalData.approval_id, 'allow_all')
                   .catch((err: unknown) => console.error('[APPROVAL] Auto-approve failed:', err));
@@ -1681,18 +1640,7 @@ export function ChatContainer({
             throw new Error(errorMsg);
           } else if (event.type === 'approval_required') {
             // Auto-approve if user has switched to "Allow All Edits" mode
-            if (event.data.kind === 'assist_to_build_review') {
-              setMessages((prev) => [
-                ...prev,
-                {
-                  id: `assist-to-build-review-${Date.now()}`,
-                  type: 'assist_to_build_review_request',
-                  content: '',
-                  approvalId: event.data.approval_id as string,
-                  assistToBuildReviewSummary: event.data.summary as AssistToBuildReviewSummary,
-                },
-              ]);
-            } else if (editModeRef.current === 'allow') {
+            if (editModeRef.current === 'allow') {
               chatApi
                 .sendApprovalResponse(event.data.approval_id as string, 'allow_all')
                 .catch((err) => console.error('[APPROVAL] Auto-approve failed:', err));
@@ -2210,12 +2158,8 @@ export function ChatContainer({
     response:
       | 'allow_once'
       | 'allow_all'
-      | 'stop'
-      | 'approve_as_is'
-      | 'approve_to_be_and_build'
-      | 'request_changes',
-    toolName: string,
-    comment?: string
+      | 'stop',
+    toolName: string
   ) => {
     // Define write tools that should switch mode
     const WRITE_TOOLS = new Set(['write_file', 'patch_file', 'multi_edit']);
@@ -2232,7 +2176,7 @@ export function ChatContainer({
     } else if (agentExecuting) {
       // Send approval response via HTTP API (for SSE agent mode)
       try {
-        await chatApi.sendApprovalResponse(approvalId, response, comment);
+        await chatApi.sendApprovalResponse(approvalId, response);
         console.log('[APPROVAL] Response sent via HTTP API');
       } catch (error) {
         console.error('[APPROVAL] Failed to send response:', error);
@@ -2241,13 +2185,8 @@ export function ChatContainer({
       }
     }
 
-    // Keep Assist to Build checkpoints visible as an audit trail; normal approvals
-    // remain ephemeral after their response is delivered.
     setMessages((prev) =>
       prev.flatMap((msg) => {
-        if (msg.type === 'assist_to_build_review_request' && msg.approvalId === approvalId) {
-          return [{ ...msg, assistToBuildReviewResponse: response as AssistToBuildReviewResponse }];
-        }
         return msg.type === 'approval_request' && msg.approvalId === approvalId ? [] : [msg];
       })
     );
@@ -2669,33 +2608,6 @@ export function ChatContainer({
               );
             }
 
-            if (
-              message.type === 'assist_to_build_review_request' &&
-              message.approvalId &&
-              message.assistToBuildReviewSummary
-            ) {
-              return (
-                <div
-                  key={message.id}
-                  className={`mb-4 ${shouldAnimate ? 'animate-[slideIn_0.2s_ease-out]' : ''}`}
-                >
-                  <AssistToBuildReviewCard
-                    approvalId={message.approvalId}
-                    summary={message.assistToBuildReviewSummary}
-                    resolvedResponse={message.assistToBuildReviewResponse}
-                    onRespond={(approvalId, response, comment) =>
-                      handleApprovalResponse(
-                        approvalId,
-                        response,
-                        'request_assist_to_build_review',
-                        comment
-                      )
-                    }
-                  />
-                </div>
-              );
-            }
-
             // Render workspace-attach prompt (request_workspace tool paused)
             if (message.type === 'workspace_attach_request' && message.workspaceAttachInputId) {
               return (
@@ -2730,7 +2642,6 @@ export function ChatContainer({
                     isStreaming={
                       agentExecuting && message.agentData.completion_reason === 'in_progress'
                     }
-                    nonTechnical={currentAgent.name === 'Assist to Build'}
                   />
                 </div>
               );

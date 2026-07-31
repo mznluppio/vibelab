@@ -1,6 +1,6 @@
 import { Brain, CheckCircle, XCircle } from 'lucide-react';
 import ToolCallDisplay from './ToolCallDisplay';
-import { getNonTechnicalToolLabel, getToolIcon, getToolLabel } from './toolCallHelpers';
+import { getToolIcon, getToolLabel } from './toolCallHelpers';
 import AgentDebugPanel from './AgentDebugPanel';
 import { type AgentStep as AgentStepType, type ToolCallDetail } from '../types/agent';
 
@@ -15,20 +15,9 @@ interface AgentStepProps {
   step: AgentStepType;
   totalSteps: number;
   toolCallsCollapsed?: boolean;
-  nonTechnical?: boolean;
 }
 
-export default function AgentStep({ step, toolCallsCollapsed, nonTechnical = false }: AgentStepProps) {
-  if (nonTechnical && step.tool_calls?.length) {
-    return (
-      <div className="agent-step flex flex-wrap gap-1.5 py-1" aria-label="Application progress">
-        {step.tool_calls.map((toolCall, idx) => {
-          const success = toolCall.result?.success;
-          return <span key={idx} className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-[var(--text)]/5 border border-[var(--border-color)] text-xs"><span className="text-[var(--text)]/70">{getNonTechnicalToolLabel(toolCall.name, toolCall.parameters)}</span>{success === true && <CheckCircle size={12} className="text-[var(--status-success)]" />}{success === false && <XCircle size={12} className="text-[var(--status-error)]" />}</span>;
-        })}
-      </div>
-    );
-  }
+export default function AgentStep({ step, toolCallsCollapsed }: AgentStepProps) {
   // Collapsed view: render compact chip summary
   if (toolCallsCollapsed) {
     const hasToolCalls = step.tool_calls && step.tool_calls.length > 0;
@@ -90,7 +79,7 @@ export default function AgentStep({ step, toolCallsCollapsed, nonTechnical = fal
       {step.tool_calls && step.tool_calls.length > 0 ? (
         <div className="space-y-2">
           {step.tool_calls.map((toolCall, idx) => (
-            <ToolCallDisplay key={idx} toolCall={toolCall} nonTechnical={nonTechnical} />
+            <ToolCallDisplay key={idx} toolCall={toolCall} />
           ))}
         </div>
       ) : /* No tool calls - show the thought instead */

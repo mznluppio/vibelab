@@ -40,17 +40,3 @@ export const getToolLabel = (toolName: string): string => {
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
     .join(' ');
 };
-
-/** A deliberately small, outcome-oriented vocabulary for Assist to Build. */
-export const getNonTechnicalToolLabel = (
-  toolName: string,
-  parameters: Record<string, unknown> = {}
-): string => {
-  const name = toolName.toLowerCase();
-  const command = typeof parameters.command === 'string' ? parameters.command.toLowerCase() : '';
-  if (/(preview|dev server|start_project|container_start)/.test(name) || /\b(next dev|vite preview|npm run preview)\b/.test(command)) return 'Preparing the preview';
-  if (/(test|lint|typecheck|build)/.test(name) || /\b(test|lint|typecheck|build)\b/.test(command)) return 'Checking the application';
-  if (/(write|edit|patch|apply_patch|delete|mkdir|create)/.test(name)) return 'Building the application';
-  if (/(bash|shell|terminal|install)/.test(name) || /\b(npm|pnpm|yarn) (install|add)\b/.test(command)) return 'Preparing the application';
-  return 'Reviewing the application';
-};

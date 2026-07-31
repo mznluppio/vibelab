@@ -1091,13 +1091,11 @@ export const chatApi = {
   },
   sendApprovalResponse: async (
     approvalId: string,
-    response: 'allow_once' | 'allow_all' | 'stop' | 'publish_and_activate' | 'save_draft' | 'cancel' | 'approve_as_is' | 'approve_to_be_and_build' | 'request_changes',
-    comment?: string,
+    response: 'allow_once' | 'allow_all' | 'stop' | 'publish_and_activate' | 'save_draft' | 'cancel',
   ): Promise<void> => {
     await api.post('/api/chat/agent/approval', {
       approval_id: approvalId,
       response: response,
-      ...(comment ? { comment } : {}),
     });
   },
 

@@ -3,7 +3,6 @@ import { ChatMessage } from './ChatMessage';
 import AgentMessage from '../AgentMessage';
 import { ApprovalRequestCard } from './ApprovalRequestCard';
 import { BuilderReviewCard } from './BuilderReviewCard';
-import { AssistToBuildReviewCard } from './AssistToBuildReviewCard';
 import { WorkspaceAttachCard } from './WorkspaceAttachCard';
 import type { ChatMessage as ChatMessageType } from '../../hooks/useAgentChat';
 
@@ -18,12 +17,8 @@ interface ChatMessageListProps {
       | 'stop'
       | 'publish_and_activate'
       | 'save_draft'
-      | 'cancel'
-      | 'approve_as_is'
-      | 'approve_to_be_and_build'
-      | 'request_changes',
-    toolName: string,
-    comment?: string,
+      | 'cancel',
+    toolName: string
   ) => void;
   emptyState?: React.ReactNode;
   toolCallsCollapsed?: boolean;
@@ -122,18 +117,6 @@ export function ChatMessageList({
                 onRespond={(approvalId, response) =>
                   onApproval?.(approvalId, response, 'request_review')
                 }
-              />
-            );
-          }
-
-          if (msg.type === 'assist_to_build_review_request' && msg.assistToBuildReviewSummary) {
-            return (
-              <AssistToBuildReviewCard
-                key={msg.id}
-                approvalId={msg.approvalId || ''}
-                summary={msg.assistToBuildReviewSummary}
-                resolvedResponse={msg.assistToBuildReviewResponse}
-                onRespond={(approvalId, response, comment) => onApproval?.(approvalId, response, 'request_assist_to_build_review', comment)}
               />
             );
           }
