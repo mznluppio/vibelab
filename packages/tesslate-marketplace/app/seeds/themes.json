@@ -3,7 +3,7 @@
     "kind": "theme",
     "slug": "gmt26",
     "name": "GMT26",
-    "description": "Light GMT26 theme with the team's signature purple and a subtle future-green accent",
+    "description": "Light GMT26 theme with the team's signature purple palette",
     "category": "professional",
     "tags": [
       "light",
@@ -26,7 +26,7 @@
           "primary": "#6F42E8",
           "primaryHover": "#5B2FD2",
           "primaryRgb": "111, 66, 232",
-          "accent": "#78B957",
+          "accent": "#8B5CF6",
           "background": "#F8F7FF",
           "surface": "#FFFFFF",
           "surfaceHover": "#F1EEFF",
@@ -64,8 +64,8 @@
           "status": {
             "error": "#C9384B",
             "errorRgb": "201, 56, 75",
-            "success": "#4E8B3B",
-            "successRgb": "78, 139, 59",
+            "success": "#7C4DFF",
+            "successRgb": "124, 77, 255",
             "warning": "#B7791F",
             "warningRgb": "183, 121, 31",
             "info": "#4F6EDB",
