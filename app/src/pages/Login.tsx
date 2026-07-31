@@ -16,7 +16,7 @@ export default function Login() {
   const location = useLocation();
   const { refreshUserTheme } = useTheme();
   const { checkAuth, isAuthenticated } = useAuth();
-  const redirectTo = (location.state as { from?: string })?.from || '/home';
+  const redirectTo = (location.state as { from?: string })?.from || '/chat';
 
   // Redirect away if already authenticated (covers desktop auto-login injecting
   // the token after the page has mounted).
@@ -198,7 +198,7 @@ export default function Login() {
       // Stash the pre-login redirect target so MagicLinkConsume can honor it
       // after the user clicks the emailed link (which may open in a new tab).
       // Same browser = same sessionStorage, so round-trip survives.
-      if (redirectTo && redirectTo !== '/home') {
+      if (redirectTo && redirectTo !== '/chat') {
         sessionStorage.setItem('magic_link_redirect', redirectTo);
       } else {
         sessionStorage.removeItem('magic_link_redirect');
@@ -655,7 +655,7 @@ export default function Login() {
                   Don't have an account?{' '}
                   <Link
                     to="/register"
-                    state={{ from: redirectTo !== '/home' ? redirectTo : undefined }}
+                    state={{ from: redirectTo !== '/chat' ? redirectTo : undefined }}
                     className="text-black hover:text-gray-700 font-semibold transition-colors underline"
                   >
                     Sign up

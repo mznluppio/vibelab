@@ -82,6 +82,7 @@ interface TeamGovernanceSettings {
   automatically_create_personal_teams: boolean;
   allow_user_team_creation: boolean;
   allow_user_workspace_creation: boolean;
+  show_home_connection_cards: boolean;
 }
 
 interface AgentRunItem {
@@ -569,6 +570,18 @@ export default function UserManagement() {
                 checked={teamGovernance.allow_user_workspace_creation}
                 disabled={savingTeamGovernance}
                 onChange={(event) => updateTeamGovernance({ allow_user_workspace_creation: event.target.checked })}
+              />
+            </label>
+            <label className="flex items-center justify-between gap-4 rounded-lg bg-gray-700/50 p-3">
+              <span>
+                <span className="block text-sm text-white">Show connection setup cards on Home</span>
+                <span className="block text-xs text-gray-400">Displays the Connectors and Channels suggestions on the Home page.</span>
+              </span>
+              <input
+                type="checkbox"
+                checked={teamGovernance.show_home_connection_cards}
+                disabled={savingTeamGovernance}
+                onChange={(event) => updateTeamGovernance({ show_home_connection_cards: event.target.checked })}
               />
             </label>
           </div>

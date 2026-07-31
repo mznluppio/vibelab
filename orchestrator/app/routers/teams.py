@@ -31,6 +31,7 @@ from ..permissions import (
     Permission,
     can_create_team,
     check_team_permission,
+    get_platform_settings,
     get_project_with_access,
     get_team_membership,
 )
@@ -270,9 +271,11 @@ async def get_team_capabilities(
     """
     from ..permissions import can_create_workspace
 
+    settings = await get_platform_settings(db)
     return {
         "can_create_teams": await can_create_team(db, user),
         "can_create_workspaces": await can_create_workspace(db, user),
+        "show_home_connection_cards": bool(settings.show_home_connection_cards),
     }
 
 

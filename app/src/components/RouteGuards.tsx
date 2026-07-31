@@ -59,7 +59,7 @@ export function PublicOnlyRoute({ children }: { children: ReactNode }) {
 
   // Authenticated - redirect to saved destination or home
   if (isAuthenticated) {
-    const from = (location.state as { from?: string })?.from || '/home';
+    const from = (location.state as { from?: string })?.from || '/chat';
     return <Navigate to={from} replace />;
   }
 
@@ -85,5 +85,5 @@ export function TeamFeatureRoute({
         ? canAccessAutomations
         : membership?.role === 'admin';
 
-  return allowed ? <>{children}</> : <Navigate to="/home" replace />;
+  return allowed ? <>{children}</> : <Navigate to="/chat" replace />;
 }

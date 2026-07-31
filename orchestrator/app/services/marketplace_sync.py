@@ -902,8 +902,11 @@ class MarketplaceSyncWorker:
 
         # Skill body (item_type='skill') ships in extra_metadata or manifest.
         if item_type == "skill":
-            skill_body = item.get("skill_body") or (
-                manifest.get("skill_body") if manifest else None
+            skill_body = (
+                item.get("skill_body")
+                or item.get("fallback_skill_body")
+                or (manifest.get("skill_body") if manifest else None)
+                or (manifest.get("fallback_skill_body") if manifest else None)
             )
             common_fields["skill_body"] = skill_body if isinstance(skill_body, str) else None
 

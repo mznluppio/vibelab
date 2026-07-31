@@ -108,6 +108,8 @@ interface ChatContainerProps {
   onEnvironmentStopping?: () => void;
   onEnvironmentStopped?: (reason: string) => void;
   onVolumeReady?: () => void;
+  /** Opens Preview after this task has successfully started the project. */
+  onProjectStarted?: () => void;
   disabled?: boolean;
   /**
    * Deep-link target session. When set on mount, seeds `currentChatId` so
@@ -145,6 +147,7 @@ export function ChatContainer({
   onEnvironmentStopping,
   onEnvironmentStopped,
   onVolumeReady,
+  onProjectStarted,
   disabled: disabledProp,
   initialChatId = null,
   onOpenConfigTab,
@@ -1226,6 +1229,7 @@ export function ChatContainer({
   };
 
   const abortControllerRef = useRef<AbortController | null>(null);
+  const projectStartedDuringTaskRef = useRef(false);
   const escPressCountRef = useRef(0);
   const escTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -1307,6 +1311,7 @@ export function ChatContainer({
     };
     setMessages((prev) => [...prev, userMessage]);
     setAgentExecuting(true);
+    projectStartedDuringTaskRef.current = false;
 
     // Create abort controller
     const controller = new AbortController();
@@ -1520,6 +1525,14 @@ export function ChatContainer({
             ) {
               window.dispatchEvent(new CustomEvent('kanban-updated'));
             }
+            if (
+              toolCalls.some(
+                (tc: { name: string }, idx: number) =>
+                  tc.name === 'project_start' && toolResults[idx]?.success === true
+              )
+            ) {
+              projectStartedDuringTaskRef.current = true;
+            }
           } else if (event.type === 'complete') {
             // Remove thinking message
             setMessages((prev) => prev.filter((msg) => msg.id !== thinkingMessageId));
@@ -1604,6 +1617,10 @@ export function ChatContainer({
               }
 
               toast.success('Task completed successfully');
+              if (projectStartedDuringTaskRef.current) {
+                projectStartedDuringTaskRef.current = false;
+                onProjectStarted?.();
+              }
             }
           } else if (event.type === 'credits_used') {
             // Dispatch custom event so UserDropdown and other UI can update

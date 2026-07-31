@@ -16,7 +16,7 @@ export default function Register() {
   // Check state (from PrivateRoute/cross-links), then ?redirect= query param (from MarketplaceDetail), then default
   const redirectTo = (location.state as { from?: string })?.from
     || searchParams.get('redirect')
-    || '/home';
+    || '/chat';
   const invitationToken = redirectTo.match(/^\/invite\/([^/?#]+)$/)?.[1];
   const [formData, setFormData] = useState({
     name: '',
@@ -410,7 +410,7 @@ export default function Register() {
                   Already have an account?{' '}
                   <Link
                     to="/login"
-                    state={{ from: redirectTo !== '/home' ? redirectTo : undefined }}
+                    state={{ from: redirectTo !== '/chat' ? redirectTo : undefined }}
                     className="text-black hover:text-gray-700 font-semibold transition-colors underline"
                   >
                     Sign in

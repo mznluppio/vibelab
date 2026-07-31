@@ -4048,7 +4048,11 @@ export const teamsApi = {
     const response = await api.get('/api/teams/');
     return response.data;
   },
-  async getCapabilities(): Promise<{ can_create_teams: boolean; can_create_workspaces: boolean }> {
+  async getCapabilities(): Promise<{
+    can_create_teams: boolean;
+    can_create_workspaces: boolean;
+    show_home_connection_cards: boolean;
+  }> {
     const response = await api.get('/api/teams/capabilities');
     return response.data;
   },

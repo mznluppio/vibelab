@@ -286,7 +286,7 @@ function AppContent() {
         )}
       </Toaster>
       <Routes>
-        <Route path="/" element={<Navigate to="/home" replace />} />
+        <Route path="/" element={<Navigate to="/chat" replace />} />
         <Route
           path="/login"
           element={

@@ -23,7 +23,7 @@ const BORDER_WIDTH = 2;
  */
 const GLOW_BLEED = 20;
 /** `thickness` is relative to the canvas short side, so the ring scales with the input height. */
-const BORDER_THICKNESS = 0.05;
+const BORDER_THICKNESS = 0.02;
 /** Used until the first measurement lands (and where ResizeObserver is unavailable). */
 const FALLBACK_GEOMETRY = { roundness: 0.3, marginX: 0.02, marginY: 0.1 };
 
@@ -129,9 +129,7 @@ export function PromptInputPulsingBorder({
       // accent floor: enough that the contour never breaks where a spot isn't
       // passing, low enough that the travelling light still reads. Without the
       // shader, that same accent carries the border on its own.
-      className={`relative rounded-[var(--radius)] p-[2px] ${
-        canAnimate ? 'bg-[#0dc1fd]/25' : 'bg-[#0dc1fd]/70'
-      }`}
+      className="relative rounded-[var(--radius)] p-[2px] bg-transparent"
       data-testid="prompt-input-pulsing-border"
     >
       {canAnimate && (
@@ -150,7 +148,7 @@ export function PromptInputPulsingBorder({
               // One colour only: each extra colour adds its own set of spots,
               // and once they overlap the contour lights up evenly and stops
               // reading as movement.
-              colors={['#0dc1fd']}
+              colors={['#0dc1fd','#0055A4']}
               colorBack="rgba(0, 0, 0, 0)"
               roundness={geometry.roundness}
               thickness={BORDER_THICKNESS}
@@ -158,15 +156,15 @@ export function PromptInputPulsingBorder({
               aspectRatio="auto"
               // Kept low on purpose — high intensity saturates every spot and
               // flattens the bright/dark contrast that makes the ring move.
-              intensity={active ? 0.26 : 0.2}
+              intensity={active ? 0.05 : 0.2}
               bloom={active ? 0.35 : 0.25}
-              spots={4}
+              spots={2}
               // Spots are placed by *angle*, and on a bar this wide equal angles
               // map to very unequal perimeter: small spots pile up on the short
               // left/right edges and leave the long top/bottom edges dark. Wide,
               // overlapping sectors turn that into one continuous contour with
               // travelling bright zones.
-              spotSize={0.65}
+              spotSize={0.5}
               pulse={animate ? (active ? 0.35 : 0.2) : 0}
               smoke={animate ? (active ? 0.3 : 0.2) : 0}
               smokeSize={0.6}

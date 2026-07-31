@@ -29,7 +29,7 @@ describe('PromptInputPulsingBorder', () => {
     expect(wrapper).toHaveClass('p-[2px]');
     // Dim accent floor under the shader — the bright fallback ring would hide
     // the travelling spots.
-    expect(wrapper).toHaveClass('bg-[#0dc1fd]/25');
+    expect(wrapper).toHaveClass('bg-transparent');
     getContext.mockRestore();
   });
 
@@ -39,7 +39,7 @@ describe('PromptInputPulsingBorder', () => {
       .mockReturnValue(null);
     render(<PromptInputPulsingBorder active={false}><textarea aria-label="Prompt" /></PromptInputPulsingBorder>);
 
-    expect(screen.getByTestId('prompt-input-pulsing-border')).toHaveClass('bg-[#0dc1fd]/70');
+    expect(screen.getByTestId('prompt-input-pulsing-border')).toHaveClass('bg-transparent');
     expect(screen.queryByTestId('shader')).not.toBeInTheDocument();
     getContext.mockRestore();
   });

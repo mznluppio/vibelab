@@ -3,6 +3,7 @@ import { useLocation } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { ChatSessionSidebar } from '../components/chat/ChatSessionSidebar';
 import { ChatTopBar } from '../components/chat/ChatTopBar';
+import { MoodyFace } from '../components/ui/MoodyFace';
 import { ChatMessageList } from '../components/chat/ChatMessageList';
 import { ChatInput } from '../components/chat/ChatInput';
 import { ProjectConnector } from '../components/chat/ProjectConnector';
@@ -454,7 +455,16 @@ export default function Chat() {
 
         {isLanding ? (
           <div className="flex-1 flex flex-col items-center justify-center px-4">
-            <img src="/favicon.svg" alt="" className="w-10 h-10 mb-4 opacity-60" />
+            <div className="mb-4 grid h-11 w-11 place-items-center">
+              <MoodyFace
+                size={36}
+                mood="thinking"
+                animate
+                trackPointer
+                className="text-[var(--primary)]"
+                eyeColor="#ffffff"
+              />
+            </div>
             <h2 className="text-lg font-semibold text-[var(--text)] mb-6">What can I help with?</h2>
             <div className="w-full max-w-2xl">
               <ChatInput

@@ -59,6 +59,7 @@ class TeamGovernanceUpdate(BaseModel):
     automatically_create_personal_teams: bool | None = None
     allow_user_team_creation: bool | None = None
     allow_user_workspace_creation: bool | None = None
+    show_home_connection_cards: bool | None = None
 
 
 class TeamCreationOverrideUpdate(BaseModel):
@@ -74,6 +75,7 @@ def _governance_payload(settings) -> dict[str, bool]:
         "automatically_create_personal_teams": settings.automatically_create_personal_teams,
         "allow_user_team_creation": settings.allow_user_team_creation,
         "allow_user_workspace_creation": settings.allow_user_workspace_creation,
+        "show_home_connection_cards": settings.show_home_connection_cards,
     }
 
 

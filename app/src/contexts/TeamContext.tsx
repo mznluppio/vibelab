@@ -43,6 +43,8 @@ interface TeamContextValue {
   canCreateTeams: boolean;
   /** Effective platform permission to create a Workspace; backend remains authoritative. */
   canCreateWorkspaces: boolean;
+  /** Whether the optional connection setup cards are shown on Home. */
+  showHomeConnectionCards: boolean;
   loading: boolean;
   refreshTeams: () => Promise<void>;
   /** Increments on every team switch — use in useEffect deps to trigger re-fetches. */
@@ -59,6 +61,7 @@ export function TeamProvider({ children }: { children: React.ReactNode }) {
   const [teamSwitchKey, setTeamSwitchKey] = useState(0);
   const [canCreateTeams, setCanCreateTeams] = useState(false);
   const [canCreateWorkspaces, setCanCreateWorkspaces] = useState(false);
+  const [showHomeConnectionCards, setShowHomeConnectionCards] = useState(false);
 
   const loadTeams = useCallback(async () => {
     if (!isAuthenticated) {
@@ -66,6 +69,7 @@ export function TeamProvider({ children }: { children: React.ReactNode }) {
       setActiveTeam(null);
       setCanCreateTeams(false);
       setCanCreateWorkspaces(false);
+      setShowHomeConnectionCards(false);
       setLoading(false);
       return;
     }
@@ -77,6 +81,7 @@ export function TeamProvider({ children }: { children: React.ReactNode }) {
       setTeams(data);
       setCanCreateTeams(capabilities.can_create_teams);
       setCanCreateWorkspaces(capabilities.can_create_workspaces);
+      setShowHomeConnectionCards(capabilities.show_home_connection_cards === true);
 
       const savedSlug = localStorage.getItem('tesslate_active_team');
       const saved = data.find((t: TeamList) => t.slug === savedSlug);
@@ -153,6 +158,7 @@ export function TeamProvider({ children }: { children: React.ReactNode }) {
         canAccessAutomations,
         canCreateTeams,
         canCreateWorkspaces,
+        showHomeConnectionCards,
         loading,
         refreshTeams: loadTeams,
         teamSwitchKey,

@@ -248,6 +248,19 @@ class DockerOrchestrator(BaseOrchestrator):
         if db:
             env_overrides = await build_env_overrides(db, project.id, containers)
 
+        # Project files are written by the orchestrator process, while the
+        # devserver deliberately runs as uid 1000. Reconcile ownership at the
+        # runtime boundary so edits made after initial project setup remain
+        # writable when npm installs dependencies on the shared Docker volume.
+        if self.use_volumes:
+            project_path = self.get_project_path(project.slug)
+            await asyncio.to_thread(
+                subprocess.run,
+                ["chown", "-R", "1000:1000", project_path],
+                check=True,
+                capture_output=True,
+            )
+
         compose_file_path = await self._write_compose_file(
             project, containers, connections, user_id, env_overrides
         )
@@ -1384,6 +1397,10 @@ class DockerOrchestrator(BaseOrchestrator):
             stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
 
             output = stdout.decode() + stderr.decode()
+            if process.returncode != 0:
+                raise RuntimeError(
+                    f"Command exited with code {process.returncode}: {output.strip()}"
+                )
             return output
 
         except TimeoutError:
