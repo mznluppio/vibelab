@@ -2307,7 +2307,14 @@ async def get_user_agents(
     )
 
     response = []
+    seen_agent_ids: set[UUID] = set()
     for agent, purchase in agents_data:
+        # A team library is shared, so several members can have independently
+        # created purchase rows for the same catalog agent. Present the agent
+        # once; the query order keeps the newest row as the display source.
+        if agent.id in seen_agent_ids:
+            continue
+        seen_agent_ids.add(agent.id)
         agent_source = _lookup_source(source_rows, agent.source_id)
         creator_type, creator_name, creator_username, creator_avatar_url = _resolve_creator_meta(
             forked_by_user=agent.forked_by_user, source=agent_source
@@ -2403,13 +2410,19 @@ async def toggle_agent(
     """
     from ..services.default_agent import SYSTEM_DEFAULT_AGENT_ID, is_system_default
 
-    # Find ALL purchase rows for this (user, agent) pair — a user can have
-    # one row per team they belong to, and the toggle should affect every
-    # team-scoped copy uniformly. Returning the first and ignoring siblings
-    # would silently leave a stale ``is_active=True`` row in another team.
+    # A non-personal team owns one shared Library. Several members may each
+    # have a purchase row for the same agent, so update every row in the
+    # active team. This keeps disable/enable coherent and avoids a stale row
+    # immediately making the agent look enabled again on the next reload.
+    team_id = current_user.default_team_id
+    purchase_scope = (
+        UserPurchasedAgent.team_id == team_id
+        if team_id
+        else UserPurchasedAgent.user_id == current_user.id
+    )
     result = await db.execute(
         select(UserPurchasedAgent).where(
-            UserPurchasedAgent.user_id == current_user.id, UserPurchasedAgent.agent_id == agent_id
+            purchase_scope, UserPurchasedAgent.agent_id == agent_id
         )
     )
     purchases = result.scalars().all()

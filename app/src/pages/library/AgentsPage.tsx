@@ -654,10 +654,8 @@ function AgentListRow({
   agent,
   isSelected,
   onEdit,
-  onToggleEnable: _onToggleEnable,
-  onTogglePublish: _onTogglePublish,
-  onRemove: _onRemove,
-  onDelete: _onDelete,
+  onToggleEnable,
+  onRemove,
 }: {
   agent: LibraryAgent;
   isSelected?: boolean;
@@ -704,6 +702,16 @@ function AgentListRow({
       <span className="text-[10px] text-[var(--text-muted)] hidden sm:block truncate max-w-[100px]">
         {agent.selected_model || agent.model}
       </span>
+      <button
+        onClick={(event) => {
+          event.stopPropagation();
+          onToggleEnable();
+        }}
+        className="shrink-0 px-2 py-1 rounded-md text-[10px] border border-[var(--border)] hover:bg-[var(--surface)] transition-colors"
+        aria-label={`${agent.is_enabled ? 'Disable' : 'Enable'} ${agent.name}`}
+      >
+        {agent.is_enabled ? 'Disable' : 'Enable'}
+      </button>
       {/* Settings */}
       {agent.can_edit && (
         <button
@@ -716,6 +724,16 @@ function AgentListRow({
           <Gear size={14} className="text-[var(--text-subtle)]" />
         </button>
       )}
+      <button
+        onClick={(event) => {
+          event.stopPropagation();
+          onRemove();
+        }}
+        className="shrink-0 p-1 rounded-md hover:bg-[var(--surface)] transition-colors"
+        aria-label={`Remove ${agent.name} from library`}
+      >
+        <Trash size={14} className="text-[var(--text-subtle)]" />
+      </button>
     </div>
   );
 }
