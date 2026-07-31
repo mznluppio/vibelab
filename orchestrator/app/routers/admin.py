@@ -37,7 +37,6 @@ from ..models import (
     MarketplaceAgent,
     MarketplaceBase,
     Message,
-    PlatformSetting,
     Project,
     ProjectAgent,
     UsageLog,
@@ -46,7 +45,7 @@ from ..models import (
     UserPurchasedBase,
 )
 from ..models_team import Team, TeamMembership
-from ..permissions import get_platform_settings
+from ..permissions import get_platform_settings as get_platform_governance_settings
 from ..services.git_providers.url_utils import strip_git_credentials as _strip_git_credentials
 from ..services.litellm_service import litellm_service
 from ..services.marketplace_constants import TESSLATE_OFFICIAL_ID
@@ -66,8 +65,8 @@ class PlatformSettingsUpdate(BaseModel):
 async def get_platform_settings(
     admin: User = Depends(current_superuser), db: AsyncSession = Depends(get_db)
 ) -> dict[str, bool]:
-    setting = await db.get(PlatformSetting, HOME_INTEGRATION_CARDS_KEY)
-    return {"show_home_integration_cards": bool(setting and setting.value is True)}
+    settings = await get_platform_governance_settings(db)
+    return {"show_home_integration_cards": bool(settings.show_home_connection_cards)}
 
 
 @router.put("/settings/platform")
@@ -76,16 +75,8 @@ async def update_platform_settings(
     admin: User = Depends(current_superuser),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, bool]:
-    setting = await db.get(PlatformSetting, HOME_INTEGRATION_CARDS_KEY)
-    if setting is None:
-        setting = PlatformSetting(
-            key=HOME_INTEGRATION_CARDS_KEY,
-            value=payload.show_home_integration_cards,
-        )
-        db.add(setting)
-    else:
-        setting.value = payload.show_home_integration_cards
-        setting.updated_at = datetime.utcnow()
+    settings = await get_platform_governance_settings(db, create=True)
+    settings.show_home_connection_cards = payload.show_home_integration_cards
 
     await db.commit()
     logger.info(
@@ -130,7 +121,7 @@ async def get_team_governance(
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, bool]:
     """Return the platform-wide Team / Workspace governance policy."""
-    settings = await get_platform_settings(db)
+    settings = await get_platform_governance_settings(db)
     return _governance_payload(settings)
 
 
@@ -142,7 +133,7 @@ async def update_team_governance(
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, bool]:
     """Update the platform-wide governance policy (superuser only)."""
-    settings = await get_platform_settings(db, create=True)
+    settings = await get_platform_governance_settings(db, create=True)
     changes = body.model_dump(exclude_unset=True)
     for field, value in changes.items():
         setattr(settings, field, value)
