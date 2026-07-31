@@ -35,14 +35,14 @@ class ShaderFallbackBoundary extends Component<{ children: ReactNode }, { failed
   }
 
   componentDidCatch(_error: Error, _info: ErrorInfo) {
-    if (import.meta.env.DEV) console.warn('Prompt border shader is unavailable; using the static border.');
+    if (import.meta.env.DEV)
+      console.warn('Prompt border shader is unavailable; using the static border.');
   }
 
   render() {
     return this.state.failed ? null : this.props.children;
   }
 }
-
 
 function supportsWebGL() {
   try {
@@ -149,7 +149,7 @@ export function PromptInputPulsingBorder({
               // One colour only: each extra colour adds its own set of spots,
               // and once they overlap the contour lights up evenly and stops
               // reading as movement.
-              colors={['#0dc1fd','#0055A4']}
+              colors={['#0dc1fd', '#0055A4']}
               colorBack="rgba(0, 0, 0, 0)"
               roundness={geometry.roundness}
               thickness={BORDER_THICKNESS}

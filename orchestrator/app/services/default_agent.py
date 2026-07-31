@@ -80,7 +80,7 @@ SYSTEM_DEFAULT_AGENT_FIELDS: dict[str, object | None] = {
         "VibeLab's general-purpose autonomous coding agent. Reads, writes, "
         "and patches files; executes shell commands; plans multi-step tasks; "
         "delegates to specialist sub-agents. Backed by the TesslateAgent "
-        "runtime — same engine the Tesslate Agent uses, baked into the "
+        "runtime — the engine backing VibeLab Default, baked into the "
         "platform so every user has it from the first login."
     ),
     "category": "fullstack",
@@ -195,6 +195,11 @@ def get_system_default_listing_dict(
         # All three must allow it through.
         "is_admin_disabled": False,
         "is_system": False,
+        "is_builtin": True,
+        "is_official": True,
+        "source_handle": None,
+        "source_trust_level": "official",
+        "can_edit": False,
     }
 
 

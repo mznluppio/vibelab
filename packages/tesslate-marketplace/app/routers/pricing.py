@@ -208,7 +208,7 @@ async def dev_checkout_landing(session_id: str) -> HTMLResponse:
     body = f"""
     <!doctype html>
     <html>
-    <head><meta charset="utf-8"><title>Tesslate Marketplace · Dev Checkout</title></head>
+    <head><meta charset="utf-8"><title>VibeLab Marketplace · Dev Checkout</title></head>
     <body style="font-family: system-ui; max-width: 480px; margin: 64px auto; padding: 32px; border: 1px solid #eee; border-radius: 12px;">
       <h1 style="font-size: 18px; margin-top: 0;">Dev checkout simulator</h1>
       <p>Session <code>{session_id}</code> would have launched a Stripe Checkout flow in production.</p>

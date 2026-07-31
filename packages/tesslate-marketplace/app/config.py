@@ -82,11 +82,11 @@ class Settings(BaseSettings):
     # ---------- hub identity ----------
     hub_id: str | None = None
     hub_id_file: str = "./.hub_id"
-    hub_display_name: str = "Tesslate Official"
+    hub_display_name: str = "Legrand Official"
     hub_api_version: str = "v1"
     build_revision: str = "dev"
-    contact_email: str = "marketplace@tesslate.com"
-    terms_url: str = "https://tesslate.com/terms"
+    contact_email: str = "marketplace@vibelab.local"
+    terms_url: str = "https://vibelab.local/terms"
 
     # ---------- bundle storage ----------
     bundle_storage_backend: str = Field("local", description="local | s3 | volume_hub")

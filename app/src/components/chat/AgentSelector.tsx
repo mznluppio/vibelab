@@ -398,7 +398,7 @@ export function AgentSelector({
                     <span className="flex-1 text-left">{agent.name}</span>
                     {agent.id === currentAgent.id && (
                       <span className="text-xs text-green-400 group-hover/agent:hidden">
-                        Active
+                        Selected
                       </span>
                     )}
                     {onModelChange && (

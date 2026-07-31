@@ -32,7 +32,18 @@ from ..models import (
     UserPurchasedAgent,
     UserPurchasedBase,
 )
+from ..permissions import (
+    get_team_membership,
+    require_active_team_administrator,
+    require_team_feature_access,
+)
 from ..schemas import BaseSubmitRequest, BaseUpdateRequest, SkillInstallRequest
+from ..services.agent_edit_permissions import (
+    can_edit_agent,
+)
+from ..services.agent_edit_permissions import (
+    require_agent_mutation_access as _require_agent_mutation_access,
+)
 from ..services.cache_service import cache
 from ..services.marketplace_constants import LOCAL_SOURCE_ID
 from ..services.marketplace_federation import install_guard
@@ -57,15 +68,49 @@ router = APIRouter()
 settings = get_settings()
 
 
+async def require_marketplace_feature_access(
+    db: AsyncSession = Depends(get_db),
+    user: User | None = Depends(current_optional_user),
+) -> None:
+    """Restrict catalog access while preserving the user's installed library.
+
+    Catalog browse endpoints historically support anonymous requests.  Keep
+    that compatibility, but enforce the active team's opt-in whenever a
+    signed-in user reaches the Marketplace surface directly.
+    """
+    if user is None:
+        return
+    await require_team_feature_access(
+        db,
+        user,
+        setting_name="marketplace_access_for_non_admins",
+        feature_name="Marketplace",
+    )
+
+
+_MARKETPLACE_ACCESS = Depends(require_marketplace_feature_access)
+
+
+async def _is_active_team_administrator(db: AsyncSession, user: User) -> bool:
+    """Return whether ``user`` may see technical model configuration."""
+    if getattr(user, "is_superuser", False):
+        return True
+    team_id = getattr(user, "default_team_id", None)
+    if team_id is None:
+        return False
+    membership = await get_team_membership(db, team_id, user.id)
+    return membership is not None and membership.role == "admin"
+
+
 def _resolve_display_name(user: User) -> str:
     """Return the best display name for a user: name > username > email prefix."""
     return resolve_display_name(user.name, user.username, user.email)
 
 
-def _reject_if_builtin(agent: MarketplaceAgent) -> None:
-    """Guard — refuse to mutate built-in skill rows via user/admin endpoints.
+def _reject_if_builtin(agent: MarketplaceAgent, current_user: User) -> None:
+    """Guard — refuse non-administrative mutation of built-in rows.
 
-    Built-in skills (``is_builtin=True``) are managed by the upstream
+    Built-in rows (``is_builtin=True``) are managed by the upstream
     marketplace service (after Wave 10 the orchestrator's catalog rows are
     the cached output of ``services/marketplace_sync.py`` pulling from
     ``packages/tesslate-marketplace/app/seeds/skills_*.json``). Any edit to
@@ -73,12 +118,11 @@ def _reject_if_builtin(agent: MarketplaceAgent) -> None:
     next federation sync poll, or (b) drift the deployed state away from
     the canonical seed.
 
-    Callers that allow forking (which creates a NEW row with
-    ``is_builtin=False``) should still call this on the *source* row before
-    the user-owned path — the fork endpoint itself already handles this
-    correctly by not mutating the parent.
+    Global administrators are allowed through to manage protected catalog
+    rows from the existing administrative surfaces. Standard users are
+    rejected before this guard by ``require_agent_mutation_access``.
     """
-    if getattr(agent, "is_builtin", False):
+    if getattr(agent, "is_builtin", False) and not getattr(current_user, "is_superuser", False):
         raise HTTPException(
             status_code=403,
             detail=(
@@ -384,7 +428,7 @@ async def _get_cached_model_vision_support() -> dict[str, bool]:
 # ============================================================================
 
 
-@router.get("/models")
+@router.get("/models", dependencies=[_MARKETPLACE_ACCESS])
 async def get_available_models(
     current_user: User = Depends(current_active_user), db: AsyncSession = Depends(get_db)
 ):
@@ -418,8 +462,40 @@ async def get_available_models(
             "supports_vision": vision_map.get(model.get("id", ""), False),
         }
         for model in litellm_models
-        if model.get("id")
+        if model.get("id") in settings.default_models_list
     ]
+
+    # Standard users receive only the centrally approved aliases. Avoiding the
+    # provider/custom-model queries entirely also keeps provider metadata and
+    # credentials configuration out of the normal user-facing response.
+    if not await _is_active_team_administrator(db, current_user):
+        if not system_models:
+            system_models = [
+                {
+                    "id": f"builtin/{model}",
+                    "name": model,
+                    "source": "system",
+                    "provider": "internal",
+                    "pricing": pricing_map.get(model, {"input": 0.0, "output": 0.0}),
+                    "available": True,
+                    "health": health_map.get(model, {}).get("status"),
+                    "supports_vision": vision_map.get(model, False),
+                }
+                for model in settings.default_models_list
+            ]
+
+        disabled_set = set(current_user.disabled_models or [])
+        for model in system_models:
+            model["disabled"] = model["id"] in disabled_set
+
+        return {
+            "models": system_models,
+            "default": system_models[0]["id"] if system_models else None,
+            "count": len(system_models),
+            "external_providers": [],
+            "user_providers": [],
+            "custom_models": [],
+        }
 
     # Check which providers the user/team has API keys for
     _key_filter = (
@@ -527,7 +603,6 @@ async def get_available_models(
 
     # Fallback to config if LiteLLM call fails
     if not system_models:
-        models_str = settings.litellm_default_models
         system_models = [
             {
                 "id": f"builtin/{m.strip()}",
@@ -539,8 +614,7 @@ async def get_available_models(
                 "health": health_map.get(m.strip(), {}).get("status"),
                 "supports_vision": vision_map.get(m.strip(), False),
             }
-            for m in models_str.split(",")
-            if m.strip()
+            for m in settings.default_models_list
         ]
 
     # Combine all model sources
@@ -569,7 +643,7 @@ async def get_available_models(
     }
 
 
-@router.post("/models/custom")
+@router.post("/models/custom", dependencies=[_MARKETPLACE_ACCESS])
 async def add_custom_model(
     model_id: str = Body(...),
     model_name: str = Body(...),
@@ -585,6 +659,8 @@ async def add_custom_model(
     """
     from ..models import UserCustomModel
     from ..services.model_adapters import BUILTIN_PROVIDERS
+
+    await require_active_team_administrator(db, current_user)
 
     # Provider is always explicitly set by the frontend — respect the user's choice.
     # e.g. "z-ai/glm-5" under OpenRouter should stay under OpenRouter,
@@ -645,7 +721,7 @@ async def add_custom_model(
     }
 
 
-@router.delete("/models/custom/{model_id}")
+@router.delete("/models/custom/{model_id}", dependencies=[_MARKETPLACE_ACCESS])
 async def delete_custom_model(
     model_id: str,
     current_user: User = Depends(current_active_user),
@@ -655,6 +731,8 @@ async def delete_custom_model(
     Delete a custom model from the user's account.
     """
     from ..models import UserCustomModel
+
+    await require_active_team_administrator(db, current_user)
 
     # Find the model (team-scoped)
     _del_team = current_user.default_team_id
@@ -682,7 +760,7 @@ async def delete_custom_model(
 # ============================================================================
 
 
-@router.get("/agents")
+@router.get("/agents", dependencies=[_MARKETPLACE_ACCESS])
 async def get_marketplace_agents(
     category: str | None = None,
     pricing_type: str | None = None,
@@ -871,7 +949,7 @@ async def get_marketplace_agents(
     }
 
 
-@router.get("/agents/{slug}")
+@router.get("/agents/{slug}", dependencies=[_MARKETPLACE_ACCESS])
 async def get_agent_details(
     slug: str,
     source: str | None = Query(
@@ -1030,7 +1108,7 @@ async def get_agent_details(
 # ============================================================================
 
 
-@router.get("/agents/{slug}/related")
+@router.get("/agents/{slug}/related", dependencies=[_MARKETPLACE_ACCESS])
 async def get_related_agents_endpoint(
     slug: str,
     limit: int = Query(default=6, ge=1, le=12),
@@ -1067,7 +1145,7 @@ async def get_related_agents_endpoint(
 # ============================================================================
 
 
-@router.post("/agents/{agent_id}/purchase")
+@router.post("/agents/{agent_id}/purchase", dependencies=[_MARKETPLACE_ACCESS])
 async def purchase_agent(
     agent_id: str,
     request: Request,
@@ -1296,7 +1374,7 @@ async def purchase_agent(
         raise HTTPException(status_code=500, detail="Failed to create checkout session") from e
 
 
-@router.post("/verify-purchase")
+@router.post("/verify-purchase", dependencies=[_MARKETPLACE_ACCESS])
 async def verify_agent_purchase(
     background_tasks: BackgroundTasks,
     session_id: str = Body(..., embed=True),
@@ -1471,7 +1549,7 @@ async def verify_agent_purchase(
         raise HTTPException(status_code=500, detail="Failed to verify purchase") from e
 
 
-@router.get("/subscriptions")
+@router.get("/subscriptions", dependencies=[_MARKETPLACE_ACCESS])
 async def get_user_subscriptions(
     db: AsyncSession = Depends(get_db), current_user: User = Depends(current_active_user)
 ):
@@ -1581,7 +1659,7 @@ async def get_user_subscriptions(
     return subscriptions
 
 
-@router.post("/subscriptions/{subscription_id}/cancel")
+@router.post("/subscriptions/{subscription_id}/cancel", dependencies=[_MARKETPLACE_ACCESS])
 async def cancel_agent_subscription(
     subscription_id: str,
     db: AsyncSession = Depends(get_db),
@@ -1646,7 +1724,7 @@ async def cancel_agent_subscription(
         raise HTTPException(status_code=500, detail="Failed to cancel subscription") from e
 
 
-@router.post("/subscriptions/{subscription_id}/renew")
+@router.post("/subscriptions/{subscription_id}/renew", dependencies=[_MARKETPLACE_ACCESS])
 async def renew_agent_subscription(
     subscription_id: str,
     db: AsyncSession = Depends(get_db),
@@ -1710,7 +1788,7 @@ async def renew_agent_subscription(
         raise HTTPException(status_code=500, detail="Failed to renew subscription") from e
 
 
-@router.post("/agents/{agent_id}/fork")
+@router.post("/agents/{agent_id}/fork", dependencies=[_MARKETPLACE_ACCESS])
 async def fork_agent(
     agent_id: str,
     name: str | None = None,
@@ -1763,6 +1841,7 @@ async def fork_agent(
         is_forkable=False,  # Forked agents can't be forked again
         parent_agent_id=parent_agent.id,
         forked_by_user_id=current_user.id,
+        created_by_user_id=current_user.id,
         config={},  # User can customize this later
         icon=parent_agent.icon,
         preview_image=parent_agent.preview_image,
@@ -1831,7 +1910,7 @@ def _is_tool_driven_request(request: Request | None) -> bool:
     return "marketplace.author" in scope_header.split()
 
 
-@router.post("/agents/create")
+@router.post("/agents/create", dependencies=[_MARKETPLACE_ACCESS])
 async def create_custom_agent(
     name: str = Body(...),
     description: str = Body(...),
@@ -1889,6 +1968,7 @@ async def create_custom_agent(
         is_forkable=False,
         parent_agent_id=None,
         forked_by_user_id=current_user.id,
+        created_by_user_id=current_user.id,
         config={},
         icon="🤖",
         preview_image=None,
@@ -1931,7 +2011,7 @@ async def create_custom_agent(
     }
 
 
-@router.patch("/agents/{agent_id}")
+@router.patch("/agents/{agent_id}", dependencies=[_MARKETPLACE_ACCESS])
 async def update_custom_agent(
     agent_id: str,
     update_data: dict,
@@ -1986,109 +2066,11 @@ async def update_custom_agent(
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
 
-    # Built-in skills are immutable via the UI — edits live in seed code.
-    _reject_if_builtin(agent)
+    await _require_agent_mutation_access(db, agent, current_user)
+    _reject_if_builtin(agent, current_user)
 
-    # Check if user owns this agent (created/forked by them)
-    is_owner = agent.forked_by_user_id == current_user.id
-
-    # Check if agent is open source and user has it in library
-    if not is_owner:
-        # Check if user has purchased this agent
-        purchase_result = await db.execute(
-            select(UserPurchasedAgent).where(
-                UserPurchasedAgent.user_id == current_user.id,
-                UserPurchasedAgent.agent_id == agent_id,
-                UserPurchasedAgent.is_active,
-            )
-        )
-        has_agent = purchase_result.scalar_one_or_none() is not None
-
-        if not has_agent:
-            raise HTTPException(status_code=403, detail="You don't have this agent in your library")
-
-        # If agent is open source but not owned by user, create a fork instead
-        if agent.source_type == "open":
-            # Create a forked copy with the updates
-            forked_slug = f"{agent.slug}-fork-{current_user.id}-{datetime.now(UTC).timestamp()}"
-
-            forked_agent = MarketplaceAgent(
-                name=update_data.get("name", agent.name),
-                slug=forked_slug,
-                description=update_data.get("description", agent.description),
-                long_description=agent.long_description,
-                category=agent.category,
-                item_type=agent.item_type,
-                system_prompt=update_data.get("system_prompt", agent.system_prompt),
-                mode=agent.mode,
-                agent_type=agent.agent_type,
-                tools=update_data.get("tools", agent.tools),
-                tool_configs=update_data.get("tool_configs", agent.tool_configs),
-                model=update_data.get("model", agent.model),
-                is_forkable=False,
-                parent_agent_id=agent.id,
-                forked_by_user_id=current_user.id,
-                config=update_data.get("config", agent.config or {}),
-                icon=agent.icon,
-                avatar_url=update_data.get("avatar_url", agent.avatar_url),
-                preview_image=agent.preview_image,
-                pricing_type="free",
-                price=0,
-                source_type="open",
-                source_id=LOCAL_SOURCE_ID,
-                requires_user_keys=agent.requires_user_keys,
-                downloads=0,
-                rating=5.0,
-                reviews_count=0,
-                features=agent.features,
-                required_models=[update_data.get("model", agent.model)],
-                tags=agent.tags,
-                is_featured=False,
-                is_active=True,
-                is_published=False,
-                is_builtin=False,  # Forks are never built-ins; built-ins are seed-only
-            )
-
-            db.add(forked_agent)
-            await db.flush()  # Get the ID
-
-            # Add to user's library
-            purchase = UserPurchasedAgent(
-                user_id=current_user.id,
-                team_id=current_user.default_team_id,
-                agent_id=forked_agent.id,
-                purchase_type="free",
-                is_active=True,
-            )
-            db.add(purchase)
-
-            # Remove original from every team-scoped library this user has —
-            # forking should hide the upstream agent everywhere, not just in
-            # whichever row sqlalchemy happens to return first.
-            original_purchase_result = await db.execute(
-                select(UserPurchasedAgent).where(
-                    UserPurchasedAgent.user_id == current_user.id,
-                    UserPurchasedAgent.agent_id == agent_id,
-                )
-            )
-            for original_purchase in original_purchase_result.scalars().all():
-                original_purchase.is_active = False
-
-            await db.commit()
-
-            return {
-                "message": "Created a custom fork with your changes",
-                "agent_id": forked_agent.id,
-                "forked": True,
-                "success": True,
-            }
-        else:
-            raise HTTPException(
-                status_code=403,
-                detail="You can only edit open source agents or your own custom agents",
-            )
-
-    # User owns this agent, update it directly
+    # Direct edits are reserved for the creator. Forking remains an explicit
+    # action through /agents/{agent_id}/fork; PATCH never forks implicitly.
     if update_data.get("name"):
         agent.name = update_data["name"]
     if update_data.get("description"):
@@ -2265,6 +2247,14 @@ async def get_user_agents(
                 else None,
                 "is_admin_disabled": not agent.is_active,
                 "is_system": agent.is_system,
+                "is_builtin": agent.is_builtin,
+                "is_official": _is_official_source(agent_source),
+                "source_handle": agent_source.handle if agent_source else None,
+                "source_trust_level": agent_source.trust_level if agent_source else None,
+                # The standard Library intentionally stays read-only for
+                # official/system rows, including for administrators who use
+                # the dedicated Admin surface for those changes.
+                "can_edit": can_edit_agent(agent, agent_source, current_user),
             }
         )
 
@@ -2436,6 +2426,11 @@ async def create_subagent(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=f"Invalid agent_id: {agent_id}") from exc
 
+    parent_agent = await db.get(MarketplaceAgent, agent_uuid)
+    if parent_agent is None:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    await _require_agent_mutation_access(db, parent_agent, current_user)
+
     subagent = MarketplaceAgent(
         name=name,
         slug=f"subagent-{name.lower().replace(' ', '-')}-{current_user.id}-{datetime.now(UTC).timestamp()}",
@@ -2450,6 +2445,7 @@ async def create_subagent(
         config={"model": data.get("model", "inherit")},
         parent_agent_id=agent_uuid,
         forked_by_user_id=current_user.id,
+        created_by_user_id=current_user.id,
         pricing_type="free",
         price=0,
         source_type="open",
@@ -2500,6 +2496,11 @@ async def update_subagent(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=f"Invalid agent_id: {agent_id}") from exc
 
+    parent_agent = await db.get(MarketplaceAgent, agent_uuid)
+    if parent_agent is None:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    await _require_agent_mutation_access(db, parent_agent, current_user)
+
     if subagent_id in builtins:
         # Fork the built-in: create a custom DB subagent with the user's edits
         builtin = builtins[subagent_id]
@@ -2517,6 +2518,7 @@ async def update_subagent(
             config={"model": data.get("model", "inherit")},
             parent_agent_id=agent_uuid,
             forked_by_user_id=current_user.id,
+            created_by_user_id=current_user.id,
             pricing_type="free",
             price=0,
             source_type="open",
@@ -2553,6 +2555,7 @@ async def update_subagent(
         select(MarketplaceAgent).where(
             MarketplaceAgent.id == subagent_uuid,
             MarketplaceAgent.item_type == "subagent",
+            MarketplaceAgent.parent_agent_id == agent_uuid,
             MarketplaceAgent.forked_by_user_id == current_user.id,
         )
     )
@@ -2589,9 +2592,15 @@ async def delete_subagent(
     Delete a custom subagent from the user's library.
     """
     try:
+        agent_uuid = UUID(agent_id)
         subagent_uuid = UUID(subagent_id)
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=f"Invalid subagent_id: {subagent_id}") from exc
+        raise HTTPException(status_code=400, detail="Invalid agent or subagent identifier") from exc
+
+    parent_agent = await db.get(MarketplaceAgent, agent_uuid)
+    if parent_agent is None:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    await _require_agent_mutation_access(db, parent_agent, current_user)
 
     # Remove purchase
     purchase_result = await db.execute(
@@ -2609,6 +2618,7 @@ async def delete_subagent(
         select(MarketplaceAgent).where(
             MarketplaceAgent.id == subagent_uuid,
             MarketplaceAgent.item_type == "subagent",
+            MarketplaceAgent.parent_agent_id == agent_uuid,
             MarketplaceAgent.forked_by_user_id == current_user.id,
         )
     )
@@ -2690,6 +2700,8 @@ async def select_agent_model(
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
 
+    await _require_agent_mutation_access(db, agent, current_user)
+
     # Check if agent is open source or custom
     if agent.source_type != "open" and agent.forked_by_user_id != current_user.id:
         raise HTTPException(
@@ -2762,9 +2774,7 @@ async def publish_agent(
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
 
-    # Verify ownership
-    if agent.forked_by_user_id != current_user.id:
-        raise HTTPException(status_code=403, detail="You can only publish your own custom agents")
+    await _require_agent_mutation_access(db, agent, current_user)
 
     # Check if user has this agent in library
     purchase_result = await db.execute(
@@ -2807,9 +2817,7 @@ async def unpublish_agent(
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
 
-    # Verify ownership
-    if agent.forked_by_user_id != current_user.id:
-        raise HTTPException(status_code=403, detail="You can only unpublish your own agents")
+    await _require_agent_mutation_access(db, agent, current_user)
 
     # Unpublish the agent
     agent.is_published = False
@@ -2835,12 +2843,8 @@ async def delete_custom_agent(
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
 
-    # Built-ins are seed-managed; refuse deletion regardless of ownership.
-    _reject_if_builtin(agent)
-
-    # Verify ownership
-    if agent.forked_by_user_id != current_user.id:
-        raise HTTPException(status_code=403, detail="You can only delete your own custom agents")
+    await _require_agent_mutation_access(db, agent, current_user)
+    _reject_if_builtin(agent, current_user)
 
     # Must unpublish before deleting
     if agent.is_published:
@@ -3079,7 +3083,7 @@ async def get_project_agents(
 # ============================================================================
 
 
-@router.post("/agents/{agent_id}/review")
+@router.post("/agents/{agent_id}/review", dependencies=[_MARKETPLACE_ACCESS])
 async def create_agent_review(
     agent_id: str,
     rating: int = Query(ge=1, le=5),
@@ -3141,7 +3145,7 @@ async def create_agent_review(
     return {"message": "Review submitted successfully", "rating": rating}
 
 
-@router.get("/agents/{agent_id}/reviews")
+@router.get("/agents/{agent_id}/reviews", dependencies=[_MARKETPLACE_ACCESS])
 async def get_agent_reviews(
     agent_id: str,
     page: int = Query(default=1, ge=1),
@@ -3202,7 +3206,7 @@ async def get_agent_reviews(
     }
 
 
-@router.delete("/agents/{agent_id}/review")
+@router.delete("/agents/{agent_id}/review", dependencies=[_MARKETPLACE_ACCESS])
 async def delete_agent_review(
     agent_id: str,
     db: AsyncSession = Depends(get_db),
@@ -3248,7 +3252,7 @@ async def delete_agent_review(
 # ============================================================================
 
 
-@router.get("/bases")
+@router.get("/bases", dependencies=[_MARKETPLACE_ACCESS])
 async def get_marketplace_bases(
     category: str | None = None,
     pricing_type: str | None = None,
@@ -3439,7 +3443,7 @@ async def get_marketplace_bases(
     }
 
 
-@router.get("/bases/{slug}")
+@router.get("/bases/{slug}", dependencies=[_MARKETPLACE_ACCESS])
 async def get_base_details(
     slug: str,
     db: AsyncSession = Depends(get_db),
@@ -3554,7 +3558,7 @@ async def get_base_details(
     }
 
 
-@router.get("/bases/{slug}/versions")
+@router.get("/bases/{slug}/versions", dependencies=[_MARKETPLACE_ACCESS])
 async def get_base_versions(
     slug: str,
     db: AsyncSession = Depends(get_db),
@@ -3649,7 +3653,7 @@ async def get_base_versions(
     return response
 
 
-@router.post("/bases/{base_id}/purchase")
+@router.post("/bases/{base_id}/purchase", dependencies=[_MARKETPLACE_ACCESS])
 async def purchase_base(
     base_id: str,
     confirmed: bool = Query(default=False),
@@ -3764,7 +3768,7 @@ async def get_user_bases(
 # ============================================================================
 
 
-@router.post("/bases/{base_id}/review")
+@router.post("/bases/{base_id}/review", dependencies=[_MARKETPLACE_ACCESS])
 async def create_base_review(
     base_id: str,
     rating: int = Query(ge=1, le=5),
@@ -3826,7 +3830,7 @@ async def create_base_review(
     return {"message": "Review submitted successfully", "rating": rating}
 
 
-@router.get("/bases/{base_id}/reviews")
+@router.get("/bases/{base_id}/reviews", dependencies=[_MARKETPLACE_ACCESS])
 async def get_base_reviews(
     base_id: str,
     page: int = Query(default=1, ge=1),
@@ -3887,7 +3891,7 @@ async def get_base_reviews(
     }
 
 
-@router.delete("/bases/{base_id}/review")
+@router.delete("/bases/{base_id}/review", dependencies=[_MARKETPLACE_ACCESS])
 async def delete_base_review(
     base_id: str,
     db: AsyncSession = Depends(get_db),
@@ -3933,7 +3937,7 @@ async def delete_base_review(
 # ============================================================================
 
 
-@router.post("/bases/submit")
+@router.post("/bases/submit", dependencies=[_MARKETPLACE_ACCESS])
 async def submit_base(
     request: BaseSubmitRequest,
     db: AsyncSession = Depends(get_db),
@@ -3987,7 +3991,7 @@ async def submit_base(
     }
 
 
-@router.patch("/bases/{base_id}")
+@router.patch("/bases/{base_id}", dependencies=[_MARKETPLACE_ACCESS])
 async def update_base(
     base_id: str,
     request: BaseUpdateRequest,
@@ -4025,7 +4029,7 @@ async def update_base(
     }
 
 
-@router.patch("/bases/{base_id}/visibility")
+@router.patch("/bases/{base_id}/visibility", dependencies=[_MARKETPLACE_ACCESS])
 async def set_base_visibility(
     base_id: str,
     visibility: str = Body(..., embed=True),
@@ -4056,7 +4060,7 @@ async def set_base_visibility(
     }
 
 
-@router.delete("/bases/{base_id}")
+@router.delete("/bases/{base_id}", dependencies=[_MARKETPLACE_ACCESS])
 async def delete_base(
     base_id: str,
     db: AsyncSession = Depends(get_db),
@@ -4087,7 +4091,7 @@ async def delete_base(
     return {"id": str(base.id), "success": True}
 
 
-@router.post("/templates/{base_id}/re-export")
+@router.post("/templates/{base_id}/re-export", dependencies=[_MARKETPLACE_ACCESS])
 async def re_export_template(
     base_id: str,
     background_tasks: BackgroundTasks,
@@ -4410,7 +4414,7 @@ async def get_user_marketplace_items(
 # ============================================================================
 
 
-@router.get("/workflows")
+@router.get("/workflows", dependencies=[_MARKETPLACE_ACCESS])
 async def list_workflows(
     category: str | None = None,
     is_featured: bool | None = None,
@@ -4479,7 +4483,7 @@ async def list_workflows(
     return {"workflows": workflow_dicts}
 
 
-@router.get("/workflows/{slug}")
+@router.get("/workflows/{slug}", dependencies=[_MARKETPLACE_ACCESS])
 async def get_workflow(slug: str, db: AsyncSession = Depends(get_db)):
     """Get a workflow template by slug, including full template definition."""
     from ..models import WorkflowTemplate
@@ -4513,7 +4517,7 @@ async def get_workflow(slug: str, db: AsyncSession = Depends(get_db)):
     }
 
 
-@router.post("/workflows/{slug}/increment-downloads")
+@router.post("/workflows/{slug}/increment-downloads", dependencies=[_MARKETPLACE_ACCESS])
 async def increment_workflow_downloads(
     slug: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(current_active_user)
 ):
@@ -4532,7 +4536,7 @@ async def increment_workflow_downloads(
     return {"success": True, "downloads": workflow.downloads}
 
 
-@router.get("/services/{slug}")
+@router.get("/services/{slug}", dependencies=[_MARKETPLACE_ACCESS])
 async def get_service_definition(
     slug: str,
     current_user: User = Depends(current_active_user),
@@ -4648,7 +4652,7 @@ def _theme_to_dict(
     }
 
 
-@router.get("/themes")
+@router.get("/themes", dependencies=[_MARKETPLACE_ACCESS])
 async def browse_themes(
     category: str | None = Query(None),
     mode: str | None = Query(None),
@@ -4796,7 +4800,11 @@ async def browse_themes(
     }
 
 
-@router.get("/themes/legacy/{theme_id}", include_in_schema=False)
+@router.get(
+    "/themes/legacy/{theme_id}",
+    include_in_schema=False,
+    dependencies=[_MARKETPLACE_ACCESS],
+)
 async def legacy_theme_detail_redirect(theme_id: str):
     """Wave 1.5: 301 redirect for legacy theme-detail bookmarks.
 
@@ -4823,7 +4831,11 @@ async def legacy_theme_detail_redirect(theme_id: str):
     return RedirectResponse(url=target, status_code=301)
 
 
-@router.get("/tesslate-official/theme/{slug}", include_in_schema=False)
+@router.get(
+    "/tesslate-official/theme/{slug}",
+    include_in_schema=False,
+    dependencies=[_MARKETPLACE_ACCESS],
+)
 async def get_theme_detail_source_prefixed(
     slug: str,
     current_user: User | None = Depends(current_optional_user),
@@ -4841,7 +4853,7 @@ async def get_theme_detail_source_prefixed(
     return await get_theme_detail(slug=slug, current_user=current_user, db=db)
 
 
-@router.get("/themes/{slug}")
+@router.get("/themes/{slug}", dependencies=[_MARKETPLACE_ACCESS])
 async def get_theme_detail(
     slug: str,
     current_user: User | None = Depends(current_optional_user),
@@ -5265,7 +5277,7 @@ async def delete_custom_theme(
     return {"message": "Theme deleted successfully", "success": True}
 
 
-@router.post("/themes/{theme_id}/publish")
+@router.post("/themes/{theme_id}/publish", dependencies=[_MARKETPLACE_ACCESS])
 async def publish_theme(
     theme_id: str,
     db: AsyncSession = Depends(get_db),
@@ -5286,7 +5298,7 @@ async def publish_theme(
     return {"message": "Theme published to marketplace", "success": True}
 
 
-@router.post("/themes/{theme_id}/unpublish")
+@router.post("/themes/{theme_id}/unpublish", dependencies=[_MARKETPLACE_ACCESS])
 async def unpublish_theme(
     theme_id: str,
     db: AsyncSession = Depends(get_db),
@@ -5307,7 +5319,7 @@ async def unpublish_theme(
     return {"message": "Theme unpublished from marketplace", "success": True}
 
 
-@router.post("/themes/{theme_id}/fork")
+@router.post("/themes/{theme_id}/fork", dependencies=[_MARKETPLACE_ACCESS])
 async def fork_theme(
     theme_id: str,
     db: AsyncSession = Depends(get_db),
@@ -5393,7 +5405,7 @@ async def fork_theme(
 # ============================================================================
 
 
-@router.get("/skills")
+@router.get("/skills", dependencies=[_MARKETPLACE_ACCESS])
 async def get_marketplace_skills(
     category: str | None = None,
     pricing_type: str | None = None,
@@ -5565,7 +5577,7 @@ async def get_marketplace_skills(
     }
 
 
-@router.get("/skills/{slug}")
+@router.get("/skills/{slug}", dependencies=[_MARKETPLACE_ACCESS])
 async def get_skill_details(
     slug: str,
     db: AsyncSession = Depends(get_db),
@@ -5650,7 +5662,7 @@ async def get_skill_details(
     }
 
 
-@router.post("/skills/{skill_id}/purchase")
+@router.post("/skills/{skill_id}/purchase", dependencies=[_MARKETPLACE_ACCESS])
 async def purchase_skill(
     skill_id: UUID,
     request: Request,
@@ -5826,8 +5838,10 @@ async def install_skill_on_agent(
             MarketplaceAgent.is_active.is_(True),
         )
     )
-    if not agent_result.scalar_one_or_none():
+    target_agent = agent_result.scalar_one_or_none()
+    if target_agent is None:
         raise HTTPException(status_code=404, detail="Agent not found")
+    await _require_agent_mutation_access(db, target_agent, current_user)
 
     # Check for existing assignment
     existing_result = await db.execute(
@@ -5870,6 +5884,11 @@ async def uninstall_skill_from_agent(
     """
     Detach a skill from an agent.
     """
+    target_agent = await db.get(MarketplaceAgent, agent_id)
+    if target_agent is None:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    await _require_agent_mutation_access(db, target_agent, current_user)
+
     # Resolve active team for ownership scoping
     team_id = current_user.default_team_id
     ownership_filter = (
@@ -5999,7 +6018,7 @@ async def get_agent_skills(
 # ============================================================================
 
 
-@router.get("/mcp-servers")
+@router.get("/mcp-servers", dependencies=[_MARKETPLACE_ACCESS])
 async def get_marketplace_mcp_servers(
     category: str | None = None,
     pricing_type: str | None = None,
@@ -6191,7 +6210,7 @@ async def get_marketplace_mcp_servers(
     }
 
 
-@router.get("/mcp-servers/{slug}")
+@router.get("/mcp-servers/{slug}", dependencies=[_MARKETPLACE_ACCESS])
 async def get_mcp_server_details(
     slug: str,
     db: AsyncSession = Depends(get_db),

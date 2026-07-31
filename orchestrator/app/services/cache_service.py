@@ -28,6 +28,7 @@ Usage:
 
 import asyncio
 import contextlib
+import inspect
 import json
 import logging
 import time
@@ -375,15 +376,28 @@ def cached(key_prefix: str, ttl: int = 300):
         async def get_models():
             return await expensive_api_call()
 
-    Note: This generates cache keys from the function name and key_prefix.
-    For functions with arguments, use cache.get_or_set() directly
-    with a key that includes the arguments.
+    Note: the cache key is ``key_prefix`` alone, so this only works for
+    parameterless functions. Applying it to a function that takes arguments —
+    a user id, a project id — would serve one caller's result to every other
+    caller, so decoration raises ``TypeError`` instead of caching across
+    tenants. For those, call ``cache.get_or_set()`` with a key that includes
+    every scoping argument.
     """
 
     def decorator(func):
+        signature = inspect.signature(func)
+        if signature.parameters:
+            raise TypeError(
+                f"@cached({key_prefix!r}) cannot decorate {func.__qualname__}: the cache "
+                f"key ignores arguments, so results would leak between callers. Use "
+                f"cache.get_or_set() with a key that includes "
+                f"{', '.join(signature.parameters)}."
+            )
+
         @wraps(func)
         async def wrapper(*args, **kwargs):
-            # Simple cache key for parameterless functions
+            # Parameterless by construction (enforced above), so key_prefix
+            # alone identifies the value.
             cache_key = key_prefix
 
             return await cache.get_or_set(

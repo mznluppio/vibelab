@@ -21,13 +21,14 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.models import MarketplaceAgent, User, UserPurchasedAgent
+from tests._test_database import get_test_database_url
 
 # Mixing the app's AsyncSessionLocal with the TestClient's own event loop
 # produces "Future attached to a different loop" errors, so we use a
 # dedicated engine + run every helper on a short-lived event loop via
 # ``asyncio.run()``. That loop terminates before the TestClient's request
 # runs, so no Future leaks across loops.
-_ASYNC_DB_URL = "postgresql+asyncpg://tesslate_test:testpass@localhost:5433/tesslate_test"
+_ASYNC_DB_URL = get_test_database_url()
 
 
 def _run_db(coro_fn, *args, **kwargs):

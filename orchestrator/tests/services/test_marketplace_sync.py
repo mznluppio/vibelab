@@ -39,6 +39,7 @@ from app.models import (
     MarketplaceAgent,
     MarketplaceApp,
     MarketplaceSource,
+    Theme,
 )
 from app.models_automations import AppInstance
 from app.services.marketplace_client import HubIdMismatchError
@@ -46,14 +47,17 @@ from app.services.marketplace_sync import (
     _DEFAULT_MANIFEST_SCHEMA_VERSION,
     MarketplaceSyncWorker,
 )
+from tests._test_database import (
+    get_test_database_url,
+    probe_test_database,
+    sibling_database_url,
+)
 
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 
-_ORCHESTRATOR_TEST_DB_URL = (
-    "postgresql+asyncpg://tesslate_test:testpass@localhost:5433/tesslate_test"
-)
+_ORCHESTRATOR_TEST_DB_URL = get_test_database_url()
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -114,13 +118,11 @@ def marketplace_service():
     if not venv_python.exists():
         pytest.skip(f"marketplace venv not found at {venv_python}")
 
-    try:
-        with socket.create_connection(("localhost", 5433), timeout=2):
-            pass
-    except OSError:
-        pytest.skip("postgres test container not reachable on :5433")
+    ok, reason = probe_test_database(get_test_database_url())
+    if not ok:
+        pytest.skip(f"postgres test container not reachable: {reason}")
 
-    db_url = f"postgresql+asyncpg://tesslate_test:testpass@localhost:5433/{MARKETPLACE_DB_NAME}"
+    db_url = sibling_database_url(MARKETPLACE_DB_NAME)
 
     # Provision a clean DB. DROP/CREATE require autocommit (no transaction).
     for stmt in (
@@ -334,6 +336,27 @@ async def test_sync_source_lands_federated_rows(
     for row in synced_agents:
         assert row.source_etag, f"row {row.slug!r} missing source_etag"
         assert row.source_remote_id, f"row {row.slug!r} missing source_remote_id"
+
+    # The catalog's stable legacy default identifier now represents VibeLab,
+    # so existing user preferences remain valid without re-activating a
+    # marketplace theme or overwriting a separately selected alternative.
+    default_theme = (
+        (
+            await orchestrator_session.execute(
+                select(Theme).where(
+                    Theme.source_id == federated_source.id,
+                    Theme.slug == "default-dark",
+                )
+            )
+        )
+        .scalars()
+        .one()
+    )
+    assert default_theme.name == "VibeLab Dark"
+    assert default_theme.author == "VibeLab by Legrand"
+    assert default_theme.is_default is True
+    assert default_theme.theme_json["colors"]["primary"] == "#0055A4"
+    assert default_theme.theme_json["colors"]["accent"] == "#00A3E0"
 
 
 @pytest.mark.integration

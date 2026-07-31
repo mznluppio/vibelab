@@ -245,6 +245,16 @@ async def _contract_gate_hook(tool_name, parameters, context, tool):
     when the gate denies the call (same shape as the in-tree path).
     """
     from .agent.tools.registry import check_contract_gate
+    from .services.assist_to_build import block_pre_build_tool, is_build_unlocked
+
+    assist_result = block_pre_build_tool(tool_name, context)
+    if assist_result is not None:
+        return assist_result
+
+    # A TO-BE approval is the explicit build consent for this fixed workflow.
+    # It must not be defeated by an earlier client-side Plan/Ask preference.
+    if is_build_unlocked(context):
+        context["edit_mode"] = "allow"
 
     return await check_contract_gate(
         tool_name=tool_name,
@@ -254,7 +264,9 @@ async def _contract_gate_hook(tool_name, parameters, context, tool):
     )
 
 
-def _build_submodule_registry(in_tree_registry, approval_handler=None):
+def _build_submodule_registry(
+    in_tree_registry, approval_handler=None, agent_slug: str | None = None
+):
     """Transfer tools from an in-tree ToolRegistry to a submodule ToolRegistry.
 
     Both registries store tools in a ``_tools`` dict keyed by tool name. The
@@ -275,9 +287,28 @@ def _build_submodule_registry(in_tree_registry, approval_handler=None):
     try:
         from tesslate_agent.agent.tools.registry import ToolRegistry as SubmoduleRegistry
 
+        async def _pre_execute_hook(tool_name, parameters, context, tool):
+            # The registry is constructed before every execution context, so
+            # capture the selected official agent here. This protects both
+            # queued worker runs and the no-Redis inline chat fallback.
+            if agent_slug == "assist-to-build" and not context.get("assist_to_build_workflow"):
+                context["assist_to_build_workflow"] = {
+                    "workflow": "assist_to_build",
+                    "stage": "discovery",
+                    "as_is_approved": False,
+                    "to_be_approved": False,
+                }
+            if agent_slug == "assist-to-build":
+                from .services.assist_to_build import model_visible_tools
+
+                visible_tools = model_visible_tools(context)
+                if visible_tools is not None:
+                    context["model_visible_tools"] = list(visible_tools)
+            return await _contract_gate_hook(tool_name, parameters, context, tool)
+
         sub = SubmoduleRegistry(
             approval_handler=approval_handler,
-            pre_execute_hook=_contract_gate_hook,
+            pre_execute_hook=_pre_execute_hook,
         )
         for tool in in_tree_registry._tools.values():
             sub.register(tool)
@@ -298,12 +329,30 @@ async def _create_agent_runner(
     from .services.tesslate_agent_adapter import TesslateAgentAdapter
 
     if tools_override is not None:
-        sub_registry = _build_submodule_registry(tools_override, approval_handler=approval_handler)
+        sub_registry = _build_submodule_registry(
+            tools_override,
+            approval_handler=approval_handler,
+            agent_slug=getattr(agent_model, "slug", None),
+        )
     else:
-        from .agent.tools.registry import get_tool_registry
+        from .agent.tools.registry import create_scoped_tool_registry, get_tool_registry
+
+        declared_tools = getattr(agent_model, "tools", None)
+        tool_configs = getattr(agent_model, "tool_configs", None)
+        # Marketplace agents declare their exact capability set.  Respect it
+        # at runtime instead of advertising the global registry to the model;
+        # otherwise Assist to Build can select unrelated tools such as
+        # request_workspace before its workflow gate rejects them.
+        in_tree_registry = (
+            create_scoped_tool_registry(declared_tools, tool_configs)
+            if isinstance(declared_tools, list)
+            else get_tool_registry()
+        )
 
         sub_registry = _build_submodule_registry(
-            get_tool_registry(), approval_handler=approval_handler
+            in_tree_registry,
+            approval_handler=approval_handler,
+            agent_slug=getattr(agent_model, "slug", None),
         )
 
     if sub_registry is None:
@@ -872,6 +921,9 @@ async def execute_agent_task(ctx: dict, payload_dict: dict):
                         view_context=view_context,
                         project_id=UUID(project_id),
                         container_id=(UUID(payload.container_id) if payload.container_id else None),
+                        base_tool_names=(
+                            agent_model.tools if isinstance(getattr(agent_model, "tools", None), list) else None
+                        ),
                     )
 
             # 7. Create agent via adapter (submodule runner)
@@ -1229,6 +1281,16 @@ async def execute_agent_task(ctx: dict, payload_dict: dict):
             }
             _agent_slug = getattr(agent_model, "slug", None)
             _admin_scopes = _BUILTIN_AGENT_SCOPES.get(_agent_slug)
+            _assist_to_build_workflow = (
+                {
+                    "workflow": "assist_to_build",
+                    "stage": "discovery",
+                    "as_is_approved": False,
+                    "to_be_approved": False,
+                }
+                if _agent_slug == "assist-to-build"
+                else None
+            )
 
             context = {
                 "user_id": UUID(payload.user_id),
@@ -1289,7 +1351,13 @@ async def execute_agent_task(ctx: dict, payload_dict: dict):
                 "mention_mcp_config_ids": list(payload.mention_mcp_config_ids or []),
                 "mention_app_instance_ids": list(payload.mention_app_instance_ids or []),
                 "parent_task_id": payload.parent_task_id,
+                "assist_to_build_workflow": _assist_to_build_workflow,
             }
+
+            if _assist_to_build_workflow:
+                from .services.assist_to_build import model_visible_tools
+
+                context["model_visible_tools"] = list(model_visible_tools(context) or ())
 
             # Inject MCP server configs so adapter executors can connect per-call
             if mcp_context and mcp_context.get("mcp_configs"):
@@ -1324,12 +1392,18 @@ async def execute_agent_task(ctx: dict, payload_dict: dict):
                     "completion_reason": "in_progress",
                     "executed_by": "worker",
                     "task_id": task_id,
+                    **(
+                        {"assist_to_build_workflow": _assist_to_build_workflow}
+                        if _assist_to_build_workflow
+                        else {}
+                    ),
                 },
             )
             db.add(assistant_message)
             await db.commit()
             await db.refresh(assistant_message)
             message_id = assistant_message.id
+            context["assistant_message_id"] = message_id
 
             # Back-fill ticket → message FK so the AgentTask row points to
             # the assistant Message created above.
@@ -1761,7 +1835,7 @@ async def execute_agent_task(ctx: dict, payload_dict: dict):
                     )
                 else:
                     stale_msg.content = final_response or "Agent task completed."
-                    stale_msg.message_metadata = {
+                    final_metadata = {
                         "agent_mode": True,
                         "agent_type": agent_model.agent_type,
                         "iterations": iterations,
@@ -1779,6 +1853,21 @@ async def execute_agent_task(ctx: dict, payload_dict: dict):
                         # Steps are now in agent_steps table, not here
                         "steps_table": True,
                     }
+                    if _assist_to_build_workflow:
+                        from .services.assist_to_build import merge_workflow_metadata
+
+                        final_metadata = merge_workflow_metadata(
+                            {
+                                **final_metadata,
+                                "assist_to_build_workflow": (
+                                    (stale_msg.message_metadata or {}).get(
+                                        "assist_to_build_workflow"
+                                    )
+                                ),
+                            },
+                            context.get("assist_to_build_workflow"),
+                        )
+                    stale_msg.message_metadata = final_metadata
                     db.add(stale_msg)
 
                 # Update chat status — but skip if our lock was stolen.

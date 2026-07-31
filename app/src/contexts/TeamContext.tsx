@@ -36,9 +36,15 @@ interface TeamContextValue {
   membership: { role: string } | null;
   /** Frontend-only permission check (UX gating — backend always enforces). */
   can: (permission: string) => boolean;
-  /** Active-team product access for editors and viewers. */
+  /** Effective team feature capabilities. The backend remains authoritative. */
   canAccessMarketplace: boolean;
   canAccessAutomations: boolean;
+  /** Effective platform permission to create a Team; backend remains authoritative. */
+  canCreateTeams: boolean;
+  /** Effective platform permission to create a Workspace; backend remains authoritative. */
+  canCreateWorkspaces: boolean;
+  /** Whether the optional connection setup cards are shown on Home. */
+  showHomeConnectionCards: boolean;
   loading: boolean;
   refreshTeams: () => Promise<void>;
   /** Increments on every team switch — use in useEffect deps to trigger re-fetches. */
@@ -53,17 +59,29 @@ export function TeamProvider({ children }: { children: React.ReactNode }) {
   const [activeTeam, setActiveTeam] = useState<TeamList | null>(null);
   const [loading, setLoading] = useState(true);
   const [teamSwitchKey, setTeamSwitchKey] = useState(0);
+  const [canCreateTeams, setCanCreateTeams] = useState(false);
+  const [canCreateWorkspaces, setCanCreateWorkspaces] = useState(false);
+  const [showHomeConnectionCards, setShowHomeConnectionCards] = useState(false);
 
   const loadTeams = useCallback(async () => {
     if (!isAuthenticated) {
       setTeams([]);
       setActiveTeam(null);
+      setCanCreateTeams(false);
+      setCanCreateWorkspaces(false);
+      setShowHomeConnectionCards(false);
       setLoading(false);
       return;
     }
     try {
-      const data = await teamsApi.list();
+      const [data, capabilities] = await Promise.all([
+        teamsApi.list(),
+        teamsApi.getCapabilities(),
+      ]);
       setTeams(data);
+      setCanCreateTeams(capabilities.can_create_teams);
+      setCanCreateWorkspaces(capabilities.can_create_workspaces);
+      setShowHomeConnectionCards(capabilities.show_home_connection_cards === true);
 
       const savedSlug = localStorage.getItem('tesslate_active_team');
       const saved = data.find((t: TeamList) => t.slug === savedSlug);
@@ -120,6 +138,8 @@ export function TeamProvider({ children }: { children: React.ReactNode }) {
     [membership]
   );
 
+  // Administrators always retain access. Feature flags only grant the two
+  // governed surfaces to non-admin members of the currently active team.
   const isTeamAdmin = membership?.role === 'admin';
   const canAccessMarketplace =
     isTeamAdmin || activeTeam?.marketplace_access_for_non_admins === true;
@@ -136,6 +156,9 @@ export function TeamProvider({ children }: { children: React.ReactNode }) {
         can,
         canAccessMarketplace,
         canAccessAutomations,
+        canCreateTeams,
+        canCreateWorkspaces,
+        showHomeConnectionCards,
         loading,
         refreshTeams: loadTeams,
         teamSwitchKey,

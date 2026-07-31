@@ -144,11 +144,15 @@ async def upload_chat_attachment(
             content={"code": "no_workspace", "message": "Chat has no attached workspace"},
         )
 
-    project = await db.get(Project, chat.project_id)
-    if project is None:
-        raise HTTPException(status_code=404, detail="Workspace not found")
-    if project.owner_id != current_user.id and not getattr(current_user, "is_superuser", False):
-        raise HTTPException(status_code=403, detail="Not authorized for this workspace")
+    # The upload lands in the Workspace's volume, so authorize the write there
+    # through the shared RBAC helper — owner-only refused team editors and,
+    # worse, kept accepting uploads from a member whose access was revoked while
+    # they still held the chat.
+    from ..permissions import Permission, get_project_with_access
+
+    project, _role = await get_project_with_access(
+        db, str(chat.project_id), current_user.id, Permission.FILE_WRITE
+    )
 
     # Fast path: trust the advertised Content-Length when oversized.
     advertised = file.size or 0

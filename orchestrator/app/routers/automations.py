@@ -59,7 +59,7 @@ from ..models_automations import (
     AutomationTrigger,
     InvocationSubject,
 )
-from ..permissions import Permission, get_team_membership
+from ..permissions import Permission, get_team_membership, require_team_feature_access
 from ..schemas_automations import (
     ApprovalResponseIn,
     ApprovalResponseOut,
@@ -87,7 +87,26 @@ from ..services.marketplace_agent_scope import (
 from ..users import current_active_user
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/api/automations", tags=["automations"])
+
+
+async def require_automations_feature_access(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(current_active_user),
+) -> None:
+    """Keep Automation controls admin-only unless the active team opts in."""
+    await require_team_feature_access(
+        db,
+        user,
+        setting_name="automations_access_for_non_admins",
+        feature_name="Automations",
+    )
+
+
+router = APIRouter(
+    prefix="/api/automations",
+    tags=["automations"],
+    dependencies=[Depends(require_automations_feature_access)],
+)
 
 
 # ---------------------------------------------------------------------------

@@ -61,6 +61,7 @@ from ..models import (
     WorkflowTemplate,
 )
 from ..models_team import TeamMembership
+from ..permissions import require_active_team_administrator
 from ..services.credential_manager import get_credential_manager, safe_decrypt_token
 from ..services.marketplace_client import (
     LOCAL_URL_PREFIX,
@@ -73,7 +74,20 @@ from ..services.marketplace_sync import MarketplaceSyncWorker
 from ..users import current_active_user, current_superuser
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/api/marketplace/sources", tags=["marketplace-sources"])
+
+
+async def require_marketplace_sources_feature_access(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(current_active_user),
+) -> None:
+    await require_active_team_administrator(db, user)
+
+
+router = APIRouter(
+    prefix="/api/marketplace/sources",
+    tags=["marketplace-sources"],
+    dependencies=[Depends(require_marketplace_sources_feature_access)],
+)
 
 
 # ---------------------------------------------------------------------------

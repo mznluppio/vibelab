@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..config import get_settings
 from ..database import get_db
 from ..models import User, UserAPIKey
+from ..permissions import require_active_team_administrator
 from ..services.deployment_encryption import (
     DeploymentEncryptionError,
     get_deployment_encryption_service,
@@ -22,6 +23,14 @@ from ..users import current_active_user
 logger = logging.getLogger(__name__)
 router = APIRouter()
 settings = get_settings()
+
+
+async def require_technical_settings_access(
+    current_user: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Keep personal provider and API-key configuration team-admin only."""
+    await require_active_team_administrator(db, current_user)
 
 
 async def _require_byok(user: User, db: AsyncSession) -> None:
@@ -71,7 +80,7 @@ def decode_key(encoded: str) -> str:
         raise
 
 
-@router.get("/api-keys")
+@router.get("/api-keys", dependencies=[Depends(require_technical_settings_access)])
 async def list_api_keys(
     provider: str | None = None,
     current_user: User = Depends(current_active_user),
@@ -115,7 +124,7 @@ async def list_api_keys(
     }
 
 
-@router.post("/api-keys")
+@router.post("/api-keys", dependencies=[Depends(require_technical_settings_access)])
 async def add_api_key(
     provider: str = Body(
         ..., description="Provider name (openrouter, anthropic, openai, google, etc.)"
@@ -200,7 +209,7 @@ async def add_api_key(
     }
 
 
-@router.put("/api-keys/{key_id}")
+@router.put("/api-keys/{key_id}", dependencies=[Depends(require_technical_settings_access)])
 async def update_api_key(
     key_id: str,
     api_key: str | None = Body(None, description="New API key value"),
@@ -246,7 +255,7 @@ async def update_api_key(
     return {"message": "API key updated successfully", "key_id": key_id, "success": True}
 
 
-@router.delete("/api-keys/{key_id}")
+@router.delete("/api-keys/{key_id}", dependencies=[Depends(require_technical_settings_access)])
 async def delete_api_key(
     key_id: str,
     current_user: User = Depends(current_active_user),
@@ -275,7 +284,7 @@ async def delete_api_key(
     return {"message": "API key deleted successfully", "success": True}
 
 
-@router.get("/api-keys/{key_id}")
+@router.get("/api-keys/{key_id}", dependencies=[Depends(require_technical_settings_access)])
 async def get_api_key(
     key_id: str,
     reveal: bool = False,
@@ -314,7 +323,7 @@ async def get_api_key(
     }
 
 
-@router.get("/providers")
+@router.get("/providers", dependencies=[Depends(require_technical_settings_access)])
 async def list_supported_providers(current_user: User = Depends(current_active_user)):
     """
     List all supported LLM providers and their configuration.
@@ -368,7 +377,7 @@ async def list_supported_providers(current_user: User = Depends(current_active_u
 # =============================================================================
 
 
-@router.get("/providers/custom")
+@router.get("/providers/custom", dependencies=[Depends(require_technical_settings_access)])
 async def list_custom_providers(
     current_user: User = Depends(current_active_user), db: AsyncSession = Depends(get_db)
 ):
@@ -407,7 +416,7 @@ async def list_custom_providers(
     }
 
 
-@router.post("/providers/custom")
+@router.post("/providers/custom", dependencies=[Depends(require_technical_settings_access)])
 async def create_custom_provider(
     name: str = Body(..., description="Display name for the provider"),
     slug: str = Body(..., description="URL-safe identifier (e.g., 'my-ollama')"),
@@ -511,7 +520,7 @@ async def create_custom_provider(
     }
 
 
-@router.put("/providers/custom/{provider_id}")
+@router.put("/providers/custom/{provider_id}", dependencies=[Depends(require_technical_settings_access)])
 async def update_custom_provider(
     provider_id: str,
     name: str | None = Body(None, description="New display name"),
@@ -565,7 +574,7 @@ async def update_custom_provider(
     }
 
 
-@router.delete("/providers/custom/{provider_id}")
+@router.delete("/providers/custom/{provider_id}", dependencies=[Depends(require_technical_settings_access)])
 async def delete_custom_provider(
     provider_id: str,
     current_user: User = Depends(current_active_user),

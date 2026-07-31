@@ -12,6 +12,8 @@ from uuid import UUID, uuid4
 
 import pytest
 
+from tests._test_database import get_test_database_url
+
 _loop: asyncio.AbstractEventLoop | None = None
 
 
@@ -40,7 +42,7 @@ async def _create_project_with_containers(
     from app.models_team import TeamMembership
 
     engine = create_async_engine(
-        "postgresql+asyncpg://tesslate_test:testpass@localhost:5433/tesslate_test",
+        get_test_database_url(),
         pool_pre_ping=True,
     )
     Session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
@@ -96,7 +98,7 @@ async def _exec(project_id: UUID) -> dict:
     )
 
     engine = create_async_engine(
-        "postgresql+asyncpg://tesslate_test:testpass@localhost:5433/tesslate_test",
+        get_test_database_url(),
         pool_pre_ping=True,
     )
     Session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)

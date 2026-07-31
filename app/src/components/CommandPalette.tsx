@@ -66,6 +66,7 @@ import {
   Sun,
 } from '@phosphor-icons/react';
 import { useCommands, type CommandHandlers } from '../contexts/CommandContext';
+import { useTeam } from '../contexts/TeamContext';
 import {
   shortcutGroups,
   getContextFromPath,
@@ -502,6 +503,7 @@ export function CommandPalette({ onShowShortcuts }: CommandPaletteProps) {
   const location = useLocation();
   const navigate = useNavigate();
   const { executeCommand, isCommandAvailable } = useCommands();
+  const { canAccessMarketplace, canAccessAutomations, membership } = useTeam();
 
   const [recent, setRecent] = useState<string[]>(() => loadJson(RECENT_KEY, []));
   const [frequency, setFrequency] = useState<Record<string, number>>(() =>
@@ -574,12 +576,28 @@ export function CommandPalette({ onShowShortcuts }: CommandPaletteProps) {
     };
     return shortcutGroups.flatMap((group) =>
       group.shortcuts
+        .filter((shortcut) => {
+          if (shortcut.id === 'go-marketplace') return canAccessMarketplace;
+          if (shortcut.id === 'go-automations') return canAccessAutomations;
+          if (shortcut.id === 'settings-api-keys') return membership?.role === 'admin';
+          return true;
+        })
         .map((s) => ({ shortcut: s, action: resolveAction(s.id, deps) }))
         .filter((entry): entry is { shortcut: ShortcutDefinition; action: () => void } =>
           entry.action !== null
         )
     );
-  }, [navigate, executeCommand, isCommandAvailable, onShowShortcuts, enterBrowseMode, closePalette]);
+  }, [
+    navigate,
+    executeCommand,
+    isCommandAvailable,
+    onShowShortcuts,
+    enterBrowseMode,
+    closePalette,
+    canAccessMarketplace,
+    canAccessAutomations,
+    membership?.role,
+  ]);
 
   // Filter by current context (unless in browse-all mode).
   const contextItems = useMemo(() => {

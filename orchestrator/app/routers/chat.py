@@ -185,6 +185,18 @@ async def create_chat(
     title = chat_data.get("title")
     explicit_project_id = project_id is not None
 
+    if explicit_project_id:
+        # A chat is a Workspace child resource, and the agent acts on the
+        # Workspace it is attached to — so the caller must be authorized on
+        # the target Workspace before the chat is created, not merely
+        # authenticated.
+        from ..permissions import get_project_with_access
+
+        project, _role = await get_project_with_access(
+            db, str(project_id), current_user.id, Permission.CHAT_SEND
+        )
+        project_id = project.id
+
     if not explicit_project_id:
         from ..services.lazy_chat_workspace import ensure_user_default_workspace
 
@@ -406,14 +418,12 @@ async def update_chat_project(
 
     project_id = data.get("project_id")
     if project_id:
-        # Verify user owns the project
-        project_result = await db.execute(
-            select(Project).where(
-                Project.id == UUID(project_id), Project.owner_id == current_user.id
-            )
-        )
-        if not project_result.scalar_one_or_none():
-            raise HTTPException(status_code=404, detail="Project not found")
+        # Authorize against the shared Workspace RBAC helper rather than
+        # owner-only: a team editor may legitimately connect a chat to a
+        # Workspace they do not own, and a revoked member must be refused.
+        from ..permissions import get_project_with_access
+
+        await get_project_with_access(db, str(project_id), current_user.id, Permission.CHAT_SEND)
         enforce_project_scope(current_user, UUID(project_id))
         enforce_permission_scope(current_user, Permission.CHAT_SEND)
         chat.project_id = UUID(project_id)
@@ -432,6 +442,12 @@ async def list_chat_sessions(
 ):
     """List all chat sessions for a project with status and message count."""
     from sqlalchemy import func as sa_func
+
+    # Resolve the parent Workspace first: own-chat scoping alone would keep
+    # serving history after the caller's access to the Workspace is revoked.
+    from ..permissions import get_project_with_access
+
+    await get_project_with_access(db, project_id, current_user.id, Permission.CHAT_VIEW)
 
     result = await db.execute(
         select(
@@ -1536,6 +1552,7 @@ async def handle_agent_approval(
 
     approval_id = approval_data.get("approval_id")
     response = approval_data.get("response")  # 'allow_once', 'allow_all', 'stop'
+    comment = approval_data.get("comment")
 
     if not approval_id or not response:
         raise HTTPException(status_code=400, detail="approval_id and response are required")
@@ -1544,10 +1561,11 @@ async def handle_agent_approval(
 
     # Try local first (in-process agent execution / same pod)
     approval_mgr = get_approval_manager()
-    approval_mgr.respond_to_approval(approval_id, response)
+    delivered_response = {"response": response, "comment": comment} if comment else response
+    approval_mgr.respond_to_approval(approval_id, delivered_response)
 
     # Also publish to Redis so workers on other pods receive the approval
-    await publish_approval_response(approval_id, response)
+    await publish_approval_response(approval_id, delivered_response)
 
     return {"success": True, "message": "Approval response processed"}
 
@@ -1596,17 +1614,19 @@ async def agent_chat_stream(
             container_directory = None
 
             if not request.project_id:
-                from ..services.lazy_chat_workspace import ensure_user_default_workspace
+                selected_agent = await db.get(MarketplaceAgent, request.agent_id) if request.agent_id else None
+                if selected_agent is None or selected_agent.slug != "assist-to-build":
+                    from ..services.lazy_chat_workspace import ensure_user_default_workspace
 
-                try:
-                    workspace = await ensure_user_default_workspace(current_user.id, db)
-                    request.project_id = workspace.id
-                    await db.commit()
-                except LookupError:
-                    logger.warning(
-                        "agent_chat_stream: user=%s has no personal team; running project-less",
-                        current_user.id,
-                    )
+                    try:
+                        workspace = await ensure_user_default_workspace(current_user.id, db)
+                        request.project_id = workspace.id
+                        await db.commit()
+                    except LookupError:
+                        logger.warning(
+                            "agent_chat_stream: user=%s has no personal team; running project-less",
+                            current_user.id,
+                        )
 
             if request.project_id:
                 # Verify project access via RBAC
@@ -1820,6 +1840,9 @@ async def agent_chat_stream(
                     view_context=view_context,
                     project_id=request.project_id,
                     container_id=request.container_id,
+                    base_tool_names=(
+                        agent_model.tools if isinstance(getattr(agent_model, "tools", None), list) else None
+                    ),
                 )
                 logger.info(
                     f"[SSE-AGENT] Created view-scoped registry for view: {view_context.value}"
@@ -2434,7 +2457,18 @@ async def subscribe_agent_events(
     """Subscribe to agent events via SSE. Supports reconnection with last_event_id."""
     from starlette.responses import StreamingResponse as StarletteStreamingResponse
 
+    from ..database import AsyncSessionLocal
+    from ..permissions import require_agent_task_access
     from ..services.pubsub import get_pubsub
+
+    # Agent event streams are keyed by task_id alone, so authorize before
+    # subscribing: the task must belong to the caller and the caller must still
+    # have access to the Workspace it runs against. Runs in the connection
+    # handler, so a reconnect re-checks. Uses its own short-lived session rather
+    # than a request-scoped one, which an SSE response would pin for the whole
+    # stream.
+    async with AsyncSessionLocal() as auth_db:
+        await require_agent_task_access(task_id, current_user.id, auth_db)
 
     pubsub = get_pubsub()
     if not pubsub:

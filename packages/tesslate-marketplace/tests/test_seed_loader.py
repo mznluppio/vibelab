@@ -72,6 +72,27 @@ def test_seeds_directory_has_content() -> None:
     assert not missing, f"seed catalogue is missing kinds: {missing}"
 
 
+def test_default_theme_variants_use_vibelab_branding() -> None:
+    """The light/dark fallback pair must never reintroduce Tesslate orange."""
+    themes = {
+        entry["slug"]: entry
+        for entry in _read_all_seed_entries()
+        if entry.get("kind") == "theme" and entry.get("slug") in {"default-dark", "default-light"}
+    }
+
+    assert set(themes) == {"default-dark", "default-light"}
+    for slug, mode in (("default-dark", "dark"), ("default-light", "light")):
+        theme = themes[slug]
+        metadata = theme["extra_metadata"]
+        colors = metadata["theme_json"]["colors"]
+
+        assert theme["name"] == f"VibeLab {mode.title()}"
+        assert metadata["mode"] == mode
+        assert metadata["author"] == "VibeLab by Legrand"
+        assert colors["primary"] == "#0055A4"
+        assert colors["accent"] == "#00A3E0"
+
+
 # ---------------------------------------------------------------------------
 # load_seed_entries — pure file reader.
 # ---------------------------------------------------------------------------
@@ -125,6 +146,43 @@ async def test_load_seeds_populates_fresh_database(env) -> None:
             kind = entry["kind"]
             per_kind_seed[kind] = per_kind_seed.get(kind, 0) + 1
         assert per_kind_db == per_kind_seed
+
+
+@pytest.mark.asyncio
+async def test_load_seeds_uses_configured_hub_name_for_official_creator(env) -> None:
+    """Visible first-party provenance follows the hub name, not its handle."""
+    await load_seeds()
+
+    async with session_scope() as session:
+        agent = (
+            await session.execute(select(Item).where(Item.slug == "tesslate-agent"))
+        ).scalar_one()
+
+    # The fixture deliberately uses a non-production name to prove that this
+    # is configuration-driven; the stable `tesslate` owner handle is retained.
+    assert agent.creator_handle == "tesslate"
+    assert agent.creator_display_name == "Tesslate Test Hub"
+
+
+@pytest.mark.asyncio
+async def test_load_seeds_includes_assist_to_build_official_agent(env) -> None:
+    """The workflow agent remains a normal, installable official catalog item."""
+    await load_seeds()
+
+    async with session_scope() as session:
+        agent = (
+            await session.execute(select(Item).where(Item.slug == "assist-to-build"))
+        ).scalar_one()
+
+    assert agent.kind == "agent"
+    assert agent.creator_handle == "tesslate"
+    assert agent.creator_display_name == "Tesslate Test Hub"
+    async with session_scope() as session:
+        version = (
+            await session.execute(select(ItemVersion).where(ItemVersion.item_id == agent.id))
+        ).scalar_one()
+    assert version.manifest["mode"] == "agent"
+    assert version.manifest["is_forkable"] is False
 
 
 @pytest.mark.asyncio

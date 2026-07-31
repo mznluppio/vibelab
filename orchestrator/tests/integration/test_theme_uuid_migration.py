@@ -30,7 +30,6 @@ existed (silent fail). A purpose-built DB lets the test prove the
 from __future__ import annotations
 
 import contextlib
-import socket
 import subprocess
 import sys
 import uuid
@@ -54,43 +53,35 @@ sys.path.insert(0, str(ORCHESTRATOR_DIR))
 
 from app import models, models_automations  # noqa: E402,F401 — register tables
 from app.types.guid import GUID  # noqa: E402
+from tests._test_database import (  # noqa: E402
+    get_test_database_url,
+    probe_test_database,
+    sibling_database_url,
+)
 
 # ---------------------------------------------------------------------------
 # Test database (independent of the shared ``tesslate_test`` so the alembic
 # upgrade can run from a clean state).
 # ---------------------------------------------------------------------------
 
-_TEST_PG_HOST = "localhost"
-_TEST_PG_PORT = 5433
-_TEST_PG_USER = "tesslate_test"
-_TEST_PG_PASSWORD = "testpass"
 _TEST_PG_ADMIN_DB = "postgres"
 _PROBE_DB_NAME = "tesslate_theme_uuid_migration"
 
-_PROBE_PG_URL = (
-    f"postgresql+asyncpg://{_TEST_PG_USER}:{_TEST_PG_PASSWORD}"
-    f"@{_TEST_PG_HOST}:{_TEST_PG_PORT}/{_PROBE_DB_NAME}"
-)
-_ADMIN_PG_URL = (
-    f"postgresql+asyncpg://{_TEST_PG_USER}:{_TEST_PG_PASSWORD}"
-    f"@{_TEST_PG_HOST}:{_TEST_PG_PORT}/{_TEST_PG_ADMIN_DB}"
-)
+# Same server as the shared test database, different database name. Derived
+# rather than hardcoded: this module issues DROP/CREATE DATABASE, so it must
+# only ever reach the verified test server — never a developer's own Postgres
+# that happens to hold the default port.
+_PROBE_PG_URL = sibling_database_url(_PROBE_DB_NAME)
+_ADMIN_PG_URL = sibling_database_url(_TEST_PG_ADMIN_DB)
 
-
-def _postgres_reachable() -> bool:
-    try:
-        with socket.create_connection((_TEST_PG_HOST, _TEST_PG_PORT), timeout=2):
-            return True
-    except OSError:
-        return False
-
+_test_server_ok, _test_server_reason = probe_test_database(get_test_database_url())
 
 pytestmark = [
     pytest.mark.integration,
     pytest.mark.skipif(
-        not _postgres_reachable(),
+        not _test_server_ok,
         reason=(
-            "Test Postgres on localhost:5433 is not reachable. "
+            f"Test Postgres is not reachable ({_test_server_reason}). "
             "Bring it up with: docker compose -f docker-compose.test.yml up -d postgres-test"
         ),
     ),

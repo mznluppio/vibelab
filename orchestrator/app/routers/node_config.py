@@ -35,6 +35,7 @@ from ..auth_unified import get_authenticated_user
 from ..database import get_db
 from ..models import Container, Project, User
 from ..models_team import AuditLog
+from ..permissions import Permission, get_project_with_access
 from ..services.audit_service import log_event
 from ..services.deployment_encryption import (
     DeploymentEncryptionError,
@@ -329,7 +330,12 @@ async def _find_pending(input_id: str):
 
 
 async def _verify_input_ownership(db: AsyncSession, current_user: User, input_id: str) -> dict:
-    """Verify the user owns the project tied to this pending input."""
+    """Authorize the caller on the Workspace tied to this pending input.
+
+    Owner-only would lock out the team editors and workspace members who are
+    expected to answer a paused agent's config prompt, so this defers to the
+    shared Workspace RBAC helper instead.
+    """
     manager, _ = await _find_pending(input_id)
     req = manager._pending.get(input_id)  # noqa: SLF001 — internal hook for auth
     if req is None or req.kind != "node_config":
@@ -338,11 +344,9 @@ async def _verify_input_ownership(db: AsyncSession, current_user: User, input_id
     project_id = req.metadata.get("project_id")
     if not project_id:
         raise HTTPException(status_code=404, detail="Pending input has no project")
-    project = await db.get(Project, UUID(str(project_id)))
-    if project is None:
-        raise HTTPException(status_code=404, detail="Project not found")
-    if project.owner_id != current_user.id and not getattr(current_user, "is_superuser", False):
-        raise HTTPException(status_code=403, detail="Not authorized for this project")
+    await get_project_with_access(
+        db, str(project_id), current_user.id, Permission.CREDENTIALS_MANAGE
+    )
     return req.metadata
 
 
@@ -396,11 +400,11 @@ async def _load_container_for_user(
     project_id: UUID,
     container_id: UUID,
 ) -> tuple[Project, Container]:
-    project = await db.get(Project, project_id)
-    if project is None:
-        raise HTTPException(status_code=404, detail="Project not found")
-    if project.owner_id != current_user.id and not getattr(current_user, "is_superuser", False):
-        raise HTTPException(status_code=403, detail="Not authorized for this project")
+    # Shared Workspace RBAC rather than owner-only: editing a container's env
+    # vars and secrets is credential management inside that Workspace.
+    project, _role = await get_project_with_access(
+        db, str(project_id), current_user.id, Permission.CREDENTIALS_MANAGE
+    )
     container = await db.get(Container, container_id)
     if container is None or container.project_id != project.id:
         raise HTTPException(status_code=404, detail="Container not found")
@@ -444,11 +448,11 @@ async def get_project_config(
     Container.environment_vars + Container.encrypted_secrets stay the source
     of truth; the schema is rebuilt per request so preset changes propagate.
     """
-    project = await db.get(Project, project_id)
-    if project is None:
-        raise HTTPException(status_code=404, detail="Project not found")
-    if project.owner_id != current_user.id and not getattr(current_user, "is_superuser", False):
-        raise HTTPException(status_code=403, detail="Not authorized for this project")
+    # Values are masked below, but the schema still describes the Workspace's
+    # configuration, so gate the read on the shared Workspace RBAC helper.
+    project, _role = await get_project_with_access(
+        db, str(project_id), current_user.id, Permission.CREDENTIALS_VIEW
+    )
 
     rows = await db.execute(select(Container).where(Container.project_id == project_id))
     containers = list(rows.scalars().all())

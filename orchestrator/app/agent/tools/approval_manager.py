@@ -386,7 +386,7 @@ class ApprovalManager(PendingUserInputManager):
 # ---------------------------------------------------------------------------
 
 
-async def publish_approval_response(approval_id: str, response: str) -> None:
+async def publish_approval_response(approval_id: str, response: Any) -> None:
     """Publish an approval response to Redis for cross-pod delivery."""
     await _publish_response(approval_id, response, channel=APPROVAL_CHANNEL, kind="approval")
 

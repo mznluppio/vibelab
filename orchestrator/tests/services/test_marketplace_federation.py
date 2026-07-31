@@ -40,6 +40,7 @@ from app.services.marketplace_federation import (
     live_resolve,
     mcp_install_prompt,
 )
+from tests._test_database import get_test_database_url
 
 # ---------------------------------------------------------------------------
 # install_guard matrix
@@ -675,7 +676,7 @@ def test_mcp_install_prompt_tolerates_garbage_input() -> None:
 @pytest_asyncio.fixture
 async def db_session() -> AsyncSession:
     engine = create_async_engine(
-        "postgresql+asyncpg://tesslate_test:testpass@localhost:5433/tesslate_test",
+        get_test_database_url(),
         future=True,
     )
     SessionFactory = async_sessionmaker(engine, expire_on_commit=False)

@@ -11,6 +11,7 @@ import type {
 } from '../types/agent';
 import type { ChatAgent } from '../types/chat';
 import type { EditMode } from '../components/chat/EditModeStatus';
+import type { AssistToBuildReviewResponse, AssistToBuildReviewSummary } from '../components/chat/AssistToBuildReviewCard';
 import { nodeConfigEvents } from '../utils/nodeConfigEvents';
 import type {
   ArchitectureNodeAddedEvent,
@@ -81,7 +82,7 @@ export interface BuilderReviewSummary {
 
 export interface ChatMessage {
   id: string;
-  type: 'user' | 'ai' | 'approval_request' | 'builder_review_request' | 'workspace_attach_request';
+  type: 'user' | 'ai' | 'approval_request' | 'builder_review_request' | 'assist_to_build_review_request' | 'workspace_attach_request';
   content: string;
   attachments?: SerializedAttachment[];
   agentData?: AgentMessageData;
@@ -96,6 +97,8 @@ export interface ChatMessage {
   // BuilderReviewCard render. The summary shape mirrors the dict the
   // `request_review` agent tool emits.
   builderReviewSummary?: BuilderReviewSummary;
+  assistToBuildReviewSummary?: AssistToBuildReviewSummary;
+  assistToBuildReviewResponse?: AssistToBuildReviewResponse;
   // Set on `workspace_attach_request` messages — driven by the
   // `workspace_attach_required` SSE event. Surfaces the
   // WorkspaceAttachCard in agent-prompt mode.
@@ -480,6 +483,14 @@ export function useAgentChat({
                     builderReviewSummary: (approvalData.summary || {}) as BuilderReviewSummary,
                   },
                 ]);
+              } else if (approvalData.kind === 'assist_to_build_review') {
+                setMessages((prev) => [...prev, {
+                  id: `assist-to-build-review-${crypto.randomUUID()}`,
+                  type: 'assist_to_build_review_request',
+                  content: '',
+                  approvalId: approvalData.approval_id,
+                  assistToBuildReviewSummary: approvalData.summary as AssistToBuildReviewSummary,
+                }]);
               } else if (editModeRef.current === 'allow') {
                 chatApi
                   .sendApprovalResponse(approvalData.approval_id, 'allow_all')
@@ -890,6 +901,14 @@ export function useAgentChat({
                     | undefined) ?? { name: '' },
                 };
                 setMessages((prev) => [...prev, reviewMessage]);
+              } else if (approvalKind === 'assist_to_build_review') {
+                setMessages((prev) => [...prev, {
+                  id: `assist-to-build-review-${crypto.randomUUID()}`,
+                  type: 'assist_to_build_review_request',
+                  content: '',
+                  approvalId: event.data.approval_id as string,
+                  assistToBuildReviewSummary: event.data.summary as AssistToBuildReviewSummary,
+                }]);
               } else if (editModeRef.current === 'allow') {
                 chatApi
                   .sendApprovalResponse(event.data.approval_id as string, 'allow_all')
@@ -1014,22 +1033,25 @@ export function useAgentChat({
         | 'allow_all'
         | 'stop'
         | 'publish_and_activate'
-        | 'save_draft'
-        | 'cancel'
+      | 'save_draft'
+      | 'cancel'
+      | 'approve_as_is'
+      | 'approve_to_be_and_build'
+      | 'request_changes',
+      comment?: string,
     ) => {
       try {
-        await chatApi.sendApprovalResponse(approvalId, response);
+        await chatApi.sendApprovalResponse(approvalId, response, comment);
       } catch (err) {
         console.error('[APPROVAL] Failed to send response:', err);
       }
       setMessages((prev) =>
-        prev.filter(
-          (msg) =>
-            !(
-              (msg.type === 'approval_request' || msg.type === 'builder_review_request') &&
-              msg.approvalId === approvalId
-            )
-        )
+        prev.flatMap((msg) => {
+          if (msg.type === 'assist_to_build_review_request' && msg.approvalId === approvalId) {
+            return [{ ...msg, assistToBuildReviewResponse: response as AssistToBuildReviewResponse }];
+          }
+          return (msg.type === 'approval_request' || msg.type === 'builder_review_request') && msg.approvalId === approvalId ? [] : [msg];
+        })
       );
     },
     []

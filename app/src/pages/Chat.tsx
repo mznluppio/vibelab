@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useLocation } from 'react-router-dom';
-import { MoodyFace } from '../components/ui/MoodyFace';
 import toast from 'react-hot-toast';
 import { ChatSessionSidebar } from '../components/chat/ChatSessionSidebar';
 import { ChatTopBar } from '../components/chat/ChatTopBar';
+import { MoodyFace } from '../components/ui/MoodyFace';
 import { ChatMessageList } from '../components/chat/ChatMessageList';
 import { ChatInput } from '../components/chat/ChatInput';
 import { ProjectConnector } from '../components/chat/ProjectConnector';
@@ -21,6 +21,9 @@ const LANDING_SUGGESTIONS = [
   'Map our incident escalation process',
   'Prepare a weekly operations report',
   'Design a customer onboarding workflow',
+  'Build a quarterly KPI reporting page',
+  'Design a client onboarding workflow',
+  'Create an incident tracking and escalation page',
 ];
 
 export default function Chat() {
@@ -360,10 +363,14 @@ export default function Chat() {
         | 'stop'
         | 'publish_and_activate'
         | 'save_draft'
-        | 'cancel',
-      toolName: string
+        | 'cancel'
+        | 'approve_as_is'
+        | 'approve_to_be_and_build'
+        | 'request_changes',
+      toolName: string,
+      comment?: string
     ) => {
-      await handleApproval(approvalId, response);
+      await handleApproval(approvalId, response, comment);
       const WRITE_TOOLS = new Set(['write_file', 'patch_file', 'multi_edit']);
       if (response === 'allow_all' && WRITE_TOOLS.has(toolName)) {
         setEditMode('allow');
@@ -539,11 +546,14 @@ export default function Chat() {
               </div>
             </div>
 
+            {/* No overflow clipping and no border of its own: the input owns its
+                frame (see PromptInputPulsingBorder) and its toolbar drop-ups
+                (edit mode, "+", settings, mentions) open upwards past this box. */}
             <div
               className="absolute left-1/2 -translate-x-1/2 bottom-6 z-30
                          w-[min(760px,calc(100%-48px))]
-                         bg-[var(--bg)] border border-[var(--border-hover)]
-                         rounded-[var(--radius)] overflow-hidden
+                         bg-[var(--bg)]
+                         rounded-[var(--radius)]
                          max-md:bottom-0 max-md:left-0 max-md:right-0 max-md:translate-x-0
                          max-md:w-full max-md:rounded-b-none"
             >

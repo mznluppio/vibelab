@@ -38,6 +38,29 @@ router = APIRouter(prefix="/api/deployment-oauth", tags=["deployment-oauth"])
 
 
 # ============================================================================
+# Shared authorization helper
+# ============================================================================
+
+
+async def _authorize_credential_scope(
+    db: AsyncSession, user: User, project_id: UUID | None
+) -> None:
+    """Verify the caller may bind a credential to *project_id*.
+
+    ``project_id`` is client-supplied and is persisted on the resulting
+    ``DeploymentCredential``, which the deployment pipeline later reads for that
+    Workspace — so an unchecked value lets a credential be planted in, or
+    shadowed for, someone else's Workspace. No-op for account-wide credentials.
+    """
+    if project_id is None:
+        return
+
+    from ..permissions import Permission, get_project_with_access
+
+    await get_project_with_access(db, str(project_id), user.id, Permission.CREDENTIALS_MANAGE)
+
+
+# ============================================================================
 # Shared HTML response helpers
 # ============================================================================
 
@@ -128,6 +151,7 @@ async def vercel_authorize(
         None, description="Optional project ID for project-specific credential"
     ),
     current_user: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db),
 ):
     """
     Initiate Vercel OAuth flow.
@@ -143,6 +167,13 @@ async def vercel_authorize(
         JSON with auth_url to redirect to
     """
     settings = get_settings()
+
+    # ``project_id`` ends up on the resulting DeploymentCredential, so a
+    # Workspace-scoped credential must only be attachable to a Workspace the
+    # caller may configure. Checked here rather than in the callback because the
+    # state token is signed: whatever is verified now cannot be tampered with
+    # later in the flow.
+    await _authorize_credential_scope(db, current_user, project_id)
 
     # Check if Vercel OAuth is configured
     if not settings.vercel_client_id or not settings.vercel_oauth_redirect_uri:
@@ -414,6 +445,7 @@ async def netlify_authorize(
         None, description="Optional project ID for project-specific credential"
     ),
     current_user: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db),
 ):
     """
     Initiate Netlify OAuth flow.
@@ -429,6 +461,9 @@ async def netlify_authorize(
         JSON with auth_url to redirect to
     """
     settings = get_settings()
+
+    # Same Workspace scope check as the Vercel flow.
+    await _authorize_credential_scope(db, current_user, project_id)
 
     # Check if Netlify OAuth is configured
     if not settings.netlify_client_id or not settings.netlify_oauth_redirect_uri:

@@ -1002,13 +1002,14 @@
   {
     "kind": "theme",
     "slug": "default-dark",
-    "name": "Default Dark",
-    "description": "The default VibeLab dark theme with blue accents",
+    "name": "VibeLab Dark",
+    "description": "The official VibeLab dark theme",
     "category": "general",
     "tags": [
       "dark",
       "default",
-      "neutral"
+      "vibelab",
+      "legrand"
     ],
     "icon": "moon",
     "is_active": true,
@@ -1020,6 +1021,7 @@
       "mode": "dark",
       "author": "VibeLab by Legrand",
       "version": "1.0.0",
+      "is_default": true,
       "theme_json": {
         "colors": {
           "primary": "#0055A4",
@@ -1055,7 +1057,7 @@
           },
           "code": {
             "inlineBackground": "rgba(0, 85, 164, 0.1)",
-            "inlineText": "#7dd3fc",
+            "inlineText": "#00A3E0",
             "blockBackground": "rgba(0, 0, 0, 0.4)",
             "blockBorder": "rgba(255, 255, 255, 0.1)",
             "blockText": "#e2e2e2"
@@ -1101,8 +1103,8 @@
   {
     "kind": "theme",
     "slug": "default-light",
-    "name": "Default Light",
-    "description": "The default VibeLab light theme with blue accents",
+    "name": "VibeLab Light",
+    "description": "The official VibeLab light theme",
     "category": "general",
     "tags": [
       "light",

@@ -1,8 +1,13 @@
 """
 Integration test fixtures for real-database testing.
 
-Uses TestClient with real PostgreSQL database on port 5433.
-Environment variables are set by tests/conftest.py before any imports.
+Uses TestClient with a real, disposable PostgreSQL database. Which database that
+is gets decided in ``tests/conftest.py`` (via ``tests/_test_database.py``) before
+any app import; this module only brings the chosen target up. So an unrelated
+PostgreSQL listening on the default port — a developer's local install, another
+project's container — is never mistaken for the test database, never adopted,
+and never stopped or modified. Override with ``TEST_DATABASE_URL`` or
+``TEST_POSTGRES_PORT``.
 """
 
 import contextlib
@@ -20,67 +25,106 @@ orchestrator_dir = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(orchestrator_dir))
 
 
-# Test database connection string (port 5433)
-TEST_DATABASE_URL = "postgresql+asyncpg://tesslate_test:testpass@localhost:5433/tesslate_test"
+from tests._test_database import (
+    TEST_DB_NAME,
+    port_is_listening,
+    probe_test_database,
+    resolve_test_database_url,
+)
+
+# Resolution is idempotent and pins the port in the environment, so calling it
+# here and from tests/conftest.py::pytest_configure yields the same URL. It has
+# to happen at import time: conftests load before pytest_configure, and the app
+# engine is frozen at its own import — see tests/_test_database.py. Fixtures
+# below (migrations, seed helpers) read this.
+TEST_DATABASE_URL = resolve_test_database_url()
 
 
 @pytest.fixture(scope="session", autouse=True)
 def test_db_container():
     """
-    Manage the test PostgreSQL container lifecycle.
+    Bring up the test PostgreSQL the suite was configured to use.
 
-    Checks if postgres is already accepting connections on port 5433
-    (e.g. CI service container). If not, starts docker-compose.test.yml
-    and tears it down after the session.
+    - ``TEST_DATABASE_URL`` set explicitly: used verbatim, and must already be
+      reachable — nothing is started or stopped for a target we don't own.
+    - Otherwise: reuse a genuine test database already on the port (CI service
+      container, manually started compose), else start
+      ``docker-compose.test.yml`` there and tear it down afterwards.
+
+    An unrelated PostgreSQL is never adopted, stopped, or modified.
     """
-    import socket
     import subprocess
     import time
 
     repo_root = Path(__file__).parent.parent.parent.parent
+    port = int(TEST_DATABASE_URL.rsplit(":", 1)[1].split("/")[0])
 
-    # Check if port 5433 is already reachable (e.g., CI service container)
-    def _port_open(port: int = 5433) -> bool:
-        try:
-            with socket.create_connection(("localhost", port), timeout=2):
-                return True
-        except OSError:
-            return False
-
-    if _port_open():
-        # DB already available (CI service or manually started) — skip docker
+    ok, reason = probe_test_database(TEST_DATABASE_URL)
+    if ok:
+        # Already the real thing — reuse without touching its lifecycle.
         yield
         return
 
-    started_by_us = False
-    if not _port_open():
-        result = subprocess.run(
-            ["docker", "compose", "-f", "docker-compose.test.yml", "up", "-d", "--wait"],
-            cwd=repo_root,
-            capture_output=True,
-            text=True,
+    if os.environ.get("TEST_DATABASE_URL"):
+        raise RuntimeError(
+            f"TEST_DATABASE_URL is set but is not a usable test database: {reason}\n"
+            f"  URL: {TEST_DATABASE_URL}\n"
+            "Point it at a disposable PostgreSQL whose database is named "
+            f"{TEST_DB_NAME!r}, or unset it to let the suite start its own."
         )
-        if result.returncode != 0:
-            raise RuntimeError(f"Failed to start test DB: {result.stderr}")
-        started_by_us = True
 
-        # Wait for postgres to accept connections
-        for _ in range(30):
-            if _port_open():
-                break
-            time.sleep(1)
-        else:
-            raise RuntimeError("Test postgres did not become ready in 30s")
+    # Port taken by something that isn't our database: refuse rather than
+    # adopt it. Only reachable when TEST_POSTGRES_PORT was set by hand —
+    # auto-resolution already stepped aside from occupied ports.
+    if port_is_listening(port):
+        raise RuntimeError(
+            f"TEST_POSTGRES_PORT={port} is occupied by a server that is not the "
+            f"test database ({reason}).\n"
+            "Free that port, choose another via TEST_POSTGRES_PORT, or set "
+            "TEST_DATABASE_URL to an existing test database."
+        )
 
-    yield
+    compose_env = {**os.environ, "TEST_POSTGRES_PORT": str(port)}
+    result = subprocess.run(
+        ["docker", "compose", "-f", "docker-compose.test.yml", "up", "-d", "--wait"],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        env=compose_env,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"Failed to start test DB on port {port}: {result.stderr}\n"
+            "If a stale container is holding the name or port, remove it with "
+            "`docker compose -f docker-compose.test.yml down -v`."
+        )
 
-    # Tear down only if we started it
-    if started_by_us:
+    last_reason = "not ready"
+    for _ in range(30):
+        ok, last_reason = probe_test_database(TEST_DATABASE_URL)
+        if ok:
+            break
+        time.sleep(1)
+    else:
         subprocess.run(
             ["docker", "compose", "-f", "docker-compose.test.yml", "down", "-v"],
             cwd=repo_root,
             capture_output=True,
+            env=compose_env,
         )
+        raise RuntimeError(
+            f"Test postgres on port {port} did not become ready in 30s: {last_reason}"
+        )
+
+    yield
+
+    # Tear down only the container we started.
+    subprocess.run(
+        ["docker", "compose", "-f", "docker-compose.test.yml", "down", "-v"],
+        cwd=repo_root,
+        capture_output=True,
+        env=compose_env,
+    )
 
 
 @pytest.fixture(scope="session", autouse=True)

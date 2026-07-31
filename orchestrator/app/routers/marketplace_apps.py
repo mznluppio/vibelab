@@ -34,6 +34,7 @@ from ..models import (
     MarketplaceSource,
     User,
 )
+from ..permissions import require_team_feature_access
 from ..services.apps.fork import ForkError, NotForkableError, fork_app
 from ..services.hub_client import HubClient
 from ..services.marketplace_federation import dispatch_purchase, install_guard
@@ -46,7 +47,21 @@ from ..services.marketplace_source_cache import (
 from ..users import current_active_user
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+
+
+async def require_marketplace_apps_feature_access(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(current_active_user),
+) -> None:
+    await require_team_feature_access(
+        db,
+        user,
+        setting_name="marketplace_access_for_non_admins",
+        feature_name="Marketplace",
+    )
+
+
+router = APIRouter(dependencies=[Depends(require_marketplace_apps_feature_access)])
 
 
 class MarketplaceAppResponse(BaseModel):
@@ -319,6 +334,12 @@ async def fork_marketplace_app(
     user: User = Depends(current_active_user),
     hub_client: HubClient = Depends(_get_hub_client),
 ) -> ForkResponse:
+    # A fork materializes a new project the user owns and can open like any
+    # other Workspace, so the platform Workspace-creation policy applies.
+    from ..permissions import require_workspace_creation
+
+    await require_workspace_creation(db, user)
+
     # Ensure the source version belongs to the declared app (caller-supplied
     # source_app_version_id is the authoritative fork root per service API).
     src = (

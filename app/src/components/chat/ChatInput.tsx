@@ -351,9 +351,7 @@ export function ChatInput({
         // Dedupe by (kind, ref_id) — never push the same structured mention
         // twice if the user re-clicks before sending.
         const seen = new Set(prev.map((m) => `${m.kind}:${m.ref_id}`));
-        const additions = prefillMentions.filter(
-          (m) => !seen.has(`${m.kind}:${m.ref_id}`)
-        );
+        const additions = prefillMentions.filter((m) => !seen.has(`${m.kind}:${m.ref_id}`));
         return additions.length ? [...prev, ...additions] : prev;
       });
     }
@@ -1332,189 +1330,231 @@ export function ChatInput({
         active={!viewerMode && (isPromptFocused || Boolean(message.trim()) || isExecuting)}
       >
         <div
-          className={`flex flex-col bg-[var(--surface)] w-full ${isDocked ? '' : 'border border-[var(--border)] rounded-[var(--radius)] shadow-sm'}`}
+          // The radius always matches the pulsing border's inner edge — a square
+          // surface would paint over its rounded corners.
+          className={`flex flex-col bg-[var(--surface)] w-full rounded-[calc(var(--radius)-2px)] ${isDocked ? '' : 'shadow-sm'}`}
         >
-        {/* First row: Growing textarea / Command chip */}
-        <div
-          className={`px-3 flex items-center border-b transition-colors ${
-            recognizedCommand
-              ? 'border-[var(--primary)]/20 bg-[var(--primary)]/[0.03]'
-              : 'border-[var(--border)]'
-          }`}
-          style={{ minHeight: '44px' }}
-        >
-          {viewerMode ? (
-            <div className="flex items-center gap-2 w-full py-2">
-              <span className="text-xs text-[var(--text-subtle)]">
-                Viewer mode — chat is read-only
-              </span>
-            </div>
-          ) : (
-            <>
-              {/* Command chip overlay — visible when a command is fully recognized */}
-              {recognizedCommand && (
-                <div
-                  className="flex items-center gap-2.5 py-2 flex-1 min-w-0 cursor-text"
-                  onClick={() => textareaRef.current?.focus()}
-                >
-                  <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-[var(--primary)]/10 border border-[var(--primary)]/20 shrink-0">
-                    <span className="text-[var(--primary)]">
-                      {COMMAND_ICONS[recognizedCommand.command] || (
-                        <Lightning size={14} weight="fill" />
-                      )}
+          {/* First row: Growing textarea / Command chip */}
+          <div
+            className={`px-3 flex items-center border-b transition-colors ${
+              recognizedCommand
+                ? 'border-[var(--primary)]/20 bg-[var(--primary)]/[0.03]'
+                : 'border-[var(--border)]'
+            }`}
+            style={{ minHeight: '44px' }}
+          >
+            {viewerMode ? (
+              <div className="flex items-center gap-2 w-full py-2">
+                <span className="text-xs text-[var(--text-subtle)]">
+                  Viewer mode — chat is read-only
+                </span>
+              </div>
+            ) : (
+              <>
+                {/* Command chip overlay — visible when a command is fully recognized */}
+                {recognizedCommand && (
+                  <div
+                    className="flex items-center gap-2.5 py-2 flex-1 min-w-0 cursor-text"
+                    onClick={() => textareaRef.current?.focus()}
+                  >
+                    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-[var(--primary)]/10 border border-[var(--primary)]/20 shrink-0">
+                      <span className="text-[var(--primary)]">
+                        {COMMAND_ICONS[recognizedCommand.command] || (
+                          <Lightning size={14} weight="fill" />
+                        )}
+                      </span>
+                      <span className="font-mono text-xs font-semibold text-[var(--primary)]">
+                        {recognizedCommand.command}
+                      </span>
+                    </div>
+                    <span className="text-xs text-[var(--text-muted)] truncate">
+                      {recognizedCommand.description}
                     </span>
-                    <span className="font-mono text-xs font-semibold text-[var(--primary)]">
-                      {recognizedCommand.command}
-                    </span>
+                    <div className="ml-auto shrink-0 flex items-center gap-1.5 text-[10px] text-[var(--text)]/30">
+                      <kbd className="px-1.5 py-0.5 rounded border border-[var(--border)] bg-[var(--surface)] font-mono text-[9px]">
+                        ↵
+                      </kbd>
+                      <span>execute</span>
+                    </div>
                   </div>
-                  <span className="text-xs text-[var(--text-muted)] truncate">
-                    {recognizedCommand.description}
-                  </span>
-                  <div className="ml-auto shrink-0 flex items-center gap-1.5 text-[10px] text-[var(--text)]/30">
-                    <kbd className="px-1.5 py-0.5 rounded border border-[var(--border)] bg-[var(--surface)] font-mono text-[9px]">
-                      ↵
-                    </kbd>
-                    <span>execute</span>
-                  </div>
-                </div>
-              )}
-              <div className={`relative ${recognizedCommand ? 'w-0' : 'flex-1 w-full'}`}>
-                {/* Inline mention-highlight overlay — renders the same
+                )}
+                <div className={`relative ${recognizedCommand ? 'w-0' : 'flex-1 w-full'}`}>
+                  {/* Inline mention-highlight overlay — renders the same
                     text geometry as the textarea so coloured pills sit
                     exactly behind the @<token> glyphs. ``aria-hidden``
                     keeps it out of the screen-reader tree.
                 */}
-                {!recognizedCommand && mentions.length > 0 && (
-                  <div
-                    aria-hidden
-                    // ``[&_*]:!text-transparent`` forces every descendant
-                    // (including the kind-pill spans) to inherit
-                    // transparency — defence in depth so a future pill
-                    // class that introduces ``text-…`` can't ever cause
-                    // the "double text" overlap again.
-                    className="pointer-events-none absolute inset-0 my-2 text-sm leading-relaxed whitespace-pre-wrap break-words text-transparent [&_*]:!text-transparent"
-                  >
-                    {messageParts.map((p, i) =>
-                      p.kind ? (
-                        <span key={i} className={`rounded-md ${MENTION_KIND_PILL[p.kind] ?? ''}`}>
-                          {p.text}
-                        </span>
-                      ) : (
-                        <span key={i}>{p.text}</span>
-                      )
-                    )}
-                    {/* Trailing newline so wrapping width matches the
+                  {!recognizedCommand && mentions.length > 0 && (
+                    <div
+                      aria-hidden
+                      // ``[&_*]:!text-transparent`` forces every descendant
+                      // (including the kind-pill spans) to inherit
+                      // transparency — defence in depth so a future pill
+                      // class that introduces ``text-…`` can't ever cause
+                      // the "double text" overlap again.
+                      className="pointer-events-none absolute inset-0 my-2 text-sm leading-relaxed whitespace-pre-wrap break-words text-transparent [&_*]:!text-transparent"
+                    >
+                      {messageParts.map((p, i) =>
+                        p.kind ? (
+                          <span key={i} className={`rounded-md ${MENTION_KIND_PILL[p.kind] ?? ''}`}>
+                            {p.text}
+                          </span>
+                        ) : (
+                          <span key={i}>{p.text}</span>
+                        )
+                      )}
+                      {/* Trailing newline so wrapping width matches the
                         textarea's content rect when message ends with
                         \n (textarea adds a phantom line for the caret).
                     */}
-                    {'\n'}
-                  </div>
-                )}
-                <textarea
-                  ref={textareaRef}
-                  value={message}
-                  onChange={(e) => {
-                    setMessage(e.target.value);
-                  }}
-                  onKeyDown={handleKeyDown}
-                  onPaste={handlePaste}
-                  placeholder=""
-                  rows={1}
-                  className={`relative z-[1] chat-input bg-transparent border-none text-[var(--text)] text-sm !outline-none focus:!outline-none placeholder:text-[var(--text)]/40 resize-none overflow-hidden leading-relaxed my-2 ${
-                    recognizedCommand ? 'w-0 opacity-0 p-0 m-0' : 'w-full'
-                  }`}
-                  style={{
-                    minHeight: recognizedCommand ? '0' : '24px',
-                    maxHeight: '200px',
-                  }}
-                />
-              </div>
-            </>
+                      {'\n'}
+                    </div>
+                  )}
+                  <textarea
+                    ref={textareaRef}
+                    value={message}
+                    onChange={(e) => {
+                      setMessage(e.target.value);
+                    }}
+                    onKeyDown={handleKeyDown}
+                    onPaste={handlePaste}
+                    placeholder=""
+                    rows={1}
+                    className={`relative z-[1] chat-input bg-transparent border-none text-[var(--text)] text-sm !outline-none focus:!outline-none placeholder:text-[var(--text)]/40 resize-none overflow-hidden leading-relaxed my-2 ${
+                      recognizedCommand ? 'w-0 opacity-0 p-0 m-0' : 'w-full'
+                    }`}
+                    style={{
+                      minHeight: recognizedCommand ? '0' : '24px',
+                      maxHeight: '200px',
+                    }}
+                  />
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Attachment chips */}
+          {attachments.length > 0 && (
+            <AttachmentStrip attachments={attachments} onRemove={removeAttachment} />
           )}
-        </div>
 
-        {/* Attachment chips */}
-        {attachments.length > 0 && (
-          <AttachmentStrip attachments={attachments} onRemove={removeAttachment} />
-        )}
-
-        {/* Second row toolbar.
+          {/* Second row toolbar.
             Layout (left → right):
               [+]  [edit-mode]  [gear]  [/]  ───spacer───  [agent]  [send]
             The "+" opens a drop-up with photos/files + connectors.
             The edit-mode chip opens a drop-up with the three edit modes,
             each annotated with a tooltip describing its behaviour. */}
-        <div className="flex items-center gap-1.5 px-2 py-1.5 w-full min-w-0">
-          {/* + (drop-up: add photos/files + connectors) */}
-          <div className="flex-shrink-0">
-            <PlusMenu
-              onAddImages={(files) => files.forEach((f) => addImage(f))}
-              onAddFiles={
-                chatId
-                  ? async (files) => {
-                      let workspaceId = chatProjectId;
-                      if (!workspaceId && onResolveWorkspaceForUpload) {
-                        workspaceId = await onResolveWorkspaceForUpload();
-                      }
-                      if (!workspaceId) return;
-                      for (const f of files) {
-                        try {
-                          const { chatAttachmentsApi } = await import('@/lib/api');
-                          const result = await chatAttachmentsApi.upload(chatId, f);
-                          addFileReference(result.file_path, result.filename, {
-                            attachmentId: result.attachment_id,
-                            mimeType: result.mime_type ?? undefined,
-                            sizeBytes: result.size_bytes,
-                          });
-                        } catch (err) {
-                          const detail =
-                            (err as { response?: { data?: { code?: string } } })?.response?.data
-                              ?.code || 'upload_failed';
-                          window.dispatchEvent(
-                            new CustomEvent('toast', {
-                              detail: {
-                                kind: 'error',
-                                message: `Upload failed (${detail}): ${f.name}`,
-                              },
-                            })
-                          );
+          <div className="flex items-center gap-1.5 px-2 py-1.5 w-full min-w-0">
+            {/* + (drop-up: add photos/files + connectors) */}
+            <div className="flex-shrink-0">
+              <PlusMenu
+                onAddImages={(files) => files.forEach((f) => addImage(f))}
+                onAddFiles={
+                  chatId
+                    ? async (files) => {
+                        let workspaceId = chatProjectId;
+                        if (!workspaceId && onResolveWorkspaceForUpload) {
+                          workspaceId = await onResolveWorkspaceForUpload();
+                        }
+                        if (!workspaceId) return;
+                        for (const f of files) {
+                          try {
+                            const { chatAttachmentsApi } = await import('@/lib/api');
+                            const result = await chatAttachmentsApi.upload(chatId, f);
+                            addFileReference(result.file_path, result.filename, {
+                              attachmentId: result.attachment_id,
+                              mimeType: result.mime_type ?? undefined,
+                              sizeBytes: result.size_bytes,
+                            });
+                          } catch (err) {
+                            const detail =
+                              (err as { response?: { data?: { code?: string } } })?.response?.data
+                                ?.code || 'upload_failed';
+                            window.dispatchEvent(
+                              new CustomEvent('toast', {
+                                detail: {
+                                  kind: 'error',
+                                  message: `Upload failed (${detail}): ${f.name}`,
+                                },
+                              })
+                            );
+                          }
                         }
                       }
-                    }
-                  : undefined
-              }
-              disabled={disabled || viewerMode}
-            />
-          </div>
-
-          {/* Active-chat workspace chip — surfaces the linked workspace
-              name beside the PlusMenu so the user can see which workspace
-              their uploads land in. */}
-          {chatProjectId && chatProjectName && (
-            <div
-              className="flex-shrink-0 flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-500/10 border border-blue-500/30 text-[11px] font-medium text-blue-500"
-              title={`Linked workspace: ${chatProjectName}`}
-            >
-              <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
-              <span className="max-w-[110px] truncate">{chatProjectName}</span>
-            </div>
-          )}
-
-          {/* Edit Mode Status — icon-only when narrow */}
-          {onModeChange && (
-            <div className="flex-shrink-0">
-              <EditModeStatus
-                mode={editMode}
-                onModeChange={onModeChange}
-                compact={isEditModeCompact}
+                    : undefined
+                }
+                disabled={disabled || viewerMode}
               />
             </div>
-          )}
 
-          {/* Desktop: 2 individual buttons */}
-          {!isCompact && (
-            <>
-              {/* Settings gear — drop-up anchored to this button */}
+            {/* Active-chat workspace chip — surfaces the linked workspace
+              name beside the PlusMenu so the user can see which workspace
+              their uploads land in. */}
+            {chatProjectId && chatProjectName && (
+              <div
+                className="flex-shrink-0 flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-500/10 border border-blue-500/30 text-[11px] font-medium text-blue-500"
+                title={`Linked workspace: ${chatProjectName}`}
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+                <span className="max-w-[110px] truncate">{chatProjectName}</span>
+              </div>
+            )}
+
+            {/* Edit Mode Status — icon-only when narrow */}
+            {onModeChange && (
+              <div className="flex-shrink-0">
+                <EditModeStatus
+                  mode={editMode}
+                  onModeChange={onModeChange}
+                  compact={isEditModeCompact}
+                />
+              </div>
+            )}
+
+            {/* Desktop: 2 individual buttons */}
+            {!isCompact && (
+              <>
+                {/* Settings gear — drop-up anchored to this button */}
+                <div className="relative flex-shrink-0">
+                  <button
+                    ref={settingsButtonRef}
+                    type="button"
+                    onClick={() => {
+                      setShowSettings(!showSettings);
+                      setShowCommands(false);
+                    }}
+                    className={`btn btn-icon btn-sm ${showSettings ? 'btn-active' : ''}`}
+                    title="Settings"
+                  >
+                    <Gear size={14} weight="bold" />
+                  </button>
+                  {showSettings && renderSettingsMenu()}
+                </div>
+
+                {/* Slash commands */}
+                <button
+                  ref={commandsButtonRef}
+                  type="button"
+                  onClick={() => {
+                    if (showCommands) {
+                      setShowCommands(false);
+                      setMessage('');
+                    } else {
+                      setMessage('/');
+                      setShowCommands(true);
+                      setShowSettings(false);
+                    }
+                  }}
+                  className={`btn btn-icon btn-sm font-mono font-bold text-sm ${showCommands ? 'btn-active' : ''}`}
+                  title="Commands"
+                >
+                  /
+                </button>
+              </>
+            )}
+
+            {/* Compact/very compact: single menu button combining all 3 */}
+            {isCompact && (
               <div className="relative flex-shrink-0">
                 <button
                   ref={settingsButtonRef}
@@ -1524,100 +1564,60 @@ export function ChatInput({
                     setShowCommands(false);
                   }}
                   className={`btn btn-icon btn-sm ${showSettings ? 'btn-active' : ''}`}
-                  title="Settings"
+                  title="Menu"
                 >
-                  <Gear size={14} weight="bold" />
+                  <DotsThreeVertical size={16} weight="bold" />
                 </button>
                 {showSettings && renderSettingsMenu()}
               </div>
-
-              {/* Slash commands */}
-              <button
-                ref={commandsButtonRef}
-                type="button"
-                onClick={() => {
-                  if (showCommands) {
-                    setShowCommands(false);
-                    setMessage('');
-                  } else {
-                    setMessage('/');
-                    setShowCommands(true);
-                    setShowSettings(false);
-                  }
-                }}
-                className={`btn btn-icon btn-sm font-mono font-bold text-sm ${showCommands ? 'btn-active' : ''}`}
-                title="Commands"
-              >
-                /
-              </button>
-            </>
-          )}
-
-          {/* Compact/very compact: single menu button combining all 3 */}
-          {isCompact && (
-            <div className="relative flex-shrink-0">
-              <button
-                ref={settingsButtonRef}
-                type="button"
-                onClick={() => {
-                  setShowSettings(!showSettings);
-                  setShowCommands(false);
-                }}
-                className={`btn btn-icon btn-sm ${showSettings ? 'btn-active' : ''}`}
-                title="Menu"
-              >
-                <DotsThreeVertical size={16} weight="bold" />
-              </button>
-              {showSettings && renderSettingsMenu()}
-            </div>
-          )}
-
-          {/* Spacer pushes agent + send to the right edge */}
-          <div className="flex-1 min-w-0" />
-
-          {/* Agent selector — moved to the right */}
-          <div className="min-w-0 shrink">
-            <AgentSelector
-              agents={agents}
-              currentAgent={currentAgent}
-              onSelectAgent={onSelectAgent}
-              onModelChange={onModelChange}
-              compact={isCompact}
-            />
-          </div>
-
-          {/* Voice input — always visible. Owns its own modal/panel via portals. */}
-          <VoiceInput
-            disabled={disabled || isExecuting}
-            onTranscript={(text) => {
-              const trimmed = text.trim();
-              if (!trimmed) return;
-              setMessage((prev) => (prev ? `${prev.replace(/\s+$/, '')} ${trimmed}` : trimmed));
-              textareaRef.current?.focus();
-            }}
-          />
-
-          {/* Send button - always visible */}
-          <button
-            type="button"
-            onClick={isExecuting ? onStop : sendMessage}
-            disabled={!isExecuting && ((!message.trim() && attachments.length === 0) || disabled)}
-            className="btn btn-icon btn-sm"
-            title={
-              isExecuting ? 'Stop execution (Escape)' : `Send message (Enter or ${modKey}+Enter)`
-            }
-          >
-            {isExecuting ? (
-              <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 256 256">
-                <rect x="64" y="64" width="128" height="128" rx="8" />
-              </svg>
-            ) : (
-              <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 256 256">
-                <path d="M231.87,114l-168-95.89A16,16,0,0,0,40.92,37.34L71.55,128,40.92,218.67A16,16,0,0,0,56,240a16.15,16.15,0,0,0,7.93-2.1l167.92-96.05a16,16,0,0,0,.05-27.89ZM56,224a.56.56,0,0,0,0-.12L85.74,136H144a8,8,0,0,0,0-16H85.74L56.06,32.16A.46.46,0,0,0,56,32l168,95.83Z" />
-              </svg>
             )}
-          </button>
-        </div>
+
+            {/* Spacer pushes agent + send to the right edge */}
+            <div className="flex-1 min-w-0" />
+
+            {/* Agent selector — moved to the right */}
+            <div className="min-w-0 shrink">
+              <AgentSelector
+                agents={agents}
+                currentAgent={currentAgent}
+                onSelectAgent={onSelectAgent}
+                onModelChange={onModelChange}
+                compact={isCompact}
+              />
+            </div>
+
+            {/* Voice input — always visible. Owns its own modal/panel via portals. */}
+            <VoiceInput
+              disabled={disabled || isExecuting}
+              onTranscript={(text) => {
+                const trimmed = text.trim();
+                if (!trimmed) return;
+                setMessage((prev) => (prev ? `${prev.replace(/\s+$/, '')} ${trimmed}` : trimmed));
+                textareaRef.current?.focus();
+              }}
+            />
+
+            {/* Send button - always visible */}
+            <button
+              type="button"
+              onClick={isExecuting ? onStop : sendMessage}
+              disabled={!isExecuting && ((!message.trim() && attachments.length === 0) || disabled)}
+              className="btn btn-icon btn-sm"
+              title={
+                isExecuting ? 'Stop execution (Escape)' : `Send message (Enter or ${modKey}+Enter)`
+              }
+            >
+              {isExecuting ? (
+                <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 256 256">
+                  <rect x="64" y="64" width="128" height="128" rx="8" />
+                </svg>
+              ) : (
+                <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 256 256">
+                  <path d="M231.87,114l-168-95.89A16,16,0,0,0,40.92,37.34L71.55,128,40.92,218.67A16,16,0,0,0,56,240a16.15,16.15,0,0,0,7.93-2.1l167.92-96.05a16,16,0,0,0,.05-27.89ZM56,224a.56.56,0,0,0,0-.12L85.74,136H144a8,8,0,0,0,0-16H85.74L56.06,32.16A.46.46,0,0,0,56,32l168,95.83Z" />
+                </svg>
+              )}
+            </button>
+          </div>
         </div>
       </PromptInputPulsingBorder>
     </form>

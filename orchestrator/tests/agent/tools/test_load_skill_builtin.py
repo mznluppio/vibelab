@@ -93,6 +93,24 @@ async def test_load_builtin_case_insensitive_match():
 
 
 @pytest.mark.asyncio
+async def test_load_builtin_matches_marketplace_slug():
+    entry = _builtin_entry()
+    entry.slug = "project-architecture"
+    db = AsyncMock()
+    scalar_result = Mock()
+    scalar_result.scalar_one_or_none.return_value = "plain body no markers"
+    db.execute = AsyncMock(return_value=scalar_result)
+
+    result = await load_skill_executor(
+        {"skill_name": "project-architecture"},
+        {"available_skills": [entry], "db": db},
+    )
+
+    assert result["success"] is True
+    assert result["instructions"] == "plain body no markers"
+
+
+@pytest.mark.asyncio
 async def test_load_non_builtin_skips_marker_rendering():
     """Regular DB skills (source='db') should NOT run through markers."""
     entry = SkillCatalogEntry(

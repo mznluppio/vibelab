@@ -12,6 +12,7 @@ from sqlalchemy.orm import selectinload
 
 from ...database import get_db
 from ...models import AgentTask, Directory, User
+from ...permissions import Permission, accessible_project_ids, get_project_with_access
 from ...services.git_diff import git_diff_for_project as _git_diff_for_project
 from ...users import current_active_user
 from ._helpers import _serialize_session
@@ -25,11 +26,15 @@ async def list_agent_sessions(
     runtime: str | None = Query(default=None),
     status: str | None = Query(default=None),
     directory_id: uuid.UUID | None = Query(default=None),
-    _user: User = Depends(current_active_user),
+    user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
-    stmt = select(AgentTask).options(
-        selectinload(AgentTask.directories), selectinload(AgentTask.project)
+    # Sessions are ticket rows, hence Workspace children: restrict them in the
+    # query to Workspaces the caller can read.
+    stmt = (
+        select(AgentTask)
+        .where(AgentTask.project_id.in_(accessible_project_ids(user)))
+        .options(selectinload(AgentTask.directories), selectinload(AgentTask.project))
     )
     if project_id is not None:
         stmt = stmt.where(AgentTask.project_id == project_id)
@@ -48,7 +53,7 @@ async def list_agent_sessions(
 @router.get("/agents/{ticket_id}/diff")
 async def agent_ticket_diff(
     ticket_id: uuid.UUID,
-    _user: User = Depends(current_active_user),
+    user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     existing = await db.execute(
@@ -57,5 +62,8 @@ async def agent_ticket_diff(
     ticket = existing.scalar_one_or_none()
     if ticket is None:
         raise HTTPException(status_code=404, detail="ticket not found")
+    # The diff is the Workspace's uncommitted source, so it needs the same read
+    # gate as any other file access in that Workspace.
+    await get_project_with_access(db, str(ticket.project_id), user.id, Permission.FILE_READ)
     diff = await _git_diff_for_project(ticket.project) if ticket.project is not None else ""
     return {"ticket_id": str(ticket_id), "trajectory": [], "diff": diff}

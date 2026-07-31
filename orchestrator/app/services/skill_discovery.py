@@ -31,6 +31,7 @@ class SkillCatalogEntry:
     name: str
     description: str
     source: str  # "builtin" | "db" | "file"
+    slug: str | None = None
     skill_id: UUID | None = None
     file_path: str | None = None
     is_builtin: bool = False
@@ -115,6 +116,7 @@ async def _discover_builtin_skills(db: AsyncSession) -> list[SkillCatalogEntry]:
             select(
                 MarketplaceAgent.id,
                 MarketplaceAgent.name,
+                MarketplaceAgent.slug,
                 MarketplaceAgent.description,
             ).where(
                 MarketplaceAgent.is_builtin.is_(True),
@@ -128,6 +130,7 @@ async def _discover_builtin_skills(db: AsyncSession) -> list[SkillCatalogEntry]:
                 name=row.name,
                 description=row.description,
                 source="builtin",
+                slug=row.slug,
                 skill_id=row.id,
                 is_builtin=True,
             )
@@ -146,7 +149,12 @@ async def _discover_db_skills(
         from ..models import AgentSkillAssignment, MarketplaceAgent
 
         result = await db.execute(
-            select(MarketplaceAgent.id, MarketplaceAgent.name, MarketplaceAgent.description)
+            select(
+                MarketplaceAgent.id,
+                MarketplaceAgent.name,
+                MarketplaceAgent.slug,
+                MarketplaceAgent.description,
+            )
             .join(
                 AgentSkillAssignment,
                 AgentSkillAssignment.skill_id == MarketplaceAgent.id,
@@ -166,6 +174,7 @@ async def _discover_db_skills(
                 name=row.name,
                 description=row.description,
                 source="db",
+                slug=row.slug,
                 skill_id=row.id,
             )
             for row in rows

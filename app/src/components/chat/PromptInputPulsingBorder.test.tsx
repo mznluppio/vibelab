@@ -2,8 +2,21 @@ import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('@paper-design/shaders-react', () => ({
-  PulsingBorder: ({ className, thickness, 'aria-hidden': ariaHidden }: { className?: string; thickness?: number; 'aria-hidden'?: boolean }) => (
-    <div data-testid="shader" className={className} data-thickness={thickness} aria-hidden={ariaHidden} />
+  PulsingBorder: ({
+    className,
+    thickness,
+    'aria-hidden': ariaHidden,
+  }: {
+    className?: string;
+    thickness?: number;
+    'aria-hidden'?: boolean;
+  }) => (
+    <div
+      data-testid="shader"
+      className={className}
+      data-thickness={thickness}
+      aria-hidden={ariaHidden}
+    />
   ),
 }));
 
@@ -27,17 +40,22 @@ describe('PromptInputPulsingBorder', () => {
     expect(shader).toHaveAttribute('data-thickness', '0.02');
     const wrapper = screen.getByTestId('prompt-input-pulsing-border');
     expect(wrapper).toHaveClass('p-[2px]');
+    // Dim accent floor under the shader — the bright fallback ring would hide
+    // the travelling spots.
     expect(wrapper).toHaveClass('bg-transparent');
     getContext.mockRestore();
   });
 
-  it('does not initialize the shader when WebGL 2 is unavailable', () => {
-    const getContext = vi
-      .spyOn(HTMLCanvasElement.prototype, 'getContext')
-      .mockReturnValue(null);
-    render(<PromptInputPulsingBorder active={false}><textarea aria-label="Prompt" /></PromptInputPulsingBorder>);
+  it('keeps the static border when WebGL is unavailable', () => {
+    const getContext = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null);
+    render(
+      <PromptInputPulsingBorder active={false}>
+        <textarea aria-label="Prompt" />
+      </PromptInputPulsingBorder>
+    );
 
     expect(screen.getByTestId('prompt-input-pulsing-border')).toHaveClass('p-[2px]');
+    expect(screen.getByTestId('prompt-input-pulsing-border')).toHaveClass('bg-transparent');
     expect(screen.queryByTestId('shader')).not.toBeInTheDocument();
     getContext.mockRestore();
   });

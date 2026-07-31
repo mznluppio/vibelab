@@ -252,6 +252,12 @@ async def install_bundle_endpoint(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(current_active_user),
 ) -> BundleInstallResponse:
+    # Same client-supplied ``team_id`` as the single-app install path: verify
+    # membership before minting runtime projects owned by that team.
+    from ..permissions import Permission, check_team_permission
+
+    await check_team_permission(db, body.team_id, current_user.id, Permission.PROJECT_CREATE)
+
     try:
         bundle = await bundles_svc.get_bundle(db, bundle_id=bundle_id)
     except bundles_svc.BundleNotFoundError:

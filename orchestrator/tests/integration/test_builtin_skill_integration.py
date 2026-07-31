@@ -25,8 +25,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.models import MarketplaceAgent
+from tests._test_database import get_test_database_url
 
-_ASYNC_DB_URL = "postgresql+asyncpg://tesslate_test:testpass@localhost:5433/tesslate_test"
+_ASYNC_DB_URL = get_test_database_url()
 
 # Canonical built-in skill seeds shipped by the federated marketplace service.
 _MARKETPLACE_SKILLS_TESSLATE = (
@@ -144,9 +145,7 @@ def test_load_skill_returns_rendered_body():
     # Fetch the real skill ID for the built-in.
     async def _get_id(db: AsyncSession) -> str:
         result = await db.execute(
-            select(MarketplaceAgent.id).where(
-                MarketplaceAgent.slug == "project-architecture"
-            )
+            select(MarketplaceAgent.id).where(MarketplaceAgent.slug == "project-architecture")
         )
         return str(result.scalar_one())
 
@@ -167,9 +166,7 @@ def test_load_skill_returns_rendered_body():
             "user_id": uuid.uuid4(),
             "project_id": "proj-test",
         }
-        return await load_skill_executor(
-            {"skill_name": "Project Architecture"}, context
-        )
+        return await load_skill_executor({"skill_name": "Project Architecture"}, context)
 
     result = _run_db(_run_tool)
     assert result["success"] is True
@@ -178,9 +175,7 @@ def test_load_skill_returns_rendered_body():
     # Every marker resolved — nothing remains literal.
     import re
 
-    assert not re.findall(r"\{\{[A-Z_]+\}\}", body), (
-        "markers still present after load"
-    )
+    assert not re.findall(r"\{\{[A-Z_]+\}\}", body), "markers still present after load"
 
     # Concrete content from each renderer.
     assert "apps" in body  # TesslateConfigCreate schema

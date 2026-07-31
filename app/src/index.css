@@ -71,7 +71,7 @@
 
   /* === CODE === */
   --code-inline-bg: rgba(0, 85, 164, 0.12);
-  --code-inline-text: #7dd3fc;
+  --code-inline-text: #00a3e0;
   --code-block-bg: #0a0a0c;
   --code-block-border: #1c1e21;
   --code-block-text: #e2e2e2;
@@ -1309,7 +1309,7 @@ textarea {
 }
 
 .tiptap-editor.ProseMirror a:hover {
-  color: #fa9f35;
+  color: var(--primary-hover);
 }
 
 /* Pulse highlight used by MarketplaceSidebar when the Deploy hub deep-links

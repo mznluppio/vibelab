@@ -3,6 +3,7 @@ import {
   Check,
   Copy,
   Crosshair,
+  DownloadSimple,
   MagnifyingGlassMinus,
   MagnifyingGlassPlus,
   X,
@@ -20,7 +21,7 @@ import {
   type ReactFlowInstance,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { Button } from '../ui/button';
 import { Tooltip } from '../ui/Tooltip';
 import { BaseDiagramNode } from './diagram-nodes/BaseDiagramNode';
@@ -70,37 +71,43 @@ function DiagramCanvas({
   edges,
   expanded,
   onInstance,
+  canvasRef,
 }: ReturnType<typeof createVibeLabDiagramLayout> & {
   expanded: boolean;
   onInstance: (instance: DiagramFlowInstance) => void;
+  canvasRef: RefObject<HTMLDivElement | null>;
 }) {
   return (
-    <ReactFlow<DiagramFlowNodes, Edge>
-      nodes={nodes}
-      edges={edges}
-      nodeTypes={nodeTypes}
-      minZoom={0.35}
-      maxZoom={2.25}
-      onInit={onInstance}
-      panOnDrag={expanded ? true : [1]}
-      panOnScroll={expanded}
-      zoomOnScroll={expanded}
-      zoomOnPinch
-      zoomOnDoubleClick={false}
-      nodesDraggable={false}
-      nodesConnectable={false}
-      elementsSelectable={false}
-      nodesFocusable={false}
-      edgesFocusable={false}
-      preventScrolling={!expanded}
-      proOptions={{ hideAttribution: true }}
-      className="vibelab-diagram-flow"
-      aria-label="Interactive VibeLab diagram"
-    >
-      <ViewportFitter expanded={expanded} />
-      <Background variant={BackgroundVariant.Dots} gap={18} size={1} />
-      {expanded && nodes.length > 14 && <MiniMap pannable zoomable aria-label="Diagram overview" />}
-    </ReactFlow>
+    <div ref={canvasRef} className="h-full w-full">
+      <ReactFlow<DiagramFlowNodes, Edge>
+        nodes={nodes}
+        edges={edges}
+        nodeTypes={nodeTypes}
+        minZoom={0.35}
+        maxZoom={2.25}
+        onInit={onInstance}
+        panOnDrag={expanded ? true : [1]}
+        panOnScroll={expanded}
+        zoomOnScroll={expanded}
+        zoomOnPinch
+        zoomOnDoubleClick={false}
+        nodesDraggable={false}
+        nodesConnectable={false}
+        elementsSelectable={false}
+        nodesFocusable={false}
+        edgesFocusable={false}
+        preventScrolling={!expanded}
+        proOptions={{ hideAttribution: true }}
+        className="vibelab-diagram-flow"
+        aria-label="Interactive VibeLab diagram"
+      >
+        <ViewportFitter expanded={expanded} />
+        <Background variant={BackgroundVariant.Dots} gap={18} size={1} />
+        {expanded && nodes.length > 14 && (
+          <MiniMap pannable zoomable aria-label="Diagram overview" />
+        )}
+      </ReactFlow>
+    </div>
   );
 }
 
@@ -114,6 +121,42 @@ export function VibeLabDiagram({ code }: VibeLabDiagramProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [inlineFlow, setInlineFlow] = useState<DiagramFlowInstance | null>(null);
   const [dialogFlow, setDialogFlow] = useState<DiagramFlowInstance | null>(null);
+  const [exportOpen, setExportOpen] = useState<'inline' | 'expanded' | null>(null);
+  const inlineCanvasRef = useRef<HTMLDivElement>(null);
+  const dialogCanvasRef = useRef<HTMLDivElement>(null);
+
+  const download = (blob: Blob, extension: string) => {
+    const anchor = document.createElement('a');
+    const safeTitle =
+      data.title
+        .toLowerCase()
+        .trim()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-|-$/g, '') || 'diagram';
+    anchor.href = URL.createObjectURL(blob);
+    anchor.download = `${safeTitle}.${extension}`;
+    anchor.click();
+    URL.revokeObjectURL(anchor.href);
+  };
+
+  const exportJson = () =>
+    download(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }), 'json');
+
+  const exportPng = async (canvas: HTMLDivElement | null) => {
+    if (!canvas) return;
+    try {
+      const { toPng } = await import('html-to-image');
+      const image = await toPng(canvas, {
+        backgroundColor: getComputedStyle(canvas).getPropertyValue('--surface').trim() || '#0b1018',
+        pixelRatio: Math.min(window.devicePixelRatio || 1, 2),
+        cacheBust: true,
+      });
+      const response = await fetch(image);
+      download(await response.blob(), 'png');
+    } catch {
+      if (import.meta.env.DEV) console.warn('VibeLab diagram PNG export failed');
+    }
+  };
 
   const copySource = async () => {
     try {
@@ -157,6 +200,49 @@ export function VibeLabDiagram({ code }: VibeLabDiagramProps) {
   const fitDialog = () =>
     dialogFlow?.fitView({ padding: 0.14, duration: 180, minZoom: 0.35, maxZoom: 2.25 });
   const resetDialog = fitDialog;
+
+  const exportMenu = (variant: 'inline' | 'expanded') => (
+    <div className="relative">
+      <Tooltip content="Export diagram" side="top">
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="vibelab-diagram-action"
+          aria-label="Export diagram"
+          onClick={() => setExportOpen(exportOpen === variant ? null : variant)}
+        >
+          <DownloadSimple size={17} />
+        </Button>
+      </Tooltip>
+      {exportOpen === variant && (
+        <div className="absolute right-0 top-full z-20 mt-1 min-w-28 overflow-hidden rounded-md border border-[var(--border)] bg-[var(--surface)] p-1 shadow-lg">
+          <button
+            type="button"
+            className="block w-full rounded px-2 py-1.5 text-left text-xs hover:bg-[var(--text)]/5"
+            onClick={() => {
+              exportJson();
+              setExportOpen(null);
+            }}
+          >
+            Export JSON
+          </button>
+          <button
+            type="button"
+            className="block w-full rounded px-2 py-1.5 text-left text-xs hover:bg-[var(--text)]/5"
+            onClick={() => {
+              void exportPng(
+                variant === 'inline' ? inlineCanvasRef.current : dialogCanvasRef.current
+              );
+              setExportOpen(null);
+            }}
+          >
+            Export PNG
+          </button>
+        </div>
+      )}
+    </div>
+  );
 
   const actionBar = (
     <div className="vibelab-diagram-actions" aria-label="Diagram controls">
@@ -208,6 +294,7 @@ export function VibeLabDiagram({ code }: VibeLabDiagramProps) {
           <ArrowsOut size={17} />
         </Button>
       </Tooltip>
+      {exportMenu('inline')}
       <Tooltip content={copied ? 'Copied' : 'Copy diagram source'} side="top">
         <Button
           type="button"
@@ -240,7 +327,12 @@ export function VibeLabDiagram({ code }: VibeLabDiagramProps) {
           className="vibelab-diagram-canvas"
           style={{ height: getVibeLabDiagramHeight(layout.bounds, data.direction) }}
         >
-          <DiagramCanvas {...layout} expanded={false} onInstance={setInlineFlow} />
+          <DiagramCanvas
+            {...layout}
+            expanded={false}
+            onInstance={setInlineFlow}
+            canvasRef={inlineCanvasRef}
+          />
         </div>
       </section>
 
@@ -258,6 +350,7 @@ export function VibeLabDiagram({ code }: VibeLabDiagramProps) {
                 </Dialog.Description>
               </div>
               <div className="vibelab-diagram-actions" aria-label="Expanded diagram controls">
+                {exportMenu('expanded')}
                 <Tooltip content="Fit diagram to view" side="bottom">
                   <Button
                     type="button"
@@ -322,7 +415,12 @@ export function VibeLabDiagram({ code }: VibeLabDiagramProps) {
               </div>
             </div>
             <div className="vibelab-diagram-dialog__canvas">
-              <DiagramCanvas {...layout} expanded onInstance={setDialogFlow} />
+              <DiagramCanvas
+                {...layout}
+                expanded
+                onInstance={setDialogFlow}
+                canvasRef={dialogCanvasRef}
+              />
             </div>
           </Dialog.Content>
         </Dialog.Portal>

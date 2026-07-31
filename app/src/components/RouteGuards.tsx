@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { useTeam } from '../contexts/TeamContext';
 
 const isTauriDesktop = (): boolean => {
   if (typeof window === 'undefined') return false;
@@ -63,4 +64,26 @@ export function PublicOnlyRoute({ children }: { children: ReactNode }) {
   }
 
   return <>{children}</>;
+}
+
+
+/** Redirect members away from team-governed product surfaces. */
+export function TeamFeatureRoute({
+  feature,
+  children,
+}: {
+  feature: 'marketplace' | 'automations' | 'technical-settings';
+  children: ReactNode;
+}) {
+  const { loading, membership, canAccessMarketplace, canAccessAutomations } = useTeam();
+
+  if (loading) return null;
+  const allowed =
+    feature === 'marketplace'
+      ? canAccessMarketplace
+      : feature === 'automations'
+        ? canAccessAutomations
+        : membership?.role === 'admin';
+
+  return allowed ? <>{children}</> : <Navigate to="/chat" replace />;
 }

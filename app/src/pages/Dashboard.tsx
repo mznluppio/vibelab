@@ -56,9 +56,10 @@ interface Project {
 export default function Dashboard() {
   const navigate = useNavigate();
   const { theme, toggleTheme } = useTheme();
-  const { activeTeam, can, teamSwitchKey } = useTeam();
+  const { activeTeam, can, teamSwitchKey, canCreateWorkspaces } = useTeam();
   const isAdmin = can('team.edit');
-  const canCreateProject = can('project.create');
+  // Team role AND the platform Workspace-creation policy must both allow it.
+  const canCreateProject = can('project.create') && canCreateWorkspaces;
   const canDeleteProject = can('project.delete');
   const [projects, setProjects] = useState<Project[]>([]);
   const [accessProject, setAccessProject] = useState<Project | null>(null);
@@ -1228,7 +1229,11 @@ export default function Dashboard() {
               </>
             ) : (
               <div className="text-center py-16 flex flex-col items-center gap-4">
-                <p className="text-[var(--text-muted)] text-xs">No projects yet</p>
+                <p className="text-[var(--text-muted)] text-xs">
+                  {activeTeam
+                    ? 'No projects yet'
+                    : 'You do not have access to a team workspace yet. Ask a VibeLab administrator to invite you.'}
+                </p>
                 {canCreateProject && (
                   <div className="flex items-center gap-2">
                     <button

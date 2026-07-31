@@ -388,7 +388,7 @@ function ConnectorsCard({ onClick }: ConnectorsCardProps) {
 
 export default function Home() {
   const navigate = useNavigate();
-  const { activeTeam, teamSwitchKey } = useTeam();
+  const { activeTeam, teamSwitchKey, canCreateWorkspaces, showHomeConnectionCards } = useTeam();
   const { user } = useAuth();
   // Greeting prefers the user's first name if available, otherwise the
   // full display name. Falls back to "there" so the heading still reads
@@ -397,8 +397,6 @@ export default function Home() {
 
   const [recent, setRecent] = useState<RecentProject[]>([]);
   const [recentLoading, setRecentLoading] = useState(true);
-  const [showIntegrationCards, setShowIntegrationCards] = useState(false);
-
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [showImportDialog, setShowImportDialog] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
@@ -437,24 +435,6 @@ export default function Home() {
       cancelled = true;
     };
   }, [activeTeam?.slug, teamSwitchKey]);
-
-  useEffect(() => {
-    let cancelled = false;
-    fetch('/api/platform-settings')
-      .then(async (response) => {
-        if (!response.ok) throw new Error('Failed to load platform settings');
-        return (await response.json()) as { show_home_integration_cards?: boolean };
-      })
-      .then((settings) => {
-        if (!cancelled) setShowIntegrationCards(settings.show_home_integration_cards === true);
-      })
-      .catch(() => {
-        // Keep the safe default: integration cards stay hidden when settings are unavailable.
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   // Create-project handler — same flow as Dashboard.handleCreateProject.
   // Duplicated intentionally to keep blast radius to this file (see plan).
@@ -581,18 +561,24 @@ export default function Home() {
 
           {/* Action grid — 2x2 */}
           <div className="grid grid-cols-2 gap-2 sm:gap-2.5">
-            <ActionCard
-              icon={<FolderPlus size={20} weight="duotone" />}
-              title="New Workspace"
-              tooltip="Create a fresh workspace. Name it, pick a template, and start building."
-              onClick={() => setShowCreateDialog(true)}
-            />
-            <ActionCard
-              icon={<GitBranch size={20} weight="duotone" />}
-              title="Clone Repo"
-              tooltip="Import an existing GitHub, GitLab, or Bitbucket repo as a new workspace."
-              onClick={() => setShowImportDialog(true)}
-            />
+            {/* Both cards mint a new Workspace, so they follow the platform
+                Workspace-creation policy. The backend re-checks regardless. */}
+            {canCreateWorkspaces && (
+              <>
+                <ActionCard
+                  icon={<FolderPlus size={20} weight="duotone" />}
+                  title="New Workspace"
+                  tooltip="Create a fresh workspace. Name it, pick a template, and start building."
+                  onClick={() => setShowCreateDialog(true)}
+                />
+                <ActionCard
+                  icon={<GitBranch size={20} weight="duotone" />}
+                  title="Clone Repo"
+                  tooltip="Import an existing GitHub, GitLab, or Bitbucket repo as a new workspace."
+                  onClick={() => setShowImportDialog(true)}
+                />
+              </>
+            )}
             <ActionCard
               icon={<SquaresFour size={20} />}
               title="Apps"
@@ -611,7 +597,7 @@ export default function Home() {
                 navigate('/chat', { state: { landingPrompt: '@agent-builder ' } })
               }
             />
-            {showIntegrationCards && (
+            {showHomeConnectionCards && (
               <>
                 <ConnectorsCard onClick={() => navigate('/marketplace/browse/mcp_server')} />
                 <ChannelsCard onClick={() => navigate('/library?tab=channels')} />
@@ -653,8 +639,14 @@ export default function Home() {
                 <FolderOpen size={24} className="text-[var(--text-subtle)]" />
                 <p className="text-sm text-[var(--text-muted)]">No workspaces yet</p>
                 <p className="text-xs text-[var(--text-subtle)]">
-                  Click <span className="text-[var(--text-muted)]">New Workspace</span> above to
-                  create your first one.
+                  {canCreateWorkspaces ? (
+                    <>
+                      Click <span className="text-[var(--text-muted)]">New Workspace</span> above to
+                      create your first one.
+                    </>
+                  ) : (
+                    <>A platform administrator must grant you access to a workspace.</>
+                  )}
                 </p>
               </div>
             ) : (

@@ -902,8 +902,11 @@ class MarketplaceSyncWorker:
 
         # Skill body (item_type='skill') ships in extra_metadata or manifest.
         if item_type == "skill":
-            skill_body = item.get("skill_body") or (
-                manifest.get("skill_body") if manifest else None
+            skill_body = (
+                item.get("skill_body")
+                or item.get("fallback_skill_body")
+                or (manifest.get("skill_body") if manifest else None)
+                or (manifest.get("fallback_skill_body") if manifest else None)
             )
             common_fields["skill_body"] = skill_body if isinstance(skill_body, str) else None
 
@@ -927,6 +930,9 @@ class MarketplaceSyncWorker:
             common_fields["agent_type"] = _agent_field("agent_type")
             common_fields["model"] = _agent_field("model")
             common_fields["tools"] = _agent_field("tools")
+            common_fields["config"] = _agent_field("config")
+            common_fields["mode"] = _agent_field("mode")
+            common_fields["is_forkable"] = bool(_agent_field("is_forkable"))
 
         if existing is None:
             row = MarketplaceAgent(**common_fields)
@@ -1236,11 +1242,10 @@ class MarketplaceSyncWorker:
         existing = await self._existing_row(session, Theme, source, slug)
         pricing, effective = self._resolve_pricing(item, source.trust_level)
         manifest = self._extract_version_manifest(item)
+        metadata = item.get("extra_metadata") if isinstance(item.get("extra_metadata"), dict) else {}
         theme_json = (
             (manifest.get("theme_json") if isinstance(manifest, dict) else None)
-            or item.get("extra_metadata", {}).get("theme_json")
-            if isinstance(item.get("extra_metadata"), dict)
-            else None
+            or metadata.get("theme_json")
         )
 
         if not theme_json:
@@ -1252,7 +1257,13 @@ class MarketplaceSyncWorker:
         fields: dict[str, Any] = {
             "slug": slug,
             "name": item.get("name") or slug,
-            "mode": (manifest or {}).get("mode") if isinstance(manifest, dict) else "dark",
+            "mode": (
+                (manifest or {}).get("mode") if isinstance(manifest, dict) else None
+            )
+            or metadata.get("mode")
+            or "dark",
+            "author": metadata.get("author") or "Tesslate",
+            "version": metadata.get("version") or "1.0.0",
             "description": item.get("description"),
             "long_description": item.get("long_description"),
             "theme_json": theme_json,
@@ -1261,6 +1272,13 @@ class MarketplaceSyncWorker:
             "is_active": bool(item.get("is_active", True)),
             "is_published": bool(item.get("is_published", True)),
             "is_featured": bool(item.get("is_featured", False)),
+            # Marketplace themes are catalog content only. A theme becomes
+            # the product default only when the trusted source explicitly
+            # marks it as such; synchronization never changes user choices.
+            "is_default": bool(
+                source.trust_level in _TRUSTED_PRICING_LEVELS
+                and bool(metadata.get("is_default", False))
+            ),
             "downloads": int(item.get("downloads") or 0),
             "rating": float(item.get("rating") or 0.0),
             "reviews_count": int(item.get("reviews_count") or 0),

@@ -309,16 +309,20 @@ export const authApi = {
   },
 
   // Register new user (fastapi-users endpoint)
-  register: async (name: string, email: string, password: string) => {
+  register: async (name: string, email: string, password: string, invitationToken?: string) => {
     // Check if there's a referrer in sessionStorage
     const referred_by = sessionStorage.getItem('referrer');
 
-    const response = await api.post('/api/auth/register', {
-      name,
-      email,
-      password,
-      referral_code: referred_by || undefined,
-    });
+    const response = await api.post(
+      '/api/auth/register',
+      {
+        name,
+        email,
+        password,
+        referral_code: referred_by || undefined,
+      },
+      invitationToken ? { headers: { 'X-VibeLab-Invitation-Token': invitationToken } } : undefined
+    );
     return response.data;
   },
 
@@ -1087,11 +1091,13 @@ export const chatApi = {
   },
   sendApprovalResponse: async (
     approvalId: string,
-    response: 'allow_once' | 'allow_all' | 'stop' | 'publish_and_activate' | 'save_draft' | 'cancel'
+    response: 'allow_once' | 'allow_all' | 'stop' | 'publish_and_activate' | 'save_draft' | 'cancel' | 'approve_as_is' | 'approve_to_be_and_build' | 'request_changes',
+    comment?: string,
   ): Promise<void> => {
     await api.post('/api/chat/agent/approval', {
       approval_id: approvalId,
       response: response,
+      ...(comment ? { comment } : {}),
     });
   },
 
@@ -3939,7 +3945,10 @@ export const createLogStreamWebSocket = (projectSlug: string): WebSocket => {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     wsUrl = `${protocol}//${window.location.host}`;
   }
-  return new WebSocket(`${wsUrl}/api/projects/${projectSlug}/logs/stream`);
+  // Same query-param JWT the terminal socket uses: container logs are
+  // workspace-scoped data, so the socket must identify the caller.
+  const params = new URLSearchParams({ token: localStorage.getItem('token') || '' });
+  return new WebSocket(`${wsUrl}/api/projects/${projectSlug}/logs/stream?${params}`);
 };
 
 // ── Teams & RBAC ──────────────────────────────────────────────────────────
@@ -4037,6 +4046,14 @@ export interface AuditLogEntry {
 export const teamsApi = {
   async list(): Promise<TeamList[]> {
     const response = await api.get('/api/teams/');
+    return response.data;
+  },
+  async getCapabilities(): Promise<{
+    can_create_teams: boolean;
+    can_create_workspaces: boolean;
+    show_home_connection_cards: boolean;
+  }> {
+    const response = await api.get('/api/teams/capabilities');
     return response.data;
   },
   async get(slug: string): Promise<Team> {

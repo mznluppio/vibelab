@@ -651,12 +651,12 @@ function AgentListRow({
 }) {
   return (
     <div
-      onClick={onEdit}
-      className={`flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer transition-colors ${
+      onClick={agent.can_edit ? onEdit : undefined}
+      className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${
         isSelected
           ? 'bg-[var(--surface-hover)] border border-[var(--primary)]/30'
           : 'hover:bg-[var(--surface-hover)] border border-transparent'
-      } ${!agent.is_enabled ? 'opacity-50' : ''}`}
+      } ${!agent.is_enabled ? 'opacity-50' : ''} ${agent.can_edit ? 'cursor-pointer' : ''}`}
     >
       {/* Avatar */}
       {agent.avatar_url ? (
@@ -687,15 +687,17 @@ function AgentListRow({
         {agent.selected_model || agent.model}
       </span>
       {/* Settings */}
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          onEdit();
-        }}
-        className="shrink-0 p-1 rounded-md hover:bg-[var(--surface)] transition-colors"
-      >
-        <Gear size={14} className="text-[var(--text-subtle)]" />
-      </button>
+      {agent.can_edit && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onEdit();
+          }}
+          className="shrink-0 p-1 rounded-md hover:bg-[var(--surface)] transition-colors"
+        >
+          <Gear size={14} className="text-[var(--text-subtle)]" />
+        </button>
+      )}
     </div>
   );
 }
@@ -726,15 +728,16 @@ function AgentCard({
       variants={staggerItem}
       initial="initial"
       animate="animate"
-      onClick={onEdit}
+      onClick={agent.can_edit ? onEdit : undefined}
       className={`
-        group relative flex flex-col h-full cursor-pointer
+        group relative flex flex-col h-full
         bg-[var(--surface)] rounded-[var(--radius)] border border-[var(--border)]
         transition-all duration-200
         hover:-translate-y-1
         hover:bg-[var(--card-hover)]
         ${isSelected ? 'border-[var(--primary)] ring-1 ring-[var(--primary)]/20' : ''}
         ${!agent.is_enabled ? 'opacity-45' : ''}
+        ${agent.can_edit ? 'cursor-pointer' : ''}
       `}
     >
       <div className="p-4 flex flex-col h-full">
@@ -764,19 +767,21 @@ function AgentCard({
               {agent.creator_username ? `@${agent.creator_username}` : agent.category}
             </span>
           </div>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onEdit();
-            }}
-            className="shrink-0 p-1 rounded-md hover:bg-[var(--surface)] transition-colors"
-            aria-label="Agent settings"
-          >
-            <Gear
-              size={14}
-              className="text-[var(--text-subtle)] group-hover:text-[var(--text-muted)] transition-colors"
-            />
-          </button>
+          {agent.can_edit && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onEdit();
+              }}
+              className="shrink-0 p-1 rounded-md hover:bg-[var(--surface)] transition-colors"
+              aria-label="Agent settings"
+            >
+              <Gear
+                size={14}
+                className="text-[var(--text-subtle)] group-hover:text-[var(--text-muted)] transition-colors"
+              />
+            </button>
+          )}
         </div>
 
         {/* Description */}

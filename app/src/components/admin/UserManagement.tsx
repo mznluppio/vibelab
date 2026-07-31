@@ -41,6 +41,8 @@ interface UserListItem {
   is_creator: boolean;
   last_active_at: string | null;
   created_at: string | null;
+  can_create_teams_override: boolean | null;
+  can_create_workspaces_override: boolean | null;
 }
 
 interface UserDetail extends UserListItem {
@@ -74,6 +76,13 @@ interface UsersResponse {
   page: number;
   page_size: number;
   pages: number;
+}
+
+interface TeamGovernanceSettings {
+  automatically_create_personal_teams: boolean;
+  allow_user_team_creation: boolean;
+  allow_user_workspace_creation: boolean;
+  show_home_connection_cards: boolean;
 }
 
 interface AgentRunItem {
@@ -126,6 +135,8 @@ export default function UserManagement() {
   const [deleteReason, setDeleteReason] = useState('');
   const [creditsAmount, setCreditsAmount] = useState(0);
   const [creditsReason, setCreditsReason] = useState('');
+  const [teamGovernance, setTeamGovernance] = useState<TeamGovernanceSettings | null>(null);
+  const [savingTeamGovernance, setSavingTeamGovernance] = useState(false);
 
   const loadUsers = useCallback(async () => {
     try {
@@ -159,6 +170,95 @@ export default function UserManagement() {
   useEffect(() => {
     loadUsers();
   }, [loadUsers]);
+
+  const loadTeamGovernance = useCallback(async () => {
+    try {
+      const response = await fetch('/api/admin/platform/governance', {
+        headers: getAuthHeaders(),
+        credentials: 'include',
+      });
+      if (!response.ok) throw new Error('Failed to load platform governance');
+      setTeamGovernance(await response.json());
+    } catch (error) {
+      console.error('Failed to load platform governance:', error);
+      toast.error('Failed to load platform governance');
+    }
+  }, []);
+
+  useEffect(() => {
+    loadTeamGovernance();
+  }, [loadTeamGovernance]);
+
+  const updateTeamGovernance = async (patch: Partial<TeamGovernanceSettings>) => {
+    if (!teamGovernance) return;
+    const previous = teamGovernance;
+    const next = { ...previous, ...patch };
+    setTeamGovernance(next);
+    setSavingTeamGovernance(true);
+    try {
+      const response = await fetch('/api/admin/platform/governance', {
+        method: 'PATCH',
+        headers: getAuthHeaders(),
+        credentials: 'include',
+        body: JSON.stringify(patch),
+      });
+      if (!response.ok) throw new Error('Failed to update platform governance');
+      setTeamGovernance(await response.json());
+      toast.success('Platform governance updated');
+    } catch (error) {
+      console.error('Failed to update platform governance:', error);
+      setTeamGovernance(previous);
+      toast.error('Failed to update platform governance');
+    } finally {
+      setSavingTeamGovernance(false);
+    }
+  };
+
+  const updateTeamCreationOverride = async (value: boolean | null) => {
+    if (!selectedUser) return;
+    try {
+      setActionLoading(true);
+      const response = await fetch(`/api/admin/users/${selectedUser.id}/team-creation`, {
+        method: 'PATCH',
+        headers: getAuthHeaders(),
+        credentials: 'include',
+        body: JSON.stringify({ can_create_teams_override: value }),
+      });
+      if (!response.ok) throw new Error('Failed to update team creation setting');
+      const updated = await response.json();
+      setSelectedUser((current) => current ? { ...current, ...updated } : current);
+      setUsers((current) => current.map((item) => item.id === selectedUser.id ? { ...item, ...updated } : item));
+      toast.success('Team creation setting updated');
+    } catch (error) {
+      console.error('Failed to update team creation setting:', error);
+      toast.error('Failed to update team creation setting');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const updateWorkspaceCreationOverride = async (value: boolean | null) => {
+    if (!selectedUser) return;
+    try {
+      setActionLoading(true);
+      const response = await fetch(`/api/admin/users/${selectedUser.id}/workspace-creation`, {
+        method: 'PATCH',
+        headers: getAuthHeaders(),
+        credentials: 'include',
+        body: JSON.stringify({ can_create_workspaces_override: value }),
+      });
+      if (!response.ok) throw new Error('Failed to update workspace creation setting');
+      const updated = await response.json();
+      setSelectedUser((current) => current ? { ...current, ...updated } : current);
+      setUsers((current) => current.map((item) => item.id === selectedUser.id ? { ...item, ...updated } : item));
+      toast.success('Workspace creation setting updated');
+    } catch (error) {
+      console.error('Failed to update workspace creation setting:', error);
+      toast.error('Failed to update workspace creation setting');
+    } finally {
+      setActionLoading(false);
+    }
+  };
 
   const loadUserDetail = async (userId: string) => {
     try {
@@ -428,6 +528,65 @@ export default function UserManagement() {
           <span>Export CSV</span>
         </button>
       </div>
+
+      <section className="bg-gray-800 rounded-lg p-4 border border-[var(--text)]/15">
+        <div className="mb-3">
+          <h3 className="text-white font-medium">Platform governance</h3>
+          <p className="text-gray-400 text-sm">These defaults apply unless a user has an individual override.</p>
+        </div>
+        {teamGovernance && (
+          <div className="grid gap-3 md:grid-cols-2">
+            <label className="flex items-center justify-between gap-4 rounded-lg bg-gray-700/50 p-3">
+              <span>
+                <span className="block text-sm text-white">Automatically create personal teams</span>
+                <span className="block text-xs text-gray-400">Only for users with no invited or active team.</span>
+              </span>
+              <input
+                type="checkbox"
+                checked={teamGovernance.automatically_create_personal_teams}
+                disabled={savingTeamGovernance}
+                onChange={(event) => updateTeamGovernance({ automatically_create_personal_teams: event.target.checked })}
+              />
+            </label>
+            <label className="flex items-center justify-between gap-4 rounded-lg bg-gray-700/50 p-3">
+              <span>
+                <span className="block text-sm text-white">Allow users to create teams</span>
+                <span className="block text-xs text-gray-400">Platform administrators remain allowed.</span>
+              </span>
+              <input
+                type="checkbox"
+                checked={teamGovernance.allow_user_team_creation}
+                disabled={savingTeamGovernance}
+                onChange={(event) => updateTeamGovernance({ allow_user_team_creation: event.target.checked })}
+              />
+            </label>
+            <label className="flex items-center justify-between gap-4 rounded-lg bg-gray-700/50 p-3">
+              <span>
+                <span className="block text-sm text-white">Allow users to create workspaces</span>
+                <span className="block text-xs text-gray-400">Covers every path: blank, from a base, import, clone and marketplace fork.</span>
+              </span>
+              <input
+                type="checkbox"
+                checked={teamGovernance.allow_user_workspace_creation}
+                disabled={savingTeamGovernance}
+                onChange={(event) => updateTeamGovernance({ allow_user_workspace_creation: event.target.checked })}
+              />
+            </label>
+            <label className="flex items-center justify-between gap-4 rounded-lg bg-gray-700/50 p-3">
+              <span>
+                <span className="block text-sm text-white">Show connection setup cards on Home</span>
+                <span className="block text-xs text-gray-400">Displays the Connectors and Channels suggestions on the Home page.</span>
+              </span>
+              <input
+                type="checkbox"
+                checked={teamGovernance.show_home_connection_cards}
+                disabled={savingTeamGovernance}
+                onChange={(event) => updateTeamGovernance({ show_home_connection_cards: event.target.checked })}
+              />
+            </label>
+          </div>
+        )}
+      </section>
 
       {/* Search and Filters */}
       <div className="bg-gray-800 rounded-lg p-4 border border-[var(--text)]/15">
@@ -729,6 +888,38 @@ export default function UserManagement() {
                     <span className="text-white">
                       {selectedUser.project_count} ({selectedUser.deployed_projects_count} deployed)
                     </span>
+                  </div>
+                  <div className="flex justify-between items-center gap-4">
+                    <span className="text-gray-400">Team creation</span>
+                    <select
+                      value={selectedUser.can_create_teams_override === null ? 'inherit' : String(selectedUser.can_create_teams_override)}
+                      disabled={actionLoading || selectedUser.is_superuser}
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        updateTeamCreationOverride(value === 'inherit' ? null : value === 'true');
+                      }}
+                      className="bg-gray-700 text-white text-sm rounded px-2 py-1 border border-[var(--text)]/15 disabled:opacity-50"
+                    >
+                      <option value="inherit">Inherit platform policy</option>
+                      <option value="true">Allowed</option>
+                      <option value="false">Disabled</option>
+                    </select>
+                  </div>
+                  <div className="flex justify-between items-center gap-4">
+                    <span className="text-gray-400">Workspace creation</span>
+                    <select
+                      value={selectedUser.can_create_workspaces_override === null ? 'inherit' : String(selectedUser.can_create_workspaces_override)}
+                      disabled={actionLoading || selectedUser.is_superuser}
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        updateWorkspaceCreationOverride(value === 'inherit' ? null : value === 'true');
+                      }}
+                      className="bg-gray-700 text-white text-sm rounded px-2 py-1 border border-[var(--text)]/15 disabled:opacity-50"
+                    >
+                      <option value="inherit">Inherit platform policy</option>
+                      <option value="true">Allowed</option>
+                      <option value="false">Disabled</option>
+                    </select>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-400">Token Usage</span>

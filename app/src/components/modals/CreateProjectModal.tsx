@@ -68,7 +68,7 @@ export function CreateProjectModal({
   baseVersion,
   initialEmptyMode = false,
 }: CreateProjectModalProps) {
-  const { activeTeam } = useTeam();
+  const { activeTeam, canCreateWorkspaces } = useTeam();
 
   const [projectName, setProjectName] = useState('');
   const [selectedBase, setSelectedBase] = useState<MarketplaceBase | null>(null);
@@ -198,13 +198,18 @@ export function CreateProjectModal({
 
   const isEmptyMode = selectedBase?.id === EMPTY_TILE.id;
   const trimmedName = projectName.trim();
-  const canSubmit = !isLoading && !!trimmedName && !!selectedBase;
+  // Platform policy gate. Every entry point (sidebar, home, dashboard, chat,
+  // command palette, deep link) opens this modal, so gating here covers them
+  // all. The backend re-checks on every creation path regardless.
+  const canSubmit = !isLoading && !!trimmedName && !!selectedBase && canCreateWorkspaces;
 
-  const disabledReason = !trimmedName
-    ? 'Enter a workspace name'
-    : !selectedBase
-      ? 'Pick a template'
-      : '';
+  const disabledReason = !canCreateWorkspaces
+    ? 'Workspace creation is disabled for your account. Contact a platform administrator.'
+    : !trimmedName
+      ? 'Enter a workspace name'
+      : !selectedBase
+        ? 'Pick a template'
+        : '';
 
   const handleConfirm = () => {
     if (!canSubmit) return;

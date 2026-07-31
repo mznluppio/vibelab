@@ -355,9 +355,17 @@ async def get_projects(
 
     # Hide installed-app runtime projects from the normal Projects list —
     # those are rendered in Library > Apps instead. Forks (app_source) remain.
-    from ..services.apps.project_scopes import exclude_app_instances_clause
+    # Internal system Workspaces (`~workspace~`, `~automations~`) are agent /
+    # automation plumbing and are likewise not user Workspaces.
+    from ..services.apps.project_scopes import (
+        exclude_app_instances_clause,
+        exclude_internal_workspaces_clause,
+    )
 
-    project_kind_filter = exclude_app_instances_clause()
+    project_kind_filter = and_(
+        exclude_app_instances_clause(),
+        exclude_internal_workspaces_clause(),
+    )
 
     # Admins / superusers see all projects in the team
     if (member and member.role == "admin") or getattr(current_user, "is_superuser", False):
@@ -666,8 +674,13 @@ async def create_project_from_payload(
             detail="A template must be selected to create a project. Please select a template and try again.",
         )
 
-    # Team permission check (create).
-    from ..permissions import check_team_permission
+    # Platform Workspace-creation policy (superuser / per-user override /
+    # platform default). Covers every caller of this helper: the public API,
+    # the desktop import endpoint, and the agent's ``request_workspace``
+    # create-empty branch.
+    from ..permissions import check_team_permission, require_workspace_creation
+
+    await require_workspace_creation(db, current_user)
 
     if current_user.default_team_id:
         await check_team_permission(
@@ -715,6 +728,7 @@ async def create_project_from_payload(
                 "description": payload.description,
                 "owner_id": current_user.id,
                 "team_id": current_user.default_team_id,
+                "visibility": "private",
                 "runtime": resolved_runtime,
                 "source_path": canonical_source,
             }
@@ -3551,11 +3565,14 @@ async def fork_project(
     Creates a new project with the same files as the original.
     """
     # Get source project (RBAC check)
-    from ..permissions import Permission, get_project_with_access
+    from ..permissions import Permission, get_project_with_access, require_workspace_creation
 
     source_project, _role = await get_project_with_access(
         db, project_id, current_user.id, Permission.PROJECT_VIEW
     )
+
+    # A fork is a new Workspace: same creation policy as create_project.
+    await require_workspace_creation(db, current_user)
 
     # Enforce project limit (same check as create_project)
     await enforce_project_limit(current_user, db)
@@ -3578,9 +3595,20 @@ async def fork_project(
                     description=f"Forked from: {source_project.description or source_project.name}",
                     owner_id=current_user.id,
                     team_id=current_user.default_team_id,
+                    visibility="private",
                 )
                 db.add(forked_project)
                 await db.flush()
+                from ..models_team import ProjectMembership
+
+                db.add(
+                    ProjectMembership(
+                        project_id=forked_project.id,
+                        user_id=current_user.id,
+                        role="admin",
+                        granted_by_id=current_user.id,
+                    )
+                )
                 break
             except Exception as e:
                 if (
@@ -4752,10 +4780,18 @@ async def purchase_additional_deploy_slot(
 # WebSocket endpoint for streaming container logs
 @router.websocket("/{project_slug}/logs/stream")
 async def stream_container_logs(
-    websocket: WebSocket, project_slug: str, db: AsyncSession = Depends(get_db)
+    websocket: WebSocket,
+    project_slug: str,
+    token: str | None = Query(None),
+    db: AsyncSession = Depends(get_db),
 ):
     """
     WebSocket endpoint to stream container logs in real-time.
+
+    Authenticated with the same query-param/cookie JWT scheme as the terminal
+    WebSocket, then authorized against the Workspace itself — container logs
+    routinely carry environment values and source snippets, so they must never
+    be reachable by slug alone.
 
     Protocol:
         Server -> Client: {"type": "containers", "data": [{id, name, status, type}]}
@@ -4768,22 +4804,36 @@ async def stream_container_logs(
     from fastapi import WebSocketDisconnect
 
     from ..services.orchestration import get_orchestrator
+    from .terminal import _validate_ws_auth
 
     await websocket.accept()
 
+    # Authorize before any project lookup: authenticate the socket, then resolve
+    # the Workspace through the shared RBAC helper. Re-runs on every reconnect
+    # because it lives in the connection handler.
     try:
-        # Get project with containers
-        result = await db.execute(
-            select(Project)
-            .options(selectinload(Project.containers))
-            .where(Project.slug == project_slug)
-        )
-        project = result.scalar_one_or_none()
+        user_id = await _validate_ws_auth(token, websocket)
+    except ValueError as e:
+        await websocket.send_json({"type": "error", "message": f"Unauthorized: {e}"})
+        await websocket.close(code=1008)
+        return
 
-        if not project:
-            await websocket.send_json({"type": "error", "message": "Project not found"})
-            await websocket.close()
-            return
+    try:
+        from ..permissions import get_project_with_access
+
+        project, _role = await get_project_with_access(
+            db, project_slug, user_id, Permission.CONTAINER_VIEW
+        )
+    except HTTPException:
+        # 404 (no access at all) and 403 (insufficient role) are reported
+        # identically here so the socket never discloses which one it was.
+        await websocket.send_json({"type": "error", "message": "Project not found"})
+        await websocket.close(code=1008)
+        return
+
+    try:
+        # Eager-load containers now that access is established.
+        await db.refresh(project, ["containers"])
 
         # Send container list to client
         containers_data = [

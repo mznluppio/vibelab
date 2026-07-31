@@ -45,10 +45,13 @@ async def load_skill_executor(params: dict[str, Any], context: dict[str, Any]) -
             suggestion="Skills must be installed on the agent or present in the project's .agents/skills/ directory",
         )
 
-    # Find matching skill (case-insensitive)
+    # Match the catalog display name and its stable marketplace slug. Tool
+    # descriptions can safely reference slugs (for example
+    # ``project-architecture``) without forcing an LLM to reproduce title
+    # casing or spacing exactly.
     skill = None
     for s in available_skills:
-        if s.name.lower() == skill_name.lower():
+        if s.name.lower() == skill_name.lower() or (s.slug or "").lower() == skill_name.lower():
             skill = s
             break
 

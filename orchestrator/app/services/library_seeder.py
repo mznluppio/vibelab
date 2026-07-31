@@ -6,12 +6,12 @@ orchestrator no longer ships the catalog rows themselves — the federation
 sync worker pulls them from the marketplace service. This module is
 strictly user-state seeding: it sweeps every user and inserts a
 ``UserPurchasedAgent`` row for each canonical agent the user is missing,
-so canonical agents (Tesslate Agent, Librarian, Agent Builder, Assist to Build,
+so canonical agents (VibeLab Default, Librarian, Agent Builder,
 Automation Builder, Service Integrator) appear in every user's library
 and ``@``-mention picker without manual install.
 
 Each function is idempotent: re-running on a healthy DB is a no-op except
-for an explicit "pin to top of library" refresh on the Tesslate Agent
+for an explicit "pin to top of library" refresh on VibeLab Default
 row's ``purchase_date``. A function whose target slug has not yet been
 synced into the local catalog cache logs a warning and returns 0 — boot
 must never block on a temporarily-empty catalog (the next sync poll will
@@ -34,14 +34,14 @@ logger = logging.getLogger(__name__)
 
 # Canonical agents that ship with every user's library. Order matters:
 # the chat default-agent pick uses ``library[0]`` (most recent purchase_date),
-# so Tesslate Agent is auto-added LAST via its dedicated function and pins
+# so VibeLab Default is auto-added LAST via its dedicated function and pins
 # to the top on every restart.
 CANONICAL_AGENTS: list[tuple[str, str]] = [
     ("librarian", "Librarian"),
     ("agent-builder", "Agent Builder"),
-    ("assist-to-build", "Assist to Build"),
     ("automation-builder", "Automation Builder"),
     ("service-integrator", "Service Integrator"),
+    ("assist-to-build", "Assist to Build"),
 ]
 
 
@@ -107,12 +107,12 @@ async def add_agent_to_users_by_slug(
 
 
 async def auto_add_tesslate_agent_to_users(db: AsyncSession) -> int:
-    """Add the Tesslate Agent to all users and pin it to the top of every
+    """Add VibeLab Default to all users and pin it to the top of every
     library.
 
     Library order is ``purchase_date DESC``; the chat picks ``library[0]`` as
     the default agent. Refreshing ``purchase_date`` to NOW() on every boot
-    keeps Tesslate Agent at the top regardless of when the other auto-add
+    keeps VibeLab Default at the top regardless of when the other auto-add
     functions seeded their rows.
 
     Also clears ``selected_model`` so users always fall back to the agent's
@@ -124,7 +124,7 @@ async def auto_add_tesslate_agent_to_users(db: AsyncSession) -> int:
     tesslate_agent = result.scalar_one_or_none()
     if not tesslate_agent:
         logger.warning(
-            "Tesslate Agent (slug=tesslate-agent) not found in local catalog "
+            "VibeLab Default (slug=tesslate-agent) not found in local catalog "
             "cache; sync worker will populate it on its next poll. Skipping "
             "auto-add + top-pin this boot."
         )
@@ -168,9 +168,9 @@ async def auto_add_tesslate_agent_to_users(db: AsyncSession) -> int:
 
     await db.commit()
     if added:
-        logger.info("Added Tesslate Agent for %d users; refreshed top-pin for all", added)
+        logger.info("Added VibeLab Default for %d users; refreshed top-pin for all", added)
     else:
-        logger.debug("All users already have Tesslate Agent; refreshed top-pin for all")
+        logger.debug("All users already have VibeLab Default; refreshed top-pin for all")
 
     return added
 

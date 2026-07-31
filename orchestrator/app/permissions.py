@@ -17,11 +17,12 @@ from typing import TYPE_CHECKING
 from uuid import UUID
 
 from fastapi import HTTPException
-from sqlalchemy import and_, select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 if TYPE_CHECKING:
     from .models import Project
+    from .models_auth import User
     from .models_team import TeamMembership
 
 logger = logging.getLogger(__name__)
@@ -325,6 +326,113 @@ async def get_team_membership(
     return result.scalar_one_or_none()
 
 
+async def get_platform_settings(
+    db: AsyncSession,
+    *,
+    create: bool = False,
+):
+    """Return the singleton platform governance row.
+
+    A missing row is treated as the secure enterprise default (both flags
+    disabled).  Normal authorization checks stay read-only; only the admin
+    write surface requests creation, which keeps ordinary requests from
+    unexpectedly provisioning data.
+    """
+    from .models_team import PlatformSettings
+
+    result = await db.execute(select(PlatformSettings).where(PlatformSettings.id == 1))
+    settings = result.scalar_one_or_none()
+    if settings is not None or not create:
+        return settings or PlatformSettings(
+            id=1,
+            automatically_create_personal_teams=False,
+            allow_user_team_creation=False,
+        )
+
+    settings = PlatformSettings(id=1)
+    db.add(settings)
+    await db.flush()
+    return settings
+
+
+async def can_create_team(db: AsyncSession, user: User) -> bool:
+    """Resolve the server-authoritative team creation capability."""
+    if getattr(user, "is_superuser", False):
+        return True
+
+    override = getattr(user, "can_create_teams_override", None)
+    if override is not None:
+        return bool(override)
+
+    settings = await get_platform_settings(db)
+    return bool(settings.allow_user_team_creation)
+
+
+async def can_create_workspace(db: AsyncSession, user: User) -> bool:
+    """Resolve the server-authoritative Workspace creation capability.
+
+    Same precedence as :func:`can_create_team`: superuser, then the
+    per-user administrator override, then the platform default.
+    """
+    if getattr(user, "is_superuser", False):
+        return True
+
+    override = getattr(user, "can_create_workspaces_override", None)
+    if override is not None:
+        return bool(override)
+
+    settings = await get_platform_settings(db)
+    return bool(settings.allow_user_workspace_creation)
+
+
+async def require_workspace_creation(db: AsyncSession, user: User) -> None:
+    """Raise ``HTTPException(403)`` unless *user* may create a Workspace.
+
+    Every Workspace creation path — empty, from a Base, ZIP / Git import,
+    clone, duplicate, Marketplace install or fork, Assist to Build, and the
+    direct API — must funnel through this check.  Internal plumbing that
+    mints a hidden system Workspace (agent tool scope, automations) is
+    deliberately exempt: it is not a user-visible Workspace.
+    """
+    if await can_create_workspace(db, user):
+        return
+    raise HTTPException(
+        status_code=403,
+        detail="Workspace creation is disabled for your account. Contact a platform administrator.",
+    )
+
+
+async def require_agent_task_access(
+    task_id: str,
+    user_id: UUID,
+    db: AsyncSession | None = None,
+    permission: Permission = Permission.CHAT_VIEW,
+):
+    """Authorize access to a running agent task's event stream.
+
+    Agent event streams are keyed by ``task_id`` alone, so anything that
+    subscribes to one must first establish that the task belongs to the caller
+    — and, when the task is bound to a Workspace and a session is available,
+    that the caller still has access to that Workspace (so revoking access
+    also cuts the live stream).
+
+    Answers 404 in every failure case: the existence of another user's task is
+    itself information.
+    """
+    from .services.task_manager import get_task_manager
+
+    task = await get_task_manager().get_task_async(task_id)
+    if task is None or str(task.user_id) != str(user_id):
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    project_id = (task.metadata or {}).get("project_id") if task.metadata else None
+    if db is not None and project_id:
+        # Raises 404/403 with the same semantics as any other Workspace read.
+        await get_project_with_access(db, str(project_id), user_id, permission)
+
+    return task
+
+
 async def check_team_permission(
     db: AsyncSession,
     team_id: UUID,
@@ -371,6 +479,67 @@ async def check_team_permission(
         )
 
     return membership
+
+
+async def require_team_feature_access(
+    db: AsyncSession,
+    user: User,
+    *,
+    setting_name: str,
+    feature_name: str,
+) -> None:
+    """Require access to an opt-in team feature for a non-administrator.
+
+    Team feature settings deliberately complement the existing role system:
+    team admins (and platform superusers) always retain access, while editors
+    and viewers need the active team's explicit opt-in.  Users without a
+    default team are allowed for backwards compatibility with databases that
+    predate personal-team provisioning.
+    """
+    if getattr(user, "is_superuser", False):
+        return
+
+    team_id = getattr(user, "default_team_id", None)
+    if team_id is None:
+        return
+
+    from .models_team import Team
+
+    team = (await db.execute(select(Team).where(Team.id == team_id))).scalar_one_or_none()
+    if team is None:
+        # Do not turn a stale legacy team reference into an application-wide
+        # lockout. Normal team switching repairs this state.
+        return
+
+    membership = await get_team_membership(db, team.id, user.id)
+    if membership is not None and membership.role == "admin":
+        return
+    if membership is not None and bool(getattr(team, setting_name, False)):
+        return
+
+    raise HTTPException(
+        status_code=403,
+        detail=f"{feature_name} is restricted to team administrators",
+    )
+
+
+async def require_active_team_administrator(db: AsyncSession, user: User) -> None:
+    """Require an administrator role in the user's active team.
+
+    This is intentionally narrower than feature access: technical provider and
+    marketplace-source configuration must never become available just because
+    the team has opened the end-user Marketplace catalog.
+    """
+    if getattr(user, "is_superuser", False):
+        return
+
+    team_id = getattr(user, "default_team_id", None)
+    if team_id is None:
+        raise HTTPException(status_code=403, detail="Team administrator access is required")
+
+    membership = await get_team_membership(db, team_id, user.id)
+    if membership is None or membership.role != "admin":
+        raise HTTPException(status_code=403, detail="Team administrator access is required")
 
 
 async def get_effective_project_role(
@@ -439,6 +608,57 @@ async def get_effective_project_role(
 
     # visibility == "team" — inherit team role
     return team_membership.role
+
+
+def accessible_project_ids(user: User):
+    """Return a subquery of the project ids *user* may read.
+
+    The SQL counterpart of :func:`get_effective_project_role`, for endpoints
+    that list rows belonging to many projects at once. Filtering must happen in
+    the query — a Python-side filter after the fact still loads and counts rows
+    the caller cannot see, and a client-side one shows them.
+
+    A superuser matches every project. Everyone else matches a project when they
+    own it (legacy compat), hold an explicit project membership, administer its
+    team, or the project is team-visible inside a team they actively belong to.
+    """
+    from .models import Project
+    from .models_team import ProjectMembership, TeamMembership
+
+    if getattr(user, "is_superuser", False):
+        return select(Project.id)
+
+    own_memberships = select(ProjectMembership.project_id).where(
+        and_(
+            ProjectMembership.user_id == user.id,
+            ProjectMembership.is_active.is_(True),
+        )
+    )
+    admin_team_ids = select(TeamMembership.team_id).where(
+        and_(
+            TeamMembership.user_id == user.id,
+            TeamMembership.is_active.is_(True),
+            TeamMembership.role == "admin",
+        )
+    )
+    member_team_ids = select(TeamMembership.team_id).where(
+        and_(
+            TeamMembership.user_id == user.id,
+            TeamMembership.is_active.is_(True),
+        )
+    )
+
+    return select(Project.id).where(
+        or_(
+            Project.owner_id == user.id,
+            Project.id.in_(own_memberships),
+            Project.team_id.in_(admin_team_ids),
+            and_(
+                Project.team_id.in_(member_team_ids),
+                Project.visibility == "team",
+            ),
+        )
+    )
 
 
 async def get_project_with_access(

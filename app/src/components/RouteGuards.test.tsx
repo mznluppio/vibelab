@@ -11,18 +11,31 @@
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter, Routes, Route, useLocation } from 'react-router-dom';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { PrivateRoute, PublicOnlyRoute } from './RouteGuards';
+import { PrivateRoute, PublicOnlyRoute, TeamFeatureRoute } from './RouteGuards';
 
 // ---------------------------------------------------------------------------
 // Mock useAuth
 // ---------------------------------------------------------------------------
 const mockUseAuth = vi.fn();
+const mockUseTeam = vi.fn();
 
 vi.mock('../contexts/AuthContext', () => ({
   useAuth: () => mockUseAuth(),
 }));
+vi.mock('../contexts/TeamContext', () => ({
+  useTeam: () => mockUseTeam(),
+}));
 
-beforeEach(() => mockUseAuth.mockReset());
+beforeEach(() => {
+  mockUseAuth.mockReset();
+  mockUseTeam.mockReset();
+  mockUseTeam.mockReturnValue({
+    loading: false,
+    membership: { role: 'admin' },
+    canAccessMarketplace: true,
+    canAccessAutomations: true,
+  });
+});
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -154,6 +167,43 @@ describe('Route protection – private routes', () => {
       expect(screen.getByTestId('page-content')).toBeInTheDocument();
       expect(screen.queryByTestId('login-page')).not.toBeInTheDocument();
     });
+  });
+});
+
+describe('Team feature routes', () => {
+  const renderFeatureRoute = (feature: 'marketplace' | 'automations' | 'technical-settings') =>
+    render(
+      <MemoryRouter initialEntries={['/restricted']}>
+        <Routes>
+          <Route
+            path="/restricted"
+            element={<TeamFeatureRoute feature={feature}><div data-testid="page-content">Page</div></TeamFeatureRoute>}
+          />
+          <Route path="/home" element={<div data-testid="home">Home</div>} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+  it('redirects a member when Marketplace access is disabled', () => {
+    mockUseTeam.mockReturnValue({
+      loading: false,
+      membership: { role: 'editor' },
+      canAccessMarketplace: false,
+      canAccessAutomations: false,
+    });
+    renderFeatureRoute('marketplace');
+    expect(screen.getByTestId('home')).toBeInTheDocument();
+  });
+
+  it('renders Automations for a member when the team enables it', () => {
+    mockUseTeam.mockReturnValue({
+      loading: false,
+      membership: { role: 'viewer' },
+      canAccessMarketplace: false,
+      canAccessAutomations: true,
+    });
+    renderFeatureRoute('automations');
+    expect(screen.getByTestId('page-content')).toBeInTheDocument();
   });
 });
 

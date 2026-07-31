@@ -38,7 +38,7 @@ spec:
             - name: OPENSAIL_ENV
               value: "staging"
             - name: HUB_DISPLAY_NAME
-              value: "Tesslate Beta"
+              value: "Legrand Official"
             - name: MARKETPLACE_LOAD_SEEDS_ON_STARTUP
               value: "false"
             - name: BUNDLE_STORAGE_BACKEND

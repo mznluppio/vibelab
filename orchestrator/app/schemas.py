@@ -168,7 +168,7 @@ class Project(ProjectBase):
     slug: str  # URL-safe identifier for routing
     owner_id: UUID
     team_id: UUID | None = None
-    visibility: str = "team"  # 'private' | 'team' | 'public'
+    visibility: str = "private"  # 'private' | 'team' | 'public'
     network_name: str | None = None
     created_at: datetime
     updated_at: datetime | None

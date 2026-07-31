@@ -193,7 +193,7 @@ export default function TeamSettingsPage() {
       <SettingsGroup title="Feature access">
         <SettingsItem
           label="Allow non-admin members to access Marketplace"
-          description="Editors and viewers can access Marketplace when enabled. Team administrators always retain access."
+          description="Editors and viewers can browse Marketplace when enabled. Administrators always have access."
           control={
             <input
               type="checkbox"
@@ -206,7 +206,7 @@ export default function TeamSettingsPage() {
         />
         <SettingsItem
           label="Allow non-admin members to access Automations"
-          description="Editors and viewers can access Automations when enabled. Team administrators always retain access."
+          description="Editors and viewers can use Automations when enabled. Administrators always have access."
           control={
             <input
               type="checkbox"

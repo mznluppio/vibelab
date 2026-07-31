@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import get_settings
 from ..database import get_db
-from ..models import AgentSchedule, Project, User
+from ..models import AgentSchedule, User
 from ..services.gateway.schedule_parser import parse_schedule
 from ..services.gateway.scheduler import compute_next_run
 from ..users import current_active_user
@@ -284,11 +284,16 @@ async def trigger_schedule(
     import uuid as _uuid
 
     from ..models import Chat, Message
+
+    # A manual trigger starts an agent run inside the schedule's Workspace, so
+    # re-check Workspace access here and not just schedule ownership: a member
+    # whose Workspace access was revoked still owns their old schedule rows.
+    from ..permissions import Permission, get_project_with_access
     from ..services.agent_task import AgentTaskPayload
 
-    project = await db.scalar(select(Project).where(Project.id == schedule.project_id))
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    project, _role = await get_project_with_access(
+        db, str(schedule.project_id), user.id, Permission.CHAT_SEND
+    )
 
     task_id = str(_uuid.uuid4())
 

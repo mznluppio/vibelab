@@ -83,8 +83,8 @@ services:
       retries: 5
     command: redis-server --maxmemory 256mb --maxmemory-policy volatile-lru --appendonly yes
 
-  # Central, private LLM gateway for local VibeLab development. The proxy has
-  # no host port: only backend services on tesslate-network can reach it.
+  # Central, private LLM gateway for local VibeLab development. Its Prisma
+  # schema lives in a dedicated database, created safely before proxy startup.
   litellm-db-bootstrap:
     image: postgres:15-alpine
     container_name: vibelab-litellm-db-bootstrap
@@ -160,41 +160,47 @@ services:
       retries: 12
       start_period: 30s
 
-  # The federated catalog is intentionally opt-in for local development.
-  # Start it with: docker compose --profile marketplace-dev up
   marketplace-postgres:
-    profiles: ["marketplace-dev"]
     image: postgres:15-alpine
-    container_name: tesslate-marketplace-postgres
+    container_name: vibelab-marketplace-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_DB: ${MARKETPLACE_POSTGRES_DB:-marketplace}
-      POSTGRES_USER: ${MARKETPLACE_POSTGRES_USER:-marketplace}
-      POSTGRES_PASSWORD: ${MARKETPLACE_POSTGRES_PASSWORD:-marketplace_dev_pass}
+      POSTGRES_DB: ${MARKETPLACE_POSTGRES_DB:-vibelab_marketplace}
+      POSTGRES_USER: ${MARKETPLACE_POSTGRES_USER:-vibelab_marketplace}
+      # Set this development-only value in .env. It is intentionally not
+      # defaulted here so no credential is committed to the repository.
+      POSTGRES_PASSWORD: ${MARKETPLACE_POSTGRES_PASSWORD:?Set MARKETPLACE_POSTGRES_PASSWORD in .env}
     volumes:
       - marketplace-postgres-data:/var/lib/postgresql/data
     networks:
       - tesslate-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${MARKETPLACE_POSTGRES_USER:-marketplace} -d ${MARKETPLACE_POSTGRES_DB:-marketplace}"]
+      test: ["CMD-SHELL", "pg_isready -U ${MARKETPLACE_POSTGRES_USER:-vibelab_marketplace} -d ${MARKETPLACE_POSTGRES_DB:-vibelab_marketplace}"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 10s
 
   marketplace:
-    profiles: ["marketplace-dev"]
     build:
       context: ./packages/tesslate-marketplace
       dockerfile: Dockerfile
-    container_name: tesslate-marketplace
+    container_name: vibelab-marketplace
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql+asyncpg://${MARKETPLACE_POSTGRES_USER:-marketplace}:${MARKETPLACE_POSTGRES_PASSWORD:-marketplace_dev_pass}@marketplace-postgres:5432/${MARKETPLACE_POSTGRES_DB:-marketplace}
+      DATABASE_URL: postgresql+asyncpg://${MARKETPLACE_POSTGRES_USER:-vibelab_marketplace}:${MARKETPLACE_POSTGRES_PASSWORD:?Set MARKETPLACE_POSTGRES_PASSWORD in .env}@marketplace-postgres:5432/${MARKETPLACE_POSTGRES_DB:-vibelab_marketplace}
       BUNDLE_STORAGE_DIR: /data/bundles
+      # Signed bundle URLs are downloaded by the orchestrator/worker, not a
+      # browser, so keep them on the Compose network.
       BUNDLE_BASE_URL: http://marketplace:8800
-      HUB_DISPLAY_NAME: VibeLab Official
+      HUB_DISPLAY_NAME: Legrand Official
       OPENSAIL_ENV: dev
+      MARKETPLACE_LOAD_SEEDS_ON_STARTUP: "true"
+      # Keep administrative API access in the untracked .env. Requiring this
+      # avoids the hub's predictable development-token fallback.
+      STATIC_TOKENS: ${MARKETPLACE_STATIC_TOKENS:?Set MARKETPLACE_STATIC_TOKENS in .env}
+      # VibeLab is an internal library: retain catalog reads/installations,
+      # but make commercial capabilities unavailable.
       DISABLED_CAPABILITIES: pricing.read,pricing.write,pricing.checkout
     volumes:
       - marketplace-data:/data
@@ -239,8 +245,8 @@ services:
       - DEPLOYMENT_ENV=${DEPLOYMENT_ENV:-docker}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - LITELLM_API_BASE=http://litellm:4000/v1
-      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY}
-      - LITELLM_DEFAULT_MODELS=${LITELLM_DEFAULT_MODELS}
+      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-}
+      - LITELLM_DEFAULT_MODELS=${LITELLM_DEFAULT_MODELS:-vibelab-default,vibelab-fast,vibelab-reasoning}
       - LITELLM_TEAM_ID=${LITELLM_TEAM_ID}
       - LITELLM_EMAIL_DOMAIN=${LITELLM_EMAIL_DOMAIN}
       - LITELLM_INITIAL_BUDGET=${LITELLM_INITIAL_BUDGET:-0}
@@ -357,6 +363,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      marketplace:
+        condition: service_healthy
     networks:
       - tesslate-network
     labels:
@@ -403,8 +411,8 @@ services:
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
       - LITELLM_API_BASE=http://litellm:4000/v1
-      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY}
-      - LITELLM_DEFAULT_MODELS=${LITELLM_DEFAULT_MODELS}
+      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-}
+      - LITELLM_DEFAULT_MODELS=${LITELLM_DEFAULT_MODELS:-vibelab-default,vibelab-fast,vibelab-reasoning}
       - LITELLM_TEAM_ID=${LITELLM_TEAM_ID}
       - LITELLM_EMAIL_DOMAIN=${LITELLM_EMAIL_DOMAIN}
       - LITELLM_INITIAL_BUDGET=${LITELLM_INITIAL_BUDGET:-0}
@@ -419,6 +427,8 @@ services:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      marketplace:
         condition: service_healthy
     networks:
       - tesslate-network
@@ -495,8 +505,8 @@ services:
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
       - LITELLM_API_BASE=http://litellm:4000/v1
-      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY}
-      - LITELLM_DEFAULT_MODELS=${LITELLM_DEFAULT_MODELS}
+      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-}
+      - LITELLM_DEFAULT_MODELS=${LITELLM_DEFAULT_MODELS:-vibelab-default,vibelab-fast,vibelab-reasoning}
       - LITELLM_TEAM_ID=${LITELLM_TEAM_ID}
       - APP_DOMAIN=${APP_DOMAIN:-localhost}
       - GATEWAY_SHARD=0
@@ -537,6 +547,6 @@ volumes:
   gateway-locks:
     name: tesslate-gateway-locks
   marketplace-postgres-data:
-    name: tesslate-marketplace-postgres-data
+    name: vibelab-marketplace-postgres-data
   marketplace-data:
-    name: tesslate-marketplace-data
+    name: vibelab-marketplace-data

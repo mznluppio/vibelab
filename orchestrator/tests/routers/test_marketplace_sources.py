@@ -29,7 +29,6 @@ Coverage:
 from __future__ import annotations
 
 import asyncio
-import os
 import uuid
 from typing import Any
 from unittest.mock import patch
@@ -39,10 +38,9 @@ import httpx
 import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-_ASYNC_DB_URL = os.environ.get(
-    "DATABASE_URL",
-    "postgresql+asyncpg://tesslate_test:testpass@localhost:5433/tesslate_test",
-)
+from tests._test_database import get_test_database_url
+
+_ASYNC_DB_URL = get_test_database_url()
 
 
 def _run_db(coro_fn, *args, **kwargs):

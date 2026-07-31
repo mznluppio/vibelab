@@ -41,7 +41,7 @@
     "name": "Linear",
     "slug": "mcp-linear",
     "description": "Search issues, create tickets, update status across your Linear workspace.",
-    "long_description": "Official Linear MCP server. Connect once with OAuth to let Tesslate agents search and manage your Linear issues, projects, and cycles.",
+    "long_description": "Official Linear MCP server. Connect once with OAuth to let VibeLab agents search and manage your Linear issues, projects, and cycles.",
     "item_type": "mcp_server",
     "category": "productivity",
     "config": {

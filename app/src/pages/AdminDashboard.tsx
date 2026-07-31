@@ -1431,6 +1431,7 @@ function AgentFormModal({ agent, availableModels, onClose, onSuccess }: AgentFor
   const agentTypeToMode: Record<string, string> = {
     StreamAgent: 'stream',
     IterativeAgent: 'agent',
+    TesslateAgent: 'agent',
   };
 
   const [formData, setFormData] = useState({
@@ -1451,9 +1452,15 @@ function AgentFormModal({ agent, availableModels, onClose, onSuccess }: AgentFor
     requires_user_keys: agent?.requires_user_keys || false,
     features: agent?.features?.join(', ') || '',
     tags: agent?.tags?.join(', ') || '',
+    required_models: agent?.required_models || [],
     is_featured: agent?.is_featured || false,
     is_active: agent?.is_active !== undefined ? agent.is_active : true,
   });
+
+  const agentTypeOptions = Array.from(
+    new Set([formData.agent_type, 'StreamAgent', 'IterativeAgent'])
+  );
+  const modelOptions = Array.from(new Set([formData.model, ...availableModels].filter(Boolean)));
 
   const [saving, setSaving] = useState(false);
 
@@ -1484,7 +1491,7 @@ function AgentFormModal({ agent, availableModels, onClose, onSuccess }: AgentFor
           .split(',')
           .map((f) => f.trim())
           .filter((f) => f),
-        required_models: [], // Empty array - not used
+        required_models: formData.required_models,
         tags: formData.tags
           .split(',')
           .map((t) => t.trim())
@@ -1630,8 +1637,11 @@ function AgentFormModal({ agent, availableModels, onClose, onSuccess }: AgentFor
                 onChange={(e) => setFormData({ ...formData, agent_type: e.target.value })}
                 className="w-full bg-gray-700 text-white rounded-lg px-4 py-2 border border-[var(--text)]/20 disabled:opacity-50 [&>option]:bg-gray-700 [&>option]:text-white"
               >
-                <option value="StreamAgent">StreamAgent (streaming mode)</option>
-                <option value="IterativeAgent">IterativeAgent (agent mode)</option>
+                {agentTypeOptions.map((agentType) => (
+                  <option key={agentType} value={agentType}>
+                    {agentType} ({agentTypeToMode[agentType] || 'agent'} mode)
+                  </option>
+                ))}
               </select>
             </div>
           </div>
@@ -1651,7 +1661,7 @@ function AgentFormModal({ agent, availableModels, onClose, onSuccess }: AgentFor
                 onChange={(e) => setFormData({ ...formData, model: e.target.value })}
                 className="w-full bg-gray-700 text-white rounded-lg px-4 py-2 border border-[var(--text)]/20 disabled:opacity-50 [&>option]:bg-gray-700 [&>option]:text-white"
               >
-                {availableModels.map((model) => (
+                {modelOptions.map((model) => (
                   <option key={model} value={model}>
                     {model}
                   </option>

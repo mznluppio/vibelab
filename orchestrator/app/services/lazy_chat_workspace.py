@@ -36,11 +36,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models import PROJECT_KIND_WORKSPACE, Project
 from ..models_team import ProjectMembership, Team
+from .apps.project_scopes import INTERNAL_WORKSPACE_CHAT_NAME as _WORKSPACE_NAME
 
 logger = logging.getLogger(__name__)
-
-
-_WORKSPACE_NAME = "~workspace~"
 
 
 __all__ = [
