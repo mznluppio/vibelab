@@ -118,4 +118,42 @@ describe('MermaidDiagram', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Close diagram' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
   });
+
+  it('pans a wide fallback diagram with a standard pointer drag', async () => {
+    renderMermaid.mockResolvedValue({
+      svg: '<svg viewBox="0 0 800 100" aria-label="wide-process" />',
+    });
+    render(<MermaidDiagram code="flowchart LR\nA-->B" />);
+
+    await waitFor(() => expect(screen.getByLabelText('wide-process')).toBeInTheDocument());
+    const canvas = screen.getByLabelText('Mermaid diagram canvas. Drag to pan.');
+    Object.defineProperties(canvas, {
+      scrollLeft: { configurable: true, value: 120, writable: true },
+      scrollTop: { configurable: true, value: 40, writable: true },
+    });
+
+    const pointerEvent = (type: string, properties: Record<string, number>) => {
+      const event = new Event(type, { bubbles: true, cancelable: true });
+      Object.defineProperties(
+        event,
+        Object.fromEntries(
+          Object.entries(properties).map(([key, value]) => [key, { configurable: true, value }])
+        )
+      );
+      return event;
+    };
+
+    fireEvent(
+      canvas,
+      pointerEvent('pointerdown', { button: 0, pointerId: 4, clientX: 180, clientY: 80 })
+    );
+    fireEvent(canvas, pointerEvent('pointermove', { pointerId: 4, clientX: 140, clientY: 60 }));
+
+    expect(canvas.scrollLeft).toBe(160);
+    expect(canvas.scrollTop).toBe(60);
+    expect(canvas).toHaveAttribute('data-panning', 'true');
+
+    fireEvent(canvas, pointerEvent('pointerup', { pointerId: 4 }));
+    expect(canvas).toHaveAttribute('data-panning', 'false');
+  });
 });

@@ -79,7 +79,7 @@ describe('VibeLabDiagram', () => {
 
     expect(screen.getByText('Agentic delivery')).toBeInTheDocument();
     expect(screen.getByTestId('vibelab-react-flow')).toHaveAttribute('data-node-count', '2');
-    expect(screen.getByTestId('vibelab-react-flow')).toHaveAttribute('data-pan-on-drag', '[1]');
+    expect(screen.getByTestId('vibelab-react-flow')).toHaveAttribute('data-pan-on-drag', 'true');
     expect(screen.getByTestId('vibelab-react-flow')).toHaveAttribute(
       'data-zoom-on-scroll',
       'false'

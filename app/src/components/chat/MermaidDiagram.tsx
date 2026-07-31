@@ -108,6 +108,14 @@ export function MermaidDiagram({ code }: MermaidDiagramProps) {
   const [isWide, setIsWide] = useState(false);
   const componentId = useId().replace(/:/g, '-');
   const scrollRef = useRef<HTMLDivElement>(null);
+  const panRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    scrollLeft: number;
+    scrollTop: number;
+  } | null>(null);
+  const [isPanning, setIsPanning] = useState(false);
   const sanitizedCode = sanitizeMermaidSourceForVibeLab(code);
   const [themeRevision, setThemeRevision] = useState(0);
 
@@ -187,6 +195,40 @@ export function MermaidDiagram({ code }: MermaidDiagramProps) {
     }
   };
 
+  const beginPan = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
+
+    const container = event.currentTarget;
+    panRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      scrollLeft: container.scrollLeft,
+      scrollTop: container.scrollTop,
+    };
+    container.setPointerCapture?.(event.pointerId);
+    setIsPanning(true);
+    event.preventDefault();
+  };
+
+  const pan = (event: React.PointerEvent<HTMLDivElement>) => {
+    const activePan = panRef.current;
+    if (!activePan || activePan.pointerId !== event.pointerId) return;
+
+    event.currentTarget.scrollLeft = activePan.scrollLeft - (event.clientX - activePan.startX);
+    event.currentTarget.scrollTop = activePan.scrollTop - (event.clientY - activePan.startY);
+  };
+
+  const endPan = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (panRef.current?.pointerId !== event.pointerId) return;
+
+    if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    panRef.current = null;
+    setIsPanning(false);
+  };
+
   const actionBar = (
     <div className="mermaid-diagram-actions">
       {svg && (
@@ -238,7 +280,17 @@ export function MermaidDiagram({ code }: MermaidDiagramProps) {
     <>
       <section className="mermaid-diagram-card my-2" aria-label="Mermaid diagram">
         {actionBar}
-        <div ref={scrollRef} className="mermaid-diagram-scroll" data-wide={isWide}>
+        <div
+          ref={scrollRef}
+          className="mermaid-diagram-scroll"
+          data-wide={isWide}
+          data-panning={isPanning}
+          onPointerDown={beginPan}
+          onPointerMove={pan}
+          onPointerUp={endPan}
+          onPointerCancel={endPan}
+          aria-label="Mermaid diagram canvas. Drag to pan."
+        >
           <div
             className="mermaid-diagram-canvas"
             // Mermaid strict mode sanitizes its generated SVG; the source text is never injected as HTML.

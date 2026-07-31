@@ -86,7 +86,7 @@ function DiagramCanvas({
         minZoom={0.35}
         maxZoom={2.25}
         onInit={onInstance}
-        panOnDrag={expanded ? true : [1]}
+        panOnDrag
         panOnScroll={expanded}
         zoomOnScroll={expanded}
         zoomOnPinch

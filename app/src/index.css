@@ -661,6 +661,13 @@ textarea {
 
 .mermaid-diagram-scroll {
   max-height: 30rem;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.mermaid-diagram-scroll[data-panning='true'] {
+  cursor: grabbing;
 }
 
 .mermaid-diagram-canvas,
