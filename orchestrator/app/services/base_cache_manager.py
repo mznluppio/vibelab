@@ -21,6 +21,25 @@ from ..models import MarketplaceBase
 logger = logging.getLogger(__name__)
 
 
+def _node_install_command(directory: Path) -> str:
+    """Return the lockfile-aligned Node.js install command for a base.
+
+    Cached ``node_modules`` is copied into a project in Docker mode.  It must
+    therefore be created by the same package manager the project will use at
+    runtime; mixing npm and pnpm makes pnpm try to purge ``node_modules`` and
+    abort when the dev container has no TTY.
+    """
+    if (directory / "bun.lock").exists() or (directory / "bun.lockb").exists():
+        return "bun install --frozen-lockfile"
+    if (directory / "pnpm-lock.yaml").exists():
+        return "pnpm install --frozen-lockfile"
+    if (directory / "yarn.lock").exists():
+        return "yarn install --frozen-lockfile"
+    if (directory / "package-lock.json").exists():
+        return "npm ci --unsafe-perm"
+    return "npm install --unsafe-perm"
+
+
 class BaseCacheManager:
     """Manages pre-installed marketplace base cache (Docker mode only)."""
 
@@ -208,7 +227,7 @@ class BaseCacheManager:
 
         if has_nodejs:
             logger.info(f"[BASE-CACHE]     Installing Node.js deps ({label})...")
-            commands.append("npm install --unsafe-perm")
+            commands.append(_node_install_command(directory))
 
         if has_python:
             logger.info(f"[BASE-CACHE]     Installing Python deps ({label})...")
