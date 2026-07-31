@@ -104,7 +104,12 @@ export default function Chat() {
   const currentSession = sessions.find((s) => s.id === currentSessionId);
   const connectedProjectId = currentSession?.project_id ?? null;
   const connectedProjectName = currentSession?.project_name ?? null;
+  const connectedProjectSlug = currentSession?.project_slug ?? null;
   const attachedProjectSlugRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    attachedProjectSlugRef.current = connectedProjectSlug;
+  }, [connectedProjectSlug]);
 
   // Agent chat
   const {
@@ -141,7 +146,7 @@ export default function Chat() {
         projectSlug: string;
       }) => {
         attachedProjectSlugRef.current = projectSlug;
-        void updateSessionProject(chatId, projectId, projectName);
+        void updateSessionProject(chatId, projectId, projectName, projectSlug);
       },
       [updateSessionProject]
     ),
@@ -283,7 +288,7 @@ export default function Chat() {
   // send), but connecting a workspace is a meaningful action with persisted
   // state, so materialize the session now — same pattern as handleCreateWorkspace.
   const handleConnectProject = useCallback(
-    async (projectId: string, projectName: string) => {
+    async (projectId: string, projectName: string, projectSlug: string) => {
       let sessionId = currentSessionId;
       if (!sessionId) {
         sessionId = await createSession();
@@ -293,7 +298,8 @@ export default function Chat() {
         return;
       }
       try {
-        await updateSessionProject(sessionId, projectId, projectName);
+        attachedProjectSlugRef.current = projectSlug;
+        await updateSessionProject(sessionId, projectId, projectName, projectSlug);
         toast.success(`Connected to ${projectName}`);
       } catch {
         toast.error('Failed to connect project');
@@ -348,7 +354,8 @@ export default function Chat() {
           sessionId = await createSession();
         }
         if (sessionId) {
-          await updateSessionProject(sessionId, project.id, project.name);
+          attachedProjectSlugRef.current = project.slug;
+          await updateSessionProject(sessionId, project.id, project.name, project.slug);
         }
 
         toast.success(`Connected to ${project.name}`, {

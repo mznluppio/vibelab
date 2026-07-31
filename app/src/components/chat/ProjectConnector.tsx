@@ -12,7 +12,7 @@ interface Project {
 interface ProjectConnectorProps {
   projectId: string | null;
   projectName: string | null;
-  onConnect: (projectId: string, projectName: string) => void;
+  onConnect: (projectId: string, projectName: string, projectSlug: string) => void;
   onDisconnect: () => void;
   /** Called when the user clicks "+ New Workspace" in the dropdown. The
       parent owns the create flow (modal, project creation, auto-connect). */
@@ -88,7 +88,7 @@ export function ProjectConnector({
       }
       const project = filtered[idx];
       if (project) {
-        onConnect(project.id, project.name);
+        onConnect(project.id, project.name, project.slug);
         setIsOpen(false);
         setSearch('');
       }

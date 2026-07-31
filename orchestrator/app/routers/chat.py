@@ -201,6 +201,7 @@ async def create_chat(
     project_id = chat_data.get("project_id")
     title = chat_data.get("title")
     explicit_project_id = project_id is not None
+    project: Project | None = None
 
     if explicit_project_id:
         # A chat is a Workspace child resource, and the agent acts on the
@@ -218,8 +219,8 @@ async def create_chat(
         from ..services.lazy_chat_workspace import ensure_user_default_workspace
 
         try:
-            workspace = await ensure_user_default_workspace(current_user.id, db)
-            project_id = workspace.id
+            project = await ensure_user_default_workspace(current_user.id, db)
+            project_id = project.id
         except LookupError:
             logger.warning(
                 "create_chat: user=%s has no personal team; chat stays project-less",
@@ -241,6 +242,8 @@ async def create_chat(
         "id": str(db_chat.id),
         "user_id": str(db_chat.user_id),
         "project_id": str(db_chat.project_id) if db_chat.project_id else None,
+        "project_name": project.name if project else None,
+        "project_slug": project.slug if project else None,
         "title": db_chat.title,
         "origin": db_chat.origin or "browser",
         "status": db_chat.status or "active",
@@ -336,6 +339,7 @@ async def get_user_sessions(
             Chat.origin,
             Chat.project_id,
             Project.name.label("project_name"),
+            Project.slug.label("project_slug"),
             Chat.created_at,
             Chat.updated_at,
         )
@@ -357,6 +361,7 @@ async def get_user_sessions(
             "origin": row.origin,
             "project_id": str(row.project_id) if row.project_id else None,
             "project_name": row.project_name,
+            "project_slug": row.project_slug,
             "created_at": row.created_at.isoformat() if row.created_at else None,
             "updated_at": row.updated_at.isoformat() if row.updated_at else None,
         }

@@ -8,7 +8,7 @@ interface ChatTopBarProps {
   onNewSession: () => void;
   connectedProjectId: string | null;
   connectedProjectName: string | null;
-  onConnectProject: (projectId: string, projectName: string) => void;
+  onConnectProject: (projectId: string, projectName: string, projectSlug: string) => void;
   onDisconnectProject: () => void;
   onRequestNewWorkspace: () => void;
 }

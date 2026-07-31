@@ -9,6 +9,7 @@ export interface ChatSession {
   platform: string | null;
   project_id: string | null;
   project_name: string | null;
+  project_slug: string | null;
   created_at: string | null;
   updated_at: string | null;
 }
@@ -79,6 +80,7 @@ export function useChatSessions({
       platform: null,
       project_id: null,
       project_name: null,
+      project_slug: null,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
@@ -90,7 +92,16 @@ export function useChatSessions({
       if (!mountedRef.current) return tempId;
       setSessions((prev) =>
         prev.map((s) =>
-          s.id === tempId ? { ...s, id: newChat.id, title: newChat.title || 'New Chat' } : s
+          s.id === tempId
+            ? {
+                ...s,
+                id: newChat.id,
+                title: newChat.title || 'New Chat',
+                project_id: newChat.project_id || null,
+                project_name: newChat.project_name || null,
+                project_slug: newChat.project_slug || null,
+              }
+            : s
         )
       );
       setCurrentSessionId(newChat.id);
@@ -143,14 +154,26 @@ export function useChatSessions({
   }, []);
 
   const updateSessionProject = useCallback(
-    async (sessionId: string, projectId: string | null, projectName: string | null) => {
+    async (
+      sessionId: string,
+      projectId: string | null,
+      projectName: string | null,
+      projectSlug: string | null = null
+    ) => {
       try {
         await chatApi.updateChatProject(sessionId, projectId);
         if (!mountedRef.current) return;
         // Optimistic update — avoids a full refetch
         setSessions((prev) =>
           prev.map((s) =>
-            s.id === sessionId ? { ...s, project_id: projectId, project_name: projectName } : s
+            s.id === sessionId
+              ? {
+                  ...s,
+                  project_id: projectId,
+                  project_name: projectName,
+                  project_slug: projectSlug,
+                }
+              : s
           )
         );
       } catch (err) {
