@@ -34,6 +34,8 @@ beforeEach(() => {
     membership: { role: 'admin' },
     canAccessMarketplace: true,
     canAccessAutomations: true,
+    canAccessApps: true,
+    canAccessLibrary: true,
   });
 });
 
@@ -134,6 +136,7 @@ function renderGuardedRoute(path: string, guard: RouteGuard) {
         <Route path="/login" element={<div data-testid="login-page">Login</div>} />
         <Route path="/dashboard" element={<div data-testid="dashboard">Dashboard</div>} />
         <Route path="/home" element={<div data-testid="home">Home</div>} />
+        <Route path="/chat" element={<div data-testid="chat">Chat</div>} />
       </Routes>
     </MemoryRouter>
   );
@@ -171,7 +174,7 @@ describe('Route protection – private routes', () => {
 });
 
 describe('Team feature routes', () => {
-  const renderFeatureRoute = (feature: 'marketplace' | 'automations' | 'technical-settings') =>
+  const renderFeatureRoute = (feature: 'marketplace' | 'automations' | 'apps' | 'library' | 'technical-settings') =>
     render(
       <MemoryRouter initialEntries={['/restricted']}>
         <Routes>
@@ -180,6 +183,7 @@ describe('Team feature routes', () => {
             element={<TeamFeatureRoute feature={feature}><div data-testid="page-content">Page</div></TeamFeatureRoute>}
           />
           <Route path="/home" element={<div data-testid="home">Home</div>} />
+          <Route path="/chat" element={<div data-testid="chat">Chat</div>} />
         </Routes>
       </MemoryRouter>
     );
@@ -190,9 +194,11 @@ describe('Team feature routes', () => {
       membership: { role: 'editor' },
       canAccessMarketplace: false,
       canAccessAutomations: false,
+      canAccessApps: false,
+      canAccessLibrary: false,
     });
     renderFeatureRoute('marketplace');
-    expect(screen.getByTestId('home')).toBeInTheDocument();
+    expect(screen.getByTestId('chat')).toBeInTheDocument();
   });
 
   it('renders Automations for a member when the team enables it', () => {
@@ -201,8 +207,36 @@ describe('Team feature routes', () => {
       membership: { role: 'viewer' },
       canAccessMarketplace: false,
       canAccessAutomations: true,
+      canAccessApps: false,
+      canAccessLibrary: false,
     });
     renderFeatureRoute('automations');
+    expect(screen.getByTestId('page-content')).toBeInTheDocument();
+  });
+
+  it('renders Apps when the team enables it', () => {
+    mockUseTeam.mockReturnValue({
+      loading: false,
+      membership: { role: 'editor' },
+      canAccessMarketplace: false,
+      canAccessAutomations: false,
+      canAccessApps: true,
+      canAccessLibrary: true,
+    });
+    renderFeatureRoute('apps');
+    expect(screen.getByTestId('page-content')).toBeInTheDocument();
+  });
+
+  it('renders Library when the team enables it', () => {
+    mockUseTeam.mockReturnValue({
+      loading: false,
+      membership: { role: 'viewer' },
+      canAccessMarketplace: false,
+      canAccessAutomations: false,
+      canAccessApps: false,
+      canAccessLibrary: true,
+    });
+    renderFeatureRoute('library');
     expect(screen.getByTestId('page-content')).toBeInTheDocument();
   });
 });
@@ -213,7 +247,7 @@ describe('Team feature routes', () => {
 describe('Route protection – public-only routes', () => {
   const publicOnlyRoutes = ROUTE_CONFIG.filter((r) => r.guard === 'publicOnly');
 
-  describe('redirect to /home when authenticated', () => {
+  describe('redirect to /chat when authenticated', () => {
     beforeEach(() => {
       mockUseAuth.mockReturnValue({ isAuthenticated: true, isLoading: false });
     });
@@ -221,7 +255,7 @@ describe('Route protection – public-only routes', () => {
     it.each(publicOnlyRoutes.map((r) => [r.label, r.path]))('%s (%s)', (_label, path) => {
       renderGuardedRoute(path, 'publicOnly');
       expect(screen.queryByTestId('page-content')).not.toBeInTheDocument();
-      expect(screen.getByTestId('home')).toBeInTheDocument();
+      expect(screen.getByTestId('chat')).toBeInTheDocument();
     });
   });
 

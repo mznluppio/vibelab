@@ -109,7 +109,7 @@ function AppContent() {
   // Navigation and theme for global shortcuts
   const navigate = useNavigate();
   const { toggleTheme } = useTheme();
-  const { canAccessMarketplace } = useTeam();
+  const { canAccessMarketplace, canAccessLibrary } = useTeam();
 
   // State for keyboard shortcuts modal
   const [showShortcuts, setShowShortcuts] = useState(false);
@@ -119,9 +119,10 @@ function AppContent() {
     'mod+l',
     (e) => {
       e.preventDefault();
-      navigate('/library');
+      if (canAccessLibrary) navigate('/library');
     },
-    { enableOnFormTags: false }
+    { enableOnFormTags: false },
+    [canAccessLibrary]
   );
 
   useHotkeys(
@@ -328,7 +329,7 @@ function AppContent() {
         {/* Public @username profile resolver — redirects to /marketplace/creator/{uuid} */}
         <Route path="/@:username" element={<UserProfilePage />} />
 
-        {/* Marketplace is governed by the active team; Library remains available. */}
+        {/* Product surfaces are governed by the active team. */}
         <Route element={<PrivateRoute><TeamFeatureRoute feature="marketplace"><MarketplaceLayout /></TeamFeatureRoute></PrivateRoute>}>
           <Route path="/marketplace" element={<Marketplace />} />
           <Route path="/marketplace/category/:category" element={<CategoryRedirect />} />
@@ -349,17 +350,17 @@ function AppContent() {
           <Route path="/chat" element={<Chat />} />
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/marketplace/success" element={<TeamFeatureRoute feature="marketplace"><MarketplaceSuccess /></TeamFeatureRoute>} />
-          <Route path="/library" element={<Library />} />
+          <Route path="/library" element={<TeamFeatureRoute feature="library"><Library /></TeamFeatureRoute>} />
           <Route path="/feedback" element={<Feedback />} />
 
           {/* Tesslate Apps — browse/detail/install (order matters: bundles and installed before :appId) */}
-          <Route path="/apps" element={<Navigate to="/marketplace?type=app" replace />} />
-          <Route path="/apps/bundles/:bundleId" element={<BundleDetailPage />} />
-          <Route path="/apps/installed" element={<MyAppsPage />} />
-          <Route path="/apps/installed/:appInstanceId/workspace" element={<AppWorkspacePage />} />
-          <Route path="/apps/:appId/source" element={<AppSourceBrowserPage />} />
-          <Route path="/apps/:appId/fork" element={<ForkPage />} />
-          <Route path="/apps/:appId" element={<AppDetailPage />} />
+          <Route path="/apps" element={<TeamFeatureRoute feature="apps"><Navigate to="/apps/installed" replace /></TeamFeatureRoute>} />
+          <Route path="/apps/bundles/:bundleId" element={<TeamFeatureRoute feature="apps"><BundleDetailPage /></TeamFeatureRoute>} />
+          <Route path="/apps/installed" element={<TeamFeatureRoute feature="apps"><MyAppsPage /></TeamFeatureRoute>} />
+          <Route path="/apps/installed/:appInstanceId/workspace" element={<TeamFeatureRoute feature="apps"><AppWorkspacePage /></TeamFeatureRoute>} />
+          <Route path="/apps/:appId/source" element={<TeamFeatureRoute feature="apps"><AppSourceBrowserPage /></TeamFeatureRoute>} />
+          <Route path="/apps/:appId/fork" element={<TeamFeatureRoute feature="apps"><ForkPage /></TeamFeatureRoute>} />
+          <Route path="/apps/:appId" element={<TeamFeatureRoute feature="apps"><AppDetailPage /></TeamFeatureRoute>} />
 
           {/* Creator Studio */}
           <Route path="/creator" element={<CreatorStudioPage />} />
@@ -410,7 +411,7 @@ function AppContent() {
           path="/apps/embed/:appInstanceId"
           element={
             <PrivateRoute>
-              <AppWorkspacePage />
+              <TeamFeatureRoute feature="apps"><AppWorkspacePage /></TeamFeatureRoute>
             </PrivateRoute>
           }
         />
@@ -447,7 +448,7 @@ function AppContent() {
           <Route path="security" element={<SecuritySettings />} />
           <Route path="deployment" element={<DeploymentSettings />} />
           {/* /settings/connectors moved to Library → Connectors (#307). */}
-          <Route path="connectors" element={<Navigate to="/library?tab=connectors" replace />} />
+          <Route path="connectors" element={<TeamFeatureRoute feature="library"><Navigate to="/library?tab=connectors" replace /></TeamFeatureRoute>} />
           <Route path="api-keys" element={<TeamFeatureRoute feature="technical-settings"><ApiKeysSettings /></TeamFeatureRoute>} />
           <Route path="marketplace-sources" element={<TeamFeatureRoute feature="technical-settings"><MarketplaceSourcesSettings /></TeamFeatureRoute>} />
           <Route path="cloud" element={<TeamFeatureRoute feature="technical-settings"><CloudSettings /></TeamFeatureRoute>} />
@@ -456,7 +457,7 @@ function AppContent() {
           {/* Channels moved to Library → Channels. Old route stays as a redirect for bookmarks. */}
           <Route
             path="messaging/channels"
-            element={<Navigate to="/library?tab=channels" replace />}
+            element={<TeamFeatureRoute feature="library"><Navigate to="/library?tab=channels" replace /></TeamFeatureRoute>}
           />
           <Route path="messaging/schedules" element={<SchedulesSettings />} />
           <Route path="team" element={<TeamSettingsPage />} />

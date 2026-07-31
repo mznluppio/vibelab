@@ -24,6 +24,8 @@ export default function TeamSettingsPage() {
   const [themePreset, setThemePreset] = useState('default-dark');
   const [marketplaceAccessForNonAdmins, setMarketplaceAccessForNonAdmins] = useState(false);
   const [automationsAccessForNonAdmins, setAutomationsAccessForNonAdmins] = useState(false);
+  const [appsAccessForNonAdmins, setAppsAccessForNonAdmins] = useState(false);
+  const [libraryAccessForNonAdmins, setLibraryAccessForNonAdmins] = useState(false);
   const [saving, setSaving] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
@@ -42,6 +44,8 @@ export default function TeamSettingsPage() {
       setThemePreset(data.theme_preset || 'default-dark');
       setMarketplaceAccessForNonAdmins(data.marketplace_access_for_non_admins);
       setAutomationsAccessForNonAdmins(data.automations_access_for_non_admins);
+      setAppsAccessForNonAdmins(data.apps_access_for_non_admins);
+      setLibraryAccessForNonAdmins(data.library_access_for_non_admins);
     } catch (error) {
       console.error('Failed to load team:', error);
       toast.error('Failed to load team details');
@@ -74,6 +78,14 @@ export default function TeamSettingsPage() {
         automations_access_for_non_admins:
           automationsAccessForNonAdmins !== team.automations_access_for_non_admins
             ? automationsAccessForNonAdmins
+            : undefined,
+        apps_access_for_non_admins:
+          appsAccessForNonAdmins !== team.apps_access_for_non_admins
+            ? appsAccessForNonAdmins
+            : undefined,
+        library_access_for_non_admins:
+          libraryAccessForNonAdmins !== team.library_access_for_non_admins
+            ? libraryAccessForNonAdmins
             : undefined,
       });
       setTeam(updated);
@@ -210,6 +222,32 @@ export default function TeamSettingsPage() {
           }
         />
         <SettingsItem
+          label="Allow non-admin members to access Apps"
+          description="Editors and viewers can open and use installed Apps when enabled. Administrators always have access."
+          control={
+            <input
+              type="checkbox"
+              checked={appsAccessForNonAdmins}
+              onChange={(event) => setAppsAccessForNonAdmins(event.target.checked)}
+              disabled={!canEdit}
+              aria-label="Allow non-admin members to access Apps"
+            />
+          }
+        />
+        <SettingsItem
+          label="Allow non-admin members to access Library"
+          description="Editors and viewers can open the team Library when enabled. Administrators always have access."
+          control={
+            <input
+              type="checkbox"
+              checked={libraryAccessForNonAdmins}
+              onChange={(event) => setLibraryAccessForNonAdmins(event.target.checked)}
+              disabled={!canEdit}
+              aria-label="Allow non-admin members to access Library"
+            />
+          }
+        />
+        <SettingsItem
           label="Allow non-admin members to access Automations"
           description="Editors and viewers can use Automations when enabled. Administrators always have access."
           control={
@@ -299,7 +337,9 @@ export default function TeamSettingsPage() {
                 avatarUrl === team.avatar_url &&
                 themePreset === (team.theme_preset || 'default-dark') &&
                 marketplaceAccessForNonAdmins === team.marketplace_access_for_non_admins &&
-                automationsAccessForNonAdmins === team.automations_access_for_non_admins)
+                automationsAccessForNonAdmins === team.automations_access_for_non_admins &&
+                appsAccessForNonAdmins === team.apps_access_for_non_admins &&
+                libraryAccessForNonAdmins === team.library_access_for_non_admins)
             }
             className="btn btn-filled flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
           >

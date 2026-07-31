@@ -3971,6 +3971,8 @@ export interface Team {
   theme_preset: string | null;
   marketplace_access_for_non_admins: boolean;
   automations_access_for_non_admins: boolean;
+  apps_access_for_non_admins: boolean;
+  library_access_for_non_admins: boolean;
   created_at: string;
 }
 
@@ -3984,6 +3986,8 @@ export interface TeamList {
   theme_preset: string | null;
   marketplace_access_for_non_admins: boolean;
   automations_access_for_non_admins: boolean;
+  apps_access_for_non_admins: boolean;
+  library_access_for_non_admins: boolean;
   role: string | null;
 }
 
@@ -4075,6 +4079,8 @@ export const teamsApi = {
       theme_preset: string;
       marketplace_access_for_non_admins: boolean;
       automations_access_for_non_admins: boolean;
+      apps_access_for_non_admins: boolean;
+      library_access_for_non_admins: boolean;
     }>
   ): Promise<Team> {
     const response = await api.patch(`/api/teams/${slug}`, data);

@@ -29,6 +29,8 @@ class TeamUpdate(BaseModel):
     theme_preset: str | None = Field(None, min_length=1, max_length=100)
     marketplace_access_for_non_admins: bool | None = None
     automations_access_for_non_admins: bool | None = None
+    apps_access_for_non_admins: bool | None = None
+    library_access_for_non_admins: bool | None = None
 
 
 class TeamRead(BaseModel):
@@ -51,6 +53,8 @@ class TeamRead(BaseModel):
     theme_preset: str | None = None
     marketplace_access_for_non_admins: bool
     automations_access_for_non_admins: bool
+    apps_access_for_non_admins: bool
+    library_access_for_non_admins: bool
     created_at: datetime
 
 
@@ -66,6 +70,8 @@ class TeamList(BaseModel):
     theme_preset: str | None = None
     marketplace_access_for_non_admins: bool
     automations_access_for_non_admins: bool
+    apps_access_for_non_admins: bool
+    library_access_for_non_admins: bool
     role: str | None = None  # populated from membership
 
 

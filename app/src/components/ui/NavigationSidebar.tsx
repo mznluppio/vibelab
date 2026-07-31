@@ -216,6 +216,8 @@ export function NavigationSidebar({
     can,
     canAccessMarketplace,
     canAccessAutomations,
+    canAccessApps,
+    canAccessLibrary,
     canCreateTeams,
     teamSwitchKey,
   } = useTeam();
@@ -768,7 +770,7 @@ export function NavigationSidebar({
               </button>
             </Tooltip>
 
-            <Tooltip content="Apps" side="right" delay={200}>
+            {canAccessApps && <Tooltip content="Apps" side="right" delay={200}>
               <button
                 onClick={() => navigate('/apps/installed')}
                 className={
@@ -780,7 +782,7 @@ export function NavigationSidebar({
                 <SquaresFour size={16} className={iconClass(activePage === 'apps')} />
                 {isExpanded && <span className={labelClass(activePage === 'apps')}>Apps</span>}
               </button>
-            </Tooltip>
+            </Tooltip>}
 
             {canAccessAutomations && <Tooltip
               content={
@@ -870,7 +872,7 @@ export function NavigationSidebar({
                 The wrapper is `flex flex-col` so the inline-block trigger
                 that Tooltip injects stretches to the sidebar width and
                 the icon centers like every other collapsed-mode item. */}
-            <div
+            {canAccessLibrary && <div
               ref={libraryButtonRef}
               className="flex flex-col"
               onMouseEnter={openLibraryFlyout}
@@ -897,7 +899,7 @@ export function NavigationSidebar({
                   <span className={labelClass(activePage === 'library')}>Library</span>
                 </button>
               )}
-            </div>
+            </div>}
 
             {/* Feedback and Docs moved to HelpMenu (sidebar "?" button) */}
 
@@ -1017,7 +1019,7 @@ export function NavigationSidebar({
           block, then clips them with overflow-x-hidden).
           Entry animation is a gentle fade+slide (~220ms) so the popover
           doesn't snap in. */}
-      {libraryFlyout.open &&
+      {canAccessLibrary && libraryFlyout.open &&
         createPortal(
           <motion.div
             ref={libraryFlyoutRef}

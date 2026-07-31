@@ -72,10 +72,17 @@ export function TeamFeatureRoute({
   feature,
   children,
 }: {
-  feature: 'marketplace' | 'automations' | 'technical-settings';
+  feature: 'marketplace' | 'automations' | 'apps' | 'library' | 'technical-settings';
   children: ReactNode;
 }) {
-  const { loading, membership, canAccessMarketplace, canAccessAutomations } = useTeam();
+  const {
+    loading,
+    membership,
+    canAccessMarketplace,
+    canAccessAutomations,
+    canAccessApps,
+    canAccessLibrary,
+  } = useTeam();
 
   if (loading) return null;
   const allowed =
@@ -83,6 +90,10 @@ export function TeamFeatureRoute({
       ? canAccessMarketplace
       : feature === 'automations'
         ? canAccessAutomations
+        : feature === 'apps'
+          ? canAccessApps
+          : feature === 'library'
+            ? canAccessLibrary
         : membership?.role === 'admin';
 
   return allowed ? <>{children}</> : <Navigate to="/chat" replace />;

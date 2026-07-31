@@ -503,7 +503,12 @@ export function CommandPalette({ onShowShortcuts }: CommandPaletteProps) {
   const location = useLocation();
   const navigate = useNavigate();
   const { executeCommand, isCommandAvailable } = useCommands();
-  const { canAccessMarketplace, canAccessAutomations, membership } = useTeam();
+  const {
+    canAccessMarketplace,
+    canAccessAutomations,
+    canAccessLibrary,
+    membership,
+  } = useTeam();
 
   const [recent, setRecent] = useState<string[]>(() => loadJson(RECENT_KEY, []));
   const [frequency, setFrequency] = useState<Record<string, number>>(() =>
@@ -579,6 +584,10 @@ export function CommandPalette({ onShowShortcuts }: CommandPaletteProps) {
         .filter((shortcut) => {
           if (shortcut.id === 'go-marketplace') return canAccessMarketplace;
           if (shortcut.id === 'go-automations') return canAccessAutomations;
+          if (shortcut.id === 'go-library' || shortcut.id.startsWith('lib-')) {
+            return canAccessLibrary;
+          }
+          if (shortcut.id === 'settings-channels') return canAccessLibrary;
           if (shortcut.id === 'settings-api-keys') return membership?.role === 'admin';
           return true;
         })
@@ -596,6 +605,7 @@ export function CommandPalette({ onShowShortcuts }: CommandPaletteProps) {
     closePalette,
     canAccessMarketplace,
     canAccessAutomations,
+    canAccessLibrary,
     membership?.role,
   ]);
 

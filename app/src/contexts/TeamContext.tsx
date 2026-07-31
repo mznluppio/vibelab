@@ -39,6 +39,8 @@ interface TeamContextValue {
   /** Effective team feature capabilities. The backend remains authoritative. */
   canAccessMarketplace: boolean;
   canAccessAutomations: boolean;
+  canAccessApps: boolean;
+  canAccessLibrary: boolean;
   /** Effective platform permission to create a Team; backend remains authoritative. */
   canCreateTeams: boolean;
   /** Effective platform permission to create a Workspace; backend remains authoritative. */
@@ -152,6 +154,10 @@ export function TeamProvider({ children }: { children: React.ReactNode }) {
     isTeamAdmin || activeTeam?.marketplace_access_for_non_admins === true;
   const canAccessAutomations =
     isTeamAdmin || activeTeam?.automations_access_for_non_admins === true;
+  const canAccessApps =
+    isTeamAdmin || activeTeam?.apps_access_for_non_admins === true;
+  const canAccessLibrary =
+    isTeamAdmin || activeTeam?.library_access_for_non_admins === true;
 
   return (
     <TeamContext.Provider
@@ -163,6 +169,8 @@ export function TeamProvider({ children }: { children: React.ReactNode }) {
         can,
         canAccessMarketplace,
         canAccessAutomations,
+        canAccessApps,
+        canAccessLibrary,
         canCreateTeams,
         canCreateWorkspaces,
         showHomeConnectionCards,

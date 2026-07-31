@@ -112,6 +112,12 @@ class Team(Base):
     automations_access_for_non_admins = Column(
         Boolean, nullable=False, default=False, server_default="false"
     )
+    apps_access_for_non_admins = Column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    library_access_for_non_admins = Column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
 
     # Model preferences
     disabled_models = Column(

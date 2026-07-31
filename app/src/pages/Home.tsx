@@ -388,7 +388,14 @@ function ConnectorsCard({ onClick }: ConnectorsCardProps) {
 
 export default function Home() {
   const navigate = useNavigate();
-  const { activeTeam, teamSwitchKey, canCreateWorkspaces, showHomeConnectionCards } = useTeam();
+  const {
+    activeTeam,
+    teamSwitchKey,
+    canCreateWorkspaces,
+    canAccessApps,
+    canAccessLibrary,
+    showHomeConnectionCards,
+  } = useTeam();
   const { user } = useAuth();
   // Greeting prefers the user's first name if available, otherwise the
   // full display name. Falls back to "there" so the heading still reads
@@ -579,12 +586,14 @@ export default function Home() {
                 />
               </>
             )}
-            <ActionCard
-              icon={<SquaresFour size={20} />}
-              title="Apps"
-              tooltip="Install and launch prebuilt apps into your workspace."
-              onClick={() => navigate('/apps/installed')}
-            />
+            {canAccessApps && (
+              <ActionCard
+                icon={<SquaresFour size={20} />}
+                title="Apps"
+                tooltip="Install and launch prebuilt apps into your workspace."
+                onClick={() => navigate('/apps/installed')}
+              />
+            )}
             <SplitActionCard
               icon={<MoodyFace size={20} animate trackPointer className="text-[var(--primary)]" />}
               title="Agents"
@@ -600,7 +609,9 @@ export default function Home() {
             {showHomeConnectionCards && (
               <>
                 <ConnectorsCard onClick={() => navigate('/marketplace/browse/mcp_server')} />
-                <ChannelsCard onClick={() => navigate('/library?tab=channels')} />
+                {canAccessLibrary && (
+                  <ChannelsCard onClick={() => navigate('/library?tab=channels')} />
+                )}
               </>
             )}
           </div>
