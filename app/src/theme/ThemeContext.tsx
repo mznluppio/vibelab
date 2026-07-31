@@ -16,6 +16,8 @@ interface ThemeContextType {
   theme: 'light' | 'dark';
   themePresetId: string;
   themePreset: Theme;
+  /** The active Team owns the selection; users cannot override it locally. */
+  isTeamThemeEnforced: boolean;
   toggleTheme: () => void;
   setThemePreset: (presetId: string) => void;
   refreshUserTheme: () => Promise<void>;
@@ -39,19 +41,21 @@ const DEFAULT_THEME = 'default-dark';
 
 export function ThemeProvider({ children }: ThemeProviderProps) {
   const [themePresetId, setThemePresetIdState] = useState<string>(DEFAULT_THEME);
+  const [teamThemePresetId, setTeamThemePresetId] = useState<string | null>(null);
   const [availablePresets, setAvailablePresets] = useState<Theme[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [loadingState, setLoadingState] = useState<ThemeLoadingState>('idle');
   const [error, setError] = useState<string | null>(null);
 
   // Get current theme with validation
+  const effectiveThemePresetId = teamThemePresetId || themePresetId;
   const themePreset = (() => {
-    const preset = getThemePreset(themePresetId);
+    const preset = getThemePreset(effectiveThemePresetId);
     // Runtime validation before use
     if (isValidTheme(preset)) {
       return preset;
     }
-    console.warn(`Theme ${themePresetId} failed validation, using fallback`);
+    console.warn(`Theme ${effectiveThemePresetId} failed validation, using fallback`);
     return DEFAULT_FALLBACK_THEME as Theme;
   })();
 
@@ -122,10 +126,8 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
   // Apply the team's theme when switching teams
   useEffect(() => {
     const onTeamTheme = (e: Event) => {
-      const presetId = (e as CustomEvent).detail as string;
-      if (presetId) {
-        setThemePresetIdState(presetId);
-      }
+      const presetId = (e as CustomEvent).detail as string | null;
+      setTeamThemePresetId(presetId || null);
     };
     window.addEventListener('team-theme-changed', onTeamTheme);
     return () => window.removeEventListener('team-theme-changed', onTeamTheme);
@@ -134,10 +136,11 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
   // Apply theme whenever it changes
   useEffect(() => {
     applyThemePreset(themePreset);
-  }, [themePresetId, themePreset]);
+  }, [effectiveThemePresetId, themePreset]);
 
   // Toggle between dark and light variant of current theme color
   const toggleTheme = useCallback(() => {
+    if (teamThemePresetId) return;
     const currentPreset = getThemePreset(themePresetId);
     const baseName = themePresetId.replace(/-dark$|-light$/, '');
 
@@ -153,10 +156,11 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
       // Fallback to default variant of target mode
       setThemePreset(targetMode === 'dark' ? 'default-dark' : 'default-light');
     }
-  }, [themePresetId]);
+  }, [teamThemePresetId, themePresetId]);
 
   // Set a specific theme preset
   const setThemePreset = useCallback(async (presetId: string) => {
+    if (teamThemePresetId) return;
     // Verify the theme exists in cache
     let theme = getThemePreset(presetId);
     if (theme.id !== presetId) {
@@ -181,7 +185,7 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
       // Don't block on API errors (will fail silently if not authenticated)
       console.debug('Could not save theme to API');
     }
-  }, []);
+  }, [teamThemePresetId]);
 
   // Refresh theme from API (call after login - assumes user is authenticated)
   const refreshUserTheme = useCallback(async () => {
@@ -208,8 +212,9 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
     <ThemeContext.Provider
       value={{
         theme,
-        themePresetId,
+        themePresetId: effectiveThemePresetId,
         themePreset,
+        isTeamThemeEnforced: Boolean(teamThemePresetId),
         toggleTheme,
         setThemePreset,
         refreshUserTheme,

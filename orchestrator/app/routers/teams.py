@@ -454,6 +454,21 @@ async def update_team(
     if "avatar_url" in provided:
         changes["avatar_url"] = provided["avatar_url"]
         team.avatar_url = provided["avatar_url"]
+    if "theme_preset" in provided and provided["theme_preset"] is not None:
+        # Themes are platform-managed records, so only allow a Team to select
+        # a preset that currently exists. This prevents an invalid selection
+        # from breaking every member's inherited appearance.
+        from ..models import Theme
+
+        theme_result = await db.execute(
+            select(Theme).where(
+                Theme.slug == provided["theme_preset"], Theme.is_active.is_(True)
+            )
+        )
+        if theme_result.scalar_one_or_none() is None:
+            raise HTTPException(status_code=422, detail="Theme preset not found")
+        changes["theme_preset"] = provided["theme_preset"]
+        team.theme_preset = provided["theme_preset"]
     for setting in (
         "marketplace_access_for_non_admins",
         "automations_access_for_non_admins",

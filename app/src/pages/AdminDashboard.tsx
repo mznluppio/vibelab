@@ -888,6 +888,12 @@ export default function AdminDashboard() {
 
 function PlatformSettings() {
   const [showIntegrationCards, setShowIntegrationCards] = useState(false);
+  const [showGoogleSignIn, setShowGoogleSignIn] = useState(false);
+  const [showGithubSignIn, setShowGithubSignIn] = useState(false);
+  const [authBackgroundMode, setAuthBackgroundMode] = useState<'gradient' | 'image'>('gradient');
+  const [authBackgroundValue, setAuthBackgroundValue] = useState(
+    'linear-gradient(135deg, #0f172a, #0055a4)'
+  );
   const [loadingSettings, setLoadingSettings] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -899,10 +905,22 @@ function PlatformSettings() {
     })
       .then(async (response) => {
         if (!response.ok) throw new Error('Failed to load platform settings');
-        return (await response.json()) as { show_home_integration_cards: boolean };
+        return (await response.json()) as {
+          show_home_integration_cards: boolean;
+          show_google_sign_in: boolean;
+          show_github_sign_in: boolean;
+          auth_background_mode: 'gradient' | 'image';
+          auth_background_value: string;
+        };
       })
       .then((settings) => {
-        if (!cancelled) setShowIntegrationCards(settings.show_home_integration_cards);
+        if (!cancelled) {
+          setShowIntegrationCards(settings.show_home_integration_cards);
+          setShowGoogleSignIn(settings.show_google_sign_in);
+          setShowGithubSignIn(settings.show_github_sign_in);
+          setAuthBackgroundMode(settings.auth_background_mode);
+          setAuthBackgroundValue(settings.auth_background_value);
+        }
       })
       .catch((error) => {
         console.error('Failed to load platform settings:', error);
@@ -924,7 +942,13 @@ function PlatformSettings() {
         method: 'PUT',
         headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ show_home_integration_cards: showIntegrationCards }),
+        body: JSON.stringify({
+          show_home_integration_cards: showIntegrationCards,
+          show_google_sign_in: showGoogleSignIn,
+          show_github_sign_in: showGithubSignIn,
+          auth_background_mode: authBackgroundMode,
+          auth_background_value: authBackgroundValue,
+        }),
       });
       if (!response.ok) throw new Error('Failed to save platform settings');
       toast.success('Platform settings saved');
@@ -937,7 +961,8 @@ function PlatformSettings() {
   };
 
   return (
-    <section className="max-w-2xl rounded-lg border border-[var(--text)]/15 bg-gray-800 p-6">
+    <section className="max-w-2xl space-y-8 rounded-lg border border-[var(--text)]/15 bg-gray-800 p-6">
+      <div>
       <h2 className="text-xl font-semibold text-white">Home page</h2>
       <p className="mt-1 text-sm text-gray-400">
         Control optional onboarding cards shown on the Home page for every workspace member.
@@ -957,7 +982,34 @@ function PlatformSettings() {
           </span>
         </span>
       </label>
-      <div className="mt-5 flex justify-end">
+      </div>
+
+      <div className="border-t border-[var(--text)]/15 pt-8">
+        <h2 className="text-xl font-semibold text-white">Authentication pages</h2>
+        <p className="mt-1 text-sm text-gray-400">
+          These controls only affect the platform login and sign-up pages. Hidden providers can be restored later.
+        </p>
+        <div className="mt-6 space-y-3">
+          <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-[var(--text)]/15 bg-gray-700/40 p-4">
+            <input type="checkbox" checked={showGoogleSignIn} disabled={loadingSettings || saving} onChange={(event) => setShowGoogleSignIn(event.target.checked)} className="mt-0.5 h-4 w-4 rounded border-gray-500 bg-gray-800 text-blue-600 focus:ring-blue-500" />
+            <span><span className="block text-sm font-medium text-white">Show Continue with Google</span><span className="mt-1 block text-xs text-gray-400">Only displays the existing Google sign-in control; it does not change OAuth configuration.</span></span>
+          </label>
+          <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-[var(--text)]/15 bg-gray-700/40 p-4">
+            <input type="checkbox" checked={showGithubSignIn} disabled={loadingSettings || saving} onChange={(event) => setShowGithubSignIn(event.target.checked)} className="mt-0.5 h-4 w-4 rounded border-gray-500 bg-gray-800 text-blue-600 focus:ring-blue-500" />
+            <span><span className="block text-sm font-medium text-white">Show Continue with GitHub</span><span className="mt-1 block text-xs text-gray-400">Only displays the existing GitHub sign-in control; it does not change OAuth configuration.</span></span>
+          </label>
+        </div>
+        <div className="mt-6 space-y-3">
+          <label className="block text-sm font-medium text-white" htmlFor="auth-background-mode">Authentication background</label>
+          <select id="auth-background-mode" value={authBackgroundMode} disabled={loadingSettings || saving} onChange={(event) => setAuthBackgroundMode(event.target.value as 'gradient' | 'image')} className="w-full rounded-lg border border-[var(--text)]/15 bg-gray-700 px-3 py-2 text-sm text-white">
+            <option value="gradient">CSS gradient</option>
+            <option value="image">Image URL</option>
+          </select>
+          <input value={authBackgroundValue} disabled={loadingSettings || saving} onChange={(event) => setAuthBackgroundValue(event.target.value)} placeholder={authBackgroundMode === 'image' ? 'https://…' : 'linear-gradient(135deg, #0f172a, #0055a4)'} className="w-full rounded-lg border border-[var(--text)]/15 bg-gray-700 px-3 py-2 text-sm text-white placeholder:text-gray-500" />
+          <p className="text-xs text-gray-400">Use a complete HTTPS image URL, or a CSS linear, radial, or conic gradient.</p>
+        </div>
+      </div>
+      <div className="flex justify-end">
         <button
           type="button"
           onClick={save}

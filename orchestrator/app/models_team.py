@@ -51,6 +51,20 @@ class PlatformSettings(Base):
     show_home_connection_cards = Column(
         Boolean, nullable=False, default=False, server_default="false"
     )
+    # Authentication-page presentation is platform-wide and intentionally
+    # separate from Team settings. OAuth routes remain available when hidden,
+    # so a superuser can restore the controls without a deployment.
+    show_google_sign_in = Column(Boolean, nullable=False, default=False, server_default="false")
+    show_github_sign_in = Column(Boolean, nullable=False, default=False, server_default="false")
+    auth_background_mode = Column(
+        String(16), nullable=False, default="gradient", server_default="'gradient'"
+    )
+    auth_background_value = Column(
+        Text,
+        nullable=False,
+        default="linear-gradient(135deg, #0f172a, #0055a4)",
+        server_default="'linear-gradient(135deg, #0f172a, #0055a4)'",
+    )
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at = Column(
         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()

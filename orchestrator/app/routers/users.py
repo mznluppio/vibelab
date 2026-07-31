@@ -111,18 +111,10 @@ async def update_user_preferences(
                 f"Updated diagram_model for user {current_user.id} to {preferences.diagram_model}"
             )
 
-        # Update theme preset if provided (save to both user and active team)
+        # User preferences must not mutate a Team-wide appearance. Team admins
+        # manage that explicitly through the Team settings endpoint.
         if preferences.theme_preset is not None:
             current_user.theme_preset = preferences.theme_preset
-            if current_user.default_team_id:
-                from ..models_team import Team
-
-                team_result = await db.execute(
-                    select(Team).where(Team.id == current_user.default_team_id)
-                )
-                team = team_result.scalar_one_or_none()
-                if team:
-                    team.theme_preset = preferences.theme_preset
             logger.info(
                 f"Updated theme_preset for user {current_user.id} to {preferences.theme_preset}"
             )

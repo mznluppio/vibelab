@@ -6,6 +6,7 @@ import { teamsApi } from '../../lib/api';
 import type { Team } from '../../lib/api';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTeam } from '../../contexts/TeamContext';
+import { useTheme } from '../../theme/ThemeContext';
 import { LoadingSpinner } from '../../components/PulsingGridSpinner';
 import { ImageUpload } from '../../components/ImageUpload';
 import { SettingsSection, SettingsGroup, SettingsItem } from '../../components/settings';
@@ -14,11 +15,13 @@ export default function TeamSettingsPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { activeTeam, can, loading: teamLoading, refreshTeams, teamSwitchKey } = useTeam();
+  const { availablePresets } = useTheme();
   const [loading, setLoading] = useState(true);
   const [team, setTeam] = useState<Team | null>(null);
   const [name, setName] = useState('');
   const [slug, setSlug] = useState('');
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [themePreset, setThemePreset] = useState('default-dark');
   const [marketplaceAccessForNonAdmins, setMarketplaceAccessForNonAdmins] = useState(false);
   const [automationsAccessForNonAdmins, setAutomationsAccessForNonAdmins] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -36,6 +39,7 @@ export default function TeamSettingsPage() {
       setName(data.name);
       setSlug(data.slug);
       setAvatarUrl(data.avatar_url || null);
+      setThemePreset(data.theme_preset || 'default-dark');
       setMarketplaceAccessForNonAdmins(data.marketplace_access_for_non_admins);
       setAutomationsAccessForNonAdmins(data.automations_access_for_non_admins);
     } catch (error) {
@@ -62,6 +66,7 @@ export default function TeamSettingsPage() {
         name: name !== team.name ? name : undefined,
         slug: slug !== team.slug ? slug : undefined,
         avatar_url: avatarUrl !== team.avatar_url ? avatarUrl : undefined,
+        theme_preset: themePreset !== (team.theme_preset || 'default-dark') ? themePreset : undefined,
         marketplace_access_for_non_admins:
           marketplaceAccessForNonAdmins !== team.marketplace_access_for_non_admins
             ? marketplaceAccessForNonAdmins
@@ -219,6 +224,28 @@ export default function TeamSettingsPage() {
         />
       </SettingsGroup>
 
+      <SettingsGroup title="Team appearance">
+        <SettingsItem
+          label="Team theme"
+          description="Every member inherits this theme while this team is active."
+          control={
+            <select
+              value={themePreset}
+              onChange={(event) => setThemePreset(event.target.value)}
+              disabled={!canEdit || availablePresets.length === 0}
+              className="w-full sm:w-64 px-2 py-1 bg-[var(--bg)] border border-[var(--border)] text-[var(--text)] rounded-[var(--radius-small)] text-xs focus:outline-none focus:border-[var(--border-hover)] disabled:opacity-50 disabled:cursor-not-allowed"
+              aria-label="Team theme"
+            >
+              {availablePresets.map((preset) => (
+                <option key={preset.id} value={preset.id}>
+                  {preset.name}
+                </option>
+              ))}
+            </select>
+          }
+        />
+      </SettingsGroup>
+
       {/* Basic Info */}
       <SettingsGroup title="General">
         <SettingsItem
@@ -270,6 +297,7 @@ export default function TeamSettingsPage() {
               (name === team.name &&
                 slug === team.slug &&
                 avatarUrl === team.avatar_url &&
+                themePreset === (team.theme_preset || 'default-dark') &&
                 marketplaceAccessForNonAdmins === team.marketplace_access_for_non_admins &&
                 automationsAccessForNonAdmins === team.automations_access_for_non_admins)
             }

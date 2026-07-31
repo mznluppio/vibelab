@@ -3,10 +3,11 @@ import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { authApi, revokeServerSession } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 import { PulsingGridSpinner } from '../components/PulsingGridSpinner';
-import { MiniAsteroids } from '../components/MiniAsteroids';
 import { VibeLabBrand } from '../components/ui/VibeLabBrand';
 import { useTheme } from '../theme/ThemeContext';
 import { useFeatureFlag } from '../contexts/useFeatureFlag';
+import { usePlatformAuthSettings } from '../hooks/usePlatformAuthSettings';
+import { AuthVisualPanel } from '../components/auth/AuthVisualPanel';
 import toast from 'react-hot-toast';
 
 type LoginMode = 'password' | 'magic-email' | 'magic-sent' | 'magic-code';
@@ -52,13 +53,14 @@ export default function Login() {
   // below downgrade to 'password' once the flag has actually loaded. We
   // only overwrite mode if the user hasn't already made their own choice.
   const magicLinkEnabled = useFeatureFlag('magic_link_login');
-  const [mode, setMode] = useState<LoginMode>('magic-email');
+  const [mode, setMode] = useState<LoginMode>('password');
   const [magicEmail, setMagicEmail] = useState('');
   const userOverrodeModeRef = useRef(false);
+  const platformSettings = usePlatformAuthSettings();
 
   useEffect(() => {
     if (userOverrodeModeRef.current) return;
-    setMode(magicLinkEnabled ? 'magic-email' : 'password');
+    setMode('password');
   }, [magicLinkEnabled]);
 
   // Resend cooldown timer
@@ -390,13 +392,11 @@ export default function Login() {
               </div>
             </div>
           ) : mode === 'magic-email' ? (
-            /* Magic Link — email entry (DEFAULT VIEW, includes OAuth) */
+            /* Magic Link — email entry */
             <>
-              {/* OAuth — shown on the landing view so users see every
-                  sign-in option without needing to toggle modes. The
-                  password view deliberately omits these to keep its
-                  single focused purpose. */}
+              {(platformSettings.show_google_sign_in || platformSettings.show_github_sign_in) && (
               <div className="space-y-3 mb-6">
+                {platformSettings.show_google_sign_in && (
                 <button
                   onClick={handleGoogleLogin}
                   disabled={loading}
@@ -422,7 +422,8 @@ export default function Login() {
                   </svg>
                   Continue with Google
                 </button>
-
+                )}
+                {platformSettings.show_github_sign_in && (
                 <button
                   onClick={handleGithubLogin}
                   disabled={loading}
@@ -437,16 +438,9 @@ export default function Login() {
                   </svg>
                   Continue with GitHub
                 </button>
+                )}
               </div>
-
-              {/* Divider */}
-              <div className="mb-6 flex items-center">
-                <div className="flex-1 border-t border-gray-200"></div>
-                <span className="px-4 text-gray-400 text-xs font-medium">
-                  Or sign in with email
-                </span>
-                <div className="flex-1 border-t border-gray-200"></div>
-              </div>
+              )}
 
               <form onSubmit={handleMagicLinkRequest} className="space-y-4">
                 <input
@@ -635,7 +629,8 @@ export default function Login() {
                 </button>
               </form>
 
-              {/* Back to magic-link (the default mode when the flag is on) */}
+              {/* Magic links remain available when configured, while password
+                  sign-in stays the primary entry point. */}
               {magicLinkEnabled && (
                 <div className="mt-4 text-center">
                   <button
@@ -667,65 +662,7 @@ export default function Login() {
         </div>
       </div>
 
-      {/* Right side - Dark hero section */}
-      <div
-        className="hidden lg:flex lg:w-1/2 items-center justify-center p-12 relative overflow-hidden"
-        style={{
-          background: 'linear-gradient(180deg, #0a0a0f 0%, #1a1a2e 50%, #16213e 100%)',
-        }}
-      >
-        {/* Starry background effect */}
-        <div
-          className="absolute inset-0"
-          style={{
-            backgroundImage: `
-            radial-gradient(2px 2px at 20% 30%, white, transparent),
-            radial-gradient(2px 2px at 60% 70%, white, transparent),
-            radial-gradient(1px 1px at 50% 50%, white, transparent),
-            radial-gradient(1px 1px at 80% 10%, white, transparent),
-            radial-gradient(2px 2px at 90% 60%, white, transparent),
-            radial-gradient(1px 1px at 33% 80%, white, transparent),
-            radial-gradient(1px 1px at 70% 40%, white, transparent)
-          `,
-            backgroundSize: '200% 200%',
-            backgroundPosition: '0% 0%, 100% 100%, 50% 50%, 0% 100%, 100% 0%, 33% 100%, 70% 40%',
-            opacity: 0.5,
-          }}
-        ></div>
-
-        {/* Shooting star effect */}
-        <div
-          className="absolute top-20 right-40 w-32 h-0.5 bg-gradient-to-r from-transparent via-white to-transparent opacity-70"
-          style={{
-            transform: 'rotate(-45deg)',
-            animation: 'shooting-star 3s ease-in-out infinite',
-          }}
-        ></div>
-
-        <div className="relative z-10 max-w-lg text-center">
-          {/* Mini Asteroids Game */}
-          <div className="relative w-full h-80 sm:h-96">
-            <MiniAsteroids />
-          </div>
-        </div>
-
-        {/* CSS for shooting star animation */}
-        <style>{`
-          @keyframes shooting-star {
-            0% {
-              opacity: 0;
-              transform: translateX(-100px) translateY(100px) rotate(-45deg);
-            }
-            50% {
-              opacity: 0.7;
-            }
-            100% {
-              opacity: 0;
-              transform: translateX(300px) translateY(-300px) rotate(-45deg);
-            }
-          }
-        `}</style>
-      </div>
+      <AuthVisualPanel appearance={platformSettings} />
     </div>
   );
 }

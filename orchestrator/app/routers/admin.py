@@ -15,12 +15,12 @@ import io
 import logging
 import re
 from datetime import datetime, timedelta
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import String, and_, asc, cast, desc, distinct, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -59,14 +59,40 @@ HOME_INTEGRATION_CARDS_KEY = "home.integration_cards"
 
 class PlatformSettingsUpdate(BaseModel):
     show_home_integration_cards: bool
+    show_google_sign_in: bool
+    show_github_sign_in: bool
+    auth_background_mode: Literal["gradient", "image"]
+    auth_background_value: str = Field(min_length=1, max_length=2048)
+
+    @field_validator("auth_background_value")
+    @classmethod
+    def validate_auth_background_value(cls, value: str, info) -> str:
+        value = value.strip()
+        mode = info.data.get("auth_background_mode")
+        if mode == "image":
+            if not re.fullmatch(r"https?://[^\s\"'()<>]+", value):
+                raise ValueError("Image backgrounds must use an http(s) URL")
+        elif not re.fullmatch(r"(?:linear|radial|conic)-gradient\(.+\)", value):
+            raise ValueError("Gradient backgrounds must be a CSS gradient")
+        return value
+
+
+def _platform_settings_payload(settings) -> dict[str, bool | str]:
+    return {
+        "show_home_integration_cards": bool(settings.show_home_connection_cards),
+        "show_google_sign_in": bool(settings.show_google_sign_in),
+        "show_github_sign_in": bool(settings.show_github_sign_in),
+        "auth_background_mode": settings.auth_background_mode,
+        "auth_background_value": settings.auth_background_value,
+    }
 
 
 @router.get("/settings/platform")
 async def get_platform_settings(
     admin: User = Depends(current_superuser), db: AsyncSession = Depends(get_db)
-) -> dict[str, bool]:
+) -> dict[str, bool | str]:
     settings = await get_platform_governance_settings(db)
-    return {"show_home_integration_cards": bool(settings.show_home_connection_cards)}
+    return _platform_settings_payload(settings)
 
 
 @router.put("/settings/platform")
@@ -74,17 +100,20 @@ async def update_platform_settings(
     payload: PlatformSettingsUpdate,
     admin: User = Depends(current_superuser),
     db: AsyncSession = Depends(get_db),
-) -> dict[str, bool]:
+) -> dict[str, bool | str]:
     settings = await get_platform_governance_settings(db, create=True)
     settings.show_home_connection_cards = payload.show_home_integration_cards
+    settings.show_google_sign_in = payload.show_google_sign_in
+    settings.show_github_sign_in = payload.show_github_sign_in
+    settings.auth_background_mode = payload.auth_background_mode
+    settings.auth_background_value = payload.auth_background_value
 
     await db.commit()
     logger.info(
-        "Admin %s updated home integration cards visibility to %s",
+        "Admin %s updated platform authentication presentation settings",
         admin.username,
-        payload.show_home_integration_cards,
     )
-    return {"show_home_integration_cards": payload.show_home_integration_cards}
+    return _platform_settings_payload(settings)
 
 
 class TeamGovernanceUpdate(BaseModel):

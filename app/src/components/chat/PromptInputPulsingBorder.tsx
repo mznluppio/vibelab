@@ -8,6 +8,7 @@ import {
   type ErrorInfo,
   type ReactNode,
 } from 'react';
+import { useTheme } from '../../theme/ThemeContext';
 
 const LazyPulsingBorder = lazy(async () => {
   const module = await import('@paper-design/shaders-react');
@@ -94,6 +95,7 @@ export function PromptInputPulsingBorder({
   active: boolean;
   children: ReactNode;
 }) {
+  const { themePreset } = useTheme();
   const [canAnimate, setCanAnimate] = useState(false);
   const [reducedMotion, setReducedMotion] = useState(false);
   const { wrapperRef, geometry } = usePulsingBorderGeometry();
@@ -127,10 +129,10 @@ export function PromptInputPulsingBorder({
                 left: -GLOW_BLEED,
                 opacity: active ? 1 : 0.7,
               }}
-              // One colour only: each extra colour adds its own set of spots,
-              // and once they overlap the contour lights up evenly and stops
-              // reading as movement.
-              colors={['#0dc1fd', '#0055A4']}
+              // These colors come from the active theme instead of the former
+              // VibeLab blue constants, so the animated border belongs to the
+              // current Team's appearance as well.
+              colors={[themePreset.colors.primary, themePreset.colors.accent]}
               colorBack="rgba(0, 0, 0, 0)"
               roundness={geometry.roundness}
               thickness={BORDER_THICKNESS}

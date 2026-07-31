@@ -2,9 +2,10 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate, Link, useLocation, useSearchParams } from 'react-router-dom';
 import { authApi } from '../lib/api';
 import { PulsingGridSpinner } from '../components/PulsingGridSpinner';
-import { MiniAsteroids } from '../components/MiniAsteroids';
 import { useTheme } from '../theme/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
+import { usePlatformAuthSettings } from '../hooks/usePlatformAuthSettings';
+import { AuthVisualPanel } from '../components/auth/AuthVisualPanel';
 import toast from 'react-hot-toast';
 
 export default function Register() {
@@ -13,6 +14,7 @@ export default function Register() {
   const [searchParams] = useSearchParams();
   const { refreshUserTheme } = useTheme();
   const { checkAuth } = useAuth();
+  const platformSettings = usePlatformAuthSettings();
   // Check state (from PrivateRoute/cross-links), then ?redirect= query param (from MarketplaceDetail), then default
   const redirectTo = (location.state as { from?: string })?.from
     || searchParams.get('redirect')
@@ -277,8 +279,10 @@ export default function Register() {
           ) : (
             /* Normal Registration UI */
             <>
-              {/* OAuth Buttons First */}
+              {/* Optional OAuth controls, managed by the platform superadmin. */}
+              {(platformSettings.show_google_sign_in || platformSettings.show_github_sign_in) && (
               <div className="space-y-3 mb-6">
+                {platformSettings.show_google_sign_in && (
                 <button
                   onClick={handleGoogleLogin}
                   disabled={loading}
@@ -304,7 +308,8 @@ export default function Register() {
                   </svg>
                   Continue with Google
                 </button>
-
+                )}
+                {platformSettings.show_github_sign_in && (
                 <button
                   onClick={handleGithubLogin}
                   disabled={loading}
@@ -319,16 +324,9 @@ export default function Register() {
                   </svg>
                   Continue with GitHub
                 </button>
+                )}
               </div>
-
-              {/* Divider */}
-              <div className="mb-6 flex items-center">
-                <div className="flex-1 border-t border-gray-200"></div>
-                <span className="px-4 text-gray-400 text-xs font-medium">
-                  Or sign up with email
-                </span>
-                <div className="flex-1 border-t border-gray-200"></div>
-              </div>
+              )}
 
               {/* Email Form */}
               <form onSubmit={handleSubmit} className="space-y-4">
@@ -422,92 +420,7 @@ export default function Register() {
         </div>
       </div>
 
-      {/* Right side - Dark hero section */}
-      <div
-        className="hidden lg:flex lg:w-1/2 items-center justify-center p-12 relative overflow-hidden"
-        style={{
-          background: 'linear-gradient(180deg, #0a0a0f 0%, #1a1a2e 50%, #16213e 100%)',
-        }}
-      >
-        {/* Starry background effect */}
-        <div
-          className="absolute inset-0"
-          style={{
-            backgroundImage: `
-            radial-gradient(2px 2px at 20% 30%, white, transparent),
-            radial-gradient(2px 2px at 60% 70%, white, transparent),
-            radial-gradient(1px 1px at 50% 50%, white, transparent),
-            radial-gradient(1px 1px at 80% 10%, white, transparent),
-            radial-gradient(2px 2px at 90% 60%, white, transparent),
-            radial-gradient(1px 1px at 33% 80%, white, transparent),
-            radial-gradient(1px 1px at 70% 40%, white, transparent)
-          `,
-            backgroundSize: '200% 200%',
-            backgroundPosition: '0% 0%, 100% 100%, 50% 50%, 0% 100%, 100% 0%, 33% 100%, 70% 40%',
-            opacity: 0.5,
-          }}
-        ></div>
-
-        {/* Shooting star effect */}
-        <div
-          className="absolute top-20 right-40 w-32 h-0.5 bg-gradient-to-r from-transparent via-white to-transparent opacity-70"
-          style={{
-            transform: 'rotate(-45deg)',
-            animation: 'shooting-star 3s ease-in-out infinite',
-          }}
-        ></div>
-
-        <div className="relative z-10 max-w-lg text-center">
-          <h2 className="text-4xl sm:text-5xl font-bold text-white mb-6 leading-tight">
-            From idea to production.
-            <br />
-            <span className="text-transparent bg-clip-text bg-gradient-to-r from-[var(--primary)] to-[var(--primary-hover)]">
-              In record time.
-            </span>
-          </h2>
-
-          {/* Member badge */}
-          <div className="inline-flex items-center gap-2 mb-12 px-4 py-2 bg-white/10 backdrop-blur-sm rounded-full border border-white/20">
-            <div className="flex">
-              {[1, 2, 3, 4, 5].map((i) => (
-                <svg
-                  key={i}
-                  className="w-4 h-4 text-yellow-400"
-                  fill="currentColor"
-                  viewBox="0 0 20 20"
-                >
-                  <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-                </svg>
-              ))}
-            </div>
-            <span className="text-white text-xs font-semibold tracking-wider">
-              LOVED BY DEVELOPERS
-            </span>
-          </div>
-
-          {/* Mini Asteroids Game */}
-          <div className="relative w-full h-80 sm:h-96">
-            <MiniAsteroids />
-          </div>
-        </div>
-
-        {/* CSS for shooting star animation */}
-        <style>{`
-          @keyframes shooting-star {
-            0% {
-              opacity: 0;
-              transform: translateX(-100px) translateY(100px) rotate(-45deg);
-            }
-            50% {
-              opacity: 0.7;
-            }
-            100% {
-              opacity: 0;
-              transform: translateX(300px) translateY(-300px) rotate(-45deg);
-            }
-          }
-        `}</style>
-      </div>
+      <AuthVisualPanel appearance={platformSettings} />
     </div>
   );
 }

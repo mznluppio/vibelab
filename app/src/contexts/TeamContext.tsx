@@ -67,6 +67,7 @@ export function TeamProvider({ children }: { children: React.ReactNode }) {
     if (!isAuthenticated) {
       setTeams([]);
       setActiveTeam(null);
+      window.dispatchEvent(new CustomEvent('team-theme-changed', { detail: null }));
       setCanCreateTeams(false);
       setCanCreateWorkspaces(false);
       setShowHomeConnectionCards(false);
@@ -85,7 +86,13 @@ export function TeamProvider({ children }: { children: React.ReactNode }) {
 
       const savedSlug = localStorage.getItem('tesslate_active_team');
       const saved = data.find((t: TeamList) => t.slug === savedSlug);
-      setActiveTeam(saved || data[0] || null);
+      const nextActiveTeam = saved || data[0] || null;
+      setActiveTeam(nextActiveTeam);
+      window.dispatchEvent(
+        new CustomEvent('team-theme-changed', {
+          detail: nextActiveTeam?.theme_preset || 'default-dark',
+        })
+      );
     } catch {
       // API error — silently ignore
     } finally {
@@ -106,11 +113,11 @@ export function TeamProvider({ children }: { children: React.ReactNode }) {
         try {
           const result = await teamsApi.switch(teamSlug);
           // Apply the team's theme on switch
-          if (result?.theme_preset) {
-            window.dispatchEvent(
-              new CustomEvent('team-theme-changed', { detail: result.theme_preset })
-            );
-          }
+          window.dispatchEvent(
+            new CustomEvent('team-theme-changed', {
+              detail: result?.theme_preset || team.theme_preset || 'default-dark',
+            })
+          );
         } catch {
           /* non-blocking */
         }

@@ -3968,6 +3968,7 @@ export interface Team {
   signup_bonus_credits: number;
   deployed_projects_count: number;
   support_tier: string;
+  theme_preset: string | null;
   marketplace_access_for_non_admins: boolean;
   automations_access_for_non_admins: boolean;
   created_at: string;
@@ -3980,6 +3981,7 @@ export interface TeamList {
   avatar_url: string | null;
   is_personal: boolean;
   subscription_tier: string;
+  theme_preset: string | null;
   marketplace_access_for_non_admins: boolean;
   automations_access_for_non_admins: boolean;
   role: string | null;
@@ -4070,6 +4072,7 @@ export const teamsApi = {
       name: string;
       slug: string;
       avatar_url: string | null;
+      theme_preset: string;
       marketplace_access_for_non_admins: boolean;
       automations_access_for_non_admins: boolean;
     }>
@@ -4188,6 +4191,21 @@ export const teamsApi = {
     const response = await api.patch(`/api/teams/${teamSlug}/projects/${projectSlug}/visibility`, {
       visibility,
     });
+    return response.data;
+  },
+};
+
+export interface PublicPlatformSettings {
+  show_home_integration_cards: boolean;
+  show_google_sign_in: boolean;
+  show_github_sign_in: boolean;
+  auth_background_mode: 'gradient' | 'image';
+  auth_background_value: string;
+}
+
+export const platformSettingsApi = {
+  async getPublic(): Promise<PublicPlatformSettings> {
+    const response = await api.get('/api/platform-settings');
     return response.data;
   },
 };
