@@ -1552,25 +1552,26 @@ class DockerOrchestrator(BaseOrchestrator):
     async def _connect_traefik_to_network(self, project_slug: str) -> None:
         """Connect main Traefik directly to project network for routing."""
         network_name = f"tesslate-{project_slug}"
+        traefik_container = self.settings.traefik_container_name
 
         try:
-            logger.info(f"[DOCKER] Connecting tesslate-traefik to {network_name}...")
+            logger.info(f"[DOCKER] Connecting {traefik_container} to {network_name}...")
 
             connect_process = await asyncio.create_subprocess_exec(
                 "docker",
                 "network",
                 "connect",
                 network_name,
-                "tesslate-traefik",
+                traefik_container,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
             await connect_process.communicate()
 
             if connect_process.returncode == 0:
-                logger.info(f"[DOCKER] tesslate-traefik connected to {network_name}")
+                logger.info(f"[DOCKER] {traefik_container} connected to {network_name}")
             else:
-                logger.debug(f"[DOCKER] tesslate-traefik already connected to {network_name}")
+                logger.debug(f"[DOCKER] {traefik_container} already connected to {network_name}")
 
         except Exception as e:
             logger.warning(f"[DOCKER] Failed to connect Traefik to network: {e}")
@@ -1578,6 +1579,7 @@ class DockerOrchestrator(BaseOrchestrator):
     async def _disconnect_traefik_from_network(self, project_slug: str) -> None:
         """Disconnect Traefik from project network."""
         network_name = f"tesslate-{project_slug}"
+        traefik_container = self.settings.traefik_container_name
 
         try:
             disconnect_process = await asyncio.create_subprocess_exec(
@@ -1585,7 +1587,7 @@ class DockerOrchestrator(BaseOrchestrator):
                 "network",
                 "disconnect",
                 network_name,
-                "tesslate-traefik",
+                traefik_container,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )

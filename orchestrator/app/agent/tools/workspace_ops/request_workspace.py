@@ -34,7 +34,12 @@ from fastapi import HTTPException
 from sqlalchemy import or_, select
 
 from ....config import get_settings
-from ....models import Project
+from ....models import Container, MarketplaceBase, Project
+from ....services.agent_required_base_workspace import (
+    create_project_from_required_base,
+    project_uses_base,
+    resolve_required_base,
+)
 from ....services.pubsub import get_pubsub
 from ..registry import Tool, ToolCategory
 
@@ -103,7 +108,9 @@ async def _await_with_heartbeat(task_id: str | None, input_id: str, timeout: int
             await hb_task
 
 
-async def _list_user_workspaces(db, user_id: UUID) -> list[Project]:
+async def _list_user_workspaces(
+    db, user_id: UUID, required_base_id: UUID | None = None
+) -> list[Project]:
     """Return every Project the user has access to that they could attach.
 
     Includes:
@@ -121,17 +128,18 @@ async def _list_user_workspaces(db, user_id: UUID) -> list[Project]:
     from ....services.apps.project_scopes import exclude_internal_workspaces_clause
 
     member_subq = select(ProjectMembership.project_id).where(ProjectMembership.user_id == user_id)
-    rows = await db.execute(
-        select(Project)
-        .where(
-            or_(
-                Project.owner_id == user_id,
-                Project.id.in_(member_subq),
-            ),
-            exclude_internal_workspaces_clause(),
-        )
-        .order_by(Project.updated_at.desc())
+    query = select(Project).where(
+        or_(
+            Project.owner_id == user_id,
+            Project.id.in_(member_subq),
+        ),
+        exclude_internal_workspaces_clause(),
     )
+    if required_base_id is not None:
+        query = query.join(Container, Container.project_id == Project.id).where(
+            Container.base_id == required_base_id
+        )
+    rows = await db.execute(query.distinct().order_by(Project.updated_at.desc()))
     return list(rows.scalars().all())
 
 
@@ -147,12 +155,23 @@ def _serialize_candidate(p: Project) -> dict[str, Any]:
     }
 
 
-async def _create_empty_workspace(db, *, user_id: UUID, name: str) -> Project:
+async def _create_workspace(
+    db,
+    *,
+    user_id: UUID,
+    name: str,
+    required_base: MarketplaceBase | None,
+) -> Project:
     """Internal-call path for the ``create_empty`` action.
 
     Calls the same shared helper the projects router uses so both surfaces
     converge on identical Project rows + on-disk materialization.
     """
+    if required_base is not None:
+        return await create_project_from_required_base(
+            db, user_id=user_id, base=required_base, name=name
+        )
+
     from ....models_auth import User
     from ....routers.projects import create_project_from_payload
     from ....schemas import ProjectCreate
@@ -192,6 +211,9 @@ async def request_workspace_executor(
 
     user_id = user_id_raw if isinstance(user_id_raw, UUID) else UUID(str(user_id_raw))
     chat_id = chat_id_raw if isinstance(chat_id_raw, UUID) else UUID(str(chat_id_raw))
+    required_base = await resolve_required_base(db, context.get("required_base"))
+    if context.get("required_base") and required_base is None:
+        return error_output(message="The agent's required Base is no longer available")
 
     # If a workspace is already attached, surface the linkage and exit so the
     # agent doesn't park on a redundant prompt.
@@ -201,6 +223,10 @@ async def request_workspace_executor(
     if existing_chat.project_id is not None:
         project = await db.get(Project, existing_chat.project_id)
         if project is not None:
+            if required_base and not await project_uses_base(db, project, required_base.id):
+                return error_output(
+                    message=f"This agent requires the {required_base.name} Base for its workspace"
+                )
             # Mutate the agent's context so downstream file tools see the
             # current workspace even if the worker built `context` before the
             # chat was linked elsewhere.
@@ -216,7 +242,9 @@ async def request_workspace_executor(
                 already_attached=True,
             )
 
-    workspaces = await _list_user_workspaces(db, user_id)
+    workspaces = await _list_user_workspaces(
+        db, user_id, required_base.id if required_base else None
+    )
     candidates = [_serialize_candidate(p) for p in workspaces]
 
     # Register pending-input + emit the SSE event the WorkspaceAttachCard renders.
@@ -239,6 +267,7 @@ async def request_workspace_executor(
             "candidate_workspaces": candidates,
             "actions": ["attach", "create_empty", "cancel"],
             "reason": params.get("reason") or "",
+            "required_base_name": required_base.name if required_base else None,
         },
         metadata={
             "user_id": str(user_id),
@@ -256,6 +285,7 @@ async def request_workspace_executor(
                 "input_id": input_id,
                 "chat_id": str(chat_id),
                 "reason": params.get("reason") or "",
+                "required_base_name": required_base.name if required_base else None,
                 "candidate_workspaces": candidates,
             },
         },
@@ -315,10 +345,19 @@ async def request_workspace_executor(
             )
             if membership_row.scalar_one_or_none() is None:
                 return error_output(message="Not authorized to attach this workspace")
+        if required_base and not await project_uses_base(db, target, required_base.id):
+            return error_output(
+                message=f"Selected workspace does not use the required {required_base.name} Base"
+            )
     elif action == "create_empty":
         name = (response.get("name") or "").strip() or "New workspace"
         try:
-            target = await _create_empty_workspace(db, user_id=user_id, name=name)
+            target = await _create_workspace(
+                db,
+                user_id=user_id,
+                name=name,
+                required_base=required_base,
+            )
         except HTTPException as exc:
             # Platform policy denial (403) — surface the reason verbatim so the
             # agent tells the user to ask an administrator instead of retrying.
@@ -329,8 +368,8 @@ async def request_workspace_executor(
             )
             return error_output(message=str(exc.detail))
         except Exception as exc:
-            logger.exception("[request_workspace] empty workspace creation failed")
-            return error_output(message=f"Failed to create empty workspace: {exc}")
+            logger.exception("[request_workspace] workspace creation failed")
+            return error_output(message=f"Failed to create workspace: {exc}")
     elif action == "cancel":
         await _publish(
             task_id,

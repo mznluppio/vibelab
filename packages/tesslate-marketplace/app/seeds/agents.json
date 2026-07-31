@@ -212,7 +212,7 @@
     "is_active": true,
     "is_system": false,
     "tools": ["read_file", "read_many_files", "view_image", "glob", "grep", "list_dir", "git_log", "git_status", "git_diff", "git_blame", "get_project_info", "memory_read", "memory_write", "todo_read", "todo_write", "save_plan", "update_plan", "web_fetch", "web_search", "load_skill", "request_assist_to_build_review", "write_file", "patch_file", "multi_edit", "apply_patch", "bash_exec", "shell_open", "shell_exec", "write_stdin", "read_background_output", "list_background_processes", "apply_setup_config", "project_start", "project_restart", "project_control"],
-    "config": {"default_base_slug": "nextjs-16"},
+    "config": {"required_base": {"slug": "nextjs-16", "name": "Next.js 16"}},
     "kind": "agent",
     "is_published": true,
     "tech_stack": []

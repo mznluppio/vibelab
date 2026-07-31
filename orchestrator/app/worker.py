@@ -815,6 +815,84 @@ async def execute_agent_task(ctx: dict, payload_dict: dict):
                     )
                 return
 
+            # 3a. A build agent can declare a required marketplace Base. A
+            # standalone chat is initially attached to the user's lightweight
+            # ``~workspace~`` so normal conversations do not provision an app.
+            # Before this agent sees any project tools, replace only that
+            # disposable attachment with a project created through the normal
+            # Base pipeline. Never overwrite a user-selected real project.
+            is_direct_chat_run = (
+                auto_run_id is None
+                and payload.parent_task_id is None
+                and payload.channel_type is None
+            )
+            required_base_config = (agent_model.config or {}).get("required_base")
+            if is_direct_chat_run and required_base_config:
+                from .services.agent_required_base_workspace import (
+                    RequiredBaseWorkspaceError,
+                    ensure_chat_project_for_required_base,
+                )
+
+                try:
+                    required_workspace = await ensure_chat_project_for_required_base(
+                        db,
+                        user_id=UUID(payload.user_id),
+                        chat_id=UUID(payload.chat_id),
+                        required_base_config=required_base_config,
+                    )
+                except RequiredBaseWorkspaceError as exc:
+                    await _publish_error(pubsub, task_id, str(exc))
+                    return
+                except Exception as exc:
+                    logger.exception(
+                        "[WORKER] Required Base setup failed for agent=%s chat=%s",
+                        agent_model.slug,
+                        payload.chat_id,
+                    )
+                    await _publish_error(
+                        pubsub,
+                        task_id,
+                        f"Failed to prepare the agent's required Base: {exc}",
+                    )
+                    return
+
+                if required_workspace is not None:
+                    project = required_workspace.project
+                    project_id = str(project.id)
+                    payload.project_id = project_id
+                    payload.project_slug = project.slug
+                    # A container from the former generic workspace cannot be
+                    # valid for the newly-created Base project.
+                    payload.container_id = None
+                    payload.container_name = None
+                    payload.container_directory = None
+                    payload.project_context = {}
+
+                    if required_workspace.created and pubsub:
+                        await pubsub.publish_agent_event(
+                            task_id,
+                            {
+                                # Reuse the established event contract so the
+                                # chat header updates without a new UI flow.
+                                "type": "workspace_attach_resumed",
+                                "data": {
+                                    "chat_id": str(payload.chat_id),
+                                    "project_id": str(project.id),
+                                    "project_name": project.name,
+                                    "project_slug": project.slug,
+                                    "required_base_name": required_workspace.base.name,
+                                    "automatic": True,
+                                },
+                            },
+                        )
+                        logger.info(
+                            "[WORKER] Auto-created project=%s from required base=%s "
+                            "for chat=%s",
+                            project.id,
+                            required_workspace.base.slug,
+                            payload.chat_id,
+                        )
+
             # 3b. Persist agent identity for the audit / spend rollups.
             #
             # The dispatcher's preflight does NOT yet write an
@@ -1317,6 +1395,7 @@ async def execute_agent_task(ctx: dict, payload_dict: dict):
                 ),
                 "model_name": model_name,
                 "agent_id": agent_model.id,
+                "required_base": (agent_model.config or {}).get("required_base"),
                 "_active_plan": active_plan,
                 "available_skills": available_skills,
                 "attachments": payload.attachments,

@@ -69,6 +69,24 @@ type SortDir = 'asc' | 'desc';
 type FilterStatus = 'all' | 'active' | 'custom';
 type ViewMode = 'cards' | 'list';
 
+type MarketplaceBaseOption = {
+  id: string;
+  name: string;
+  slug: string;
+};
+
+type RequiredBaseConfig = {
+  id?: string;
+  name?: string;
+  slug?: string;
+};
+
+function getRequiredBaseSlug(config: LibraryAgent['config']): string {
+  const requiredBase = config?.required_base;
+  if (!requiredBase || typeof requiredBase !== 'object') return '';
+  return (requiredBase as RequiredBaseConfig).slug || '';
+}
+
 const sortLabels: Record<SortField, string> = {
   name: 'Name',
   updated: 'Updated',
@@ -888,6 +906,8 @@ function EditAgentModal({
   const [contextWindow, setContextWindow] = useState(
     (agent.config?.context_window as number) || DEFAULT_CONTEXT_WINDOW
   );
+  const [requiredBaseSlug, setRequiredBaseSlug] = useState(getRequiredBaseSlug(agent.config));
+  const [availableBases, setAvailableBases] = useState<MarketplaceBaseOption[]>([]);
 
   // Reset all local state when the agent prop changes (e.g. clicking a different agent)
   useEffect(() => {
@@ -902,9 +922,17 @@ function EditAgentModal({
     setFeatures({ ...defaultFeatures, ...(agent.config?.features || {}) });
     setCompactionModel((agent.config?.compaction_model as string) || '');
     setContextWindow((agent.config?.context_window as number) || DEFAULT_CONTEXT_WINDOW);
+    setRequiredBaseSlug(getRequiredBaseSlug(agent.config));
     setSubagents([]);
     setAgentSkills([]);
   }, [agent.id]);
+
+  useEffect(() => {
+    marketplaceApi
+      .getAllBases({ limit: 100, sort: 'name' })
+      .then((data) => setAvailableBases(data.bases || []))
+      .catch((error) => console.error('Failed to load marketplace bases:', error));
+  }, []);
 
   // Subagents state
   const [subagents, setSubagents] = useState<SubagentItem[]>([]);
@@ -1116,6 +1144,18 @@ function EditAgentModal({
       avatar_url: avatarUrl,
       config: {
         features,
+        ...(requiredBaseSlug
+          ? {
+              required_base: (() => {
+                const base = availableBases.find((candidate) => candidate.slug === requiredBaseSlug);
+                return {
+                  ...(base ? { id: base.id } : {}),
+                  slug: requiredBaseSlug,
+                  ...(base ? { name: base.name } : {}),
+                };
+              })(),
+            }
+          : { required_base: null }),
         ...(compactionModel ? { compaction_model: compactionModel } : {}),
         ...(contextWindow && contextWindow !== DEFAULT_CONTEXT_WINDOW
           ? { context_window: contextWindow }
@@ -1245,6 +1285,27 @@ function EditAgentModal({
               <span className="text-[11px] text-[var(--text-muted)] font-mono">
                 {agent.agent_type}
               </span>
+            </div>
+            <div className="flex items-center gap-3">
+              <label
+                htmlFor="required-base"
+                className="text-[11px] text-[var(--text-subtle)] w-14 flex-shrink-0"
+              >
+                Base
+              </label>
+              <select
+                id="required-base"
+                value={requiredBaseSlug}
+                onChange={(event) => setRequiredBaseSlug(event.target.value)}
+                className="flex-1 min-w-0 text-[11px] px-2 py-1.5 rounded bg-[var(--surface)] border border-[var(--border)] text-[var(--text)]"
+              >
+                <option value="">No required Base</option>
+                {availableBases.map((base) => (
+                  <option key={base.id} value={base.slug}>
+                    {base.name}
+                  </option>
+                ))}
+              </select>
             </div>
             {agent.agent_type === 'TesslateAgent' &&
               FEATURE_FLAGS.map((flag) => (

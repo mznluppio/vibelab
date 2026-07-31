@@ -1010,6 +1010,13 @@ interface AgentDetailed extends Agent {
   tags: string[];
   is_published: boolean;
   updated_at: string | null;
+  required_base_id: string | null;
+}
+
+interface MarketplaceBaseOption {
+  id: string;
+  name: string;
+  slug: string;
 }
 
 function AgentManagement() {
@@ -1455,7 +1462,26 @@ function AgentFormModal({ agent, availableModels, onClose, onSuccess }: AgentFor
     required_models: agent?.required_models || [],
     is_featured: agent?.is_featured || false,
     is_active: agent?.is_active !== undefined ? agent.is_active : true,
+    required_base_id: agent?.required_base_id || '',
   });
+  const [availableBases, setAvailableBases] = useState<MarketplaceBaseOption[]>([]);
+
+  useEffect(() => {
+    const loadBases = async () => {
+      try {
+        const response = await fetch('/api/marketplace/bases?limit=100', {
+          headers: getAuthHeaders(),
+          credentials: 'include',
+        });
+        if (!response.ok) return;
+        const data = await response.json();
+        setAvailableBases(data.bases || []);
+      } catch (error) {
+        console.error('Failed to load marketplace bases:', error);
+      }
+    };
+    void loadBases();
+  }, []);
 
   const agentTypeOptions = Array.from(
     new Set([formData.agent_type, 'StreamAgent', 'IterativeAgent'])
@@ -1478,6 +1504,7 @@ function AgentFormModal({ agent, availableModels, onClose, onSuccess }: AgentFor
       // Prepare payload
       const payload = {
         ...formData,
+        required_base_id: formData.required_base_id || null,
         mode: agentTypeToMode[formData.agent_type] || 'stream', // Infer mode from agent type
         price:
           formData.pricing_type === 'monthly' || formData.pricing_type === 'one_time'
@@ -1681,6 +1708,28 @@ function AgentFormModal({ agent, availableModels, onClose, onSuccess }: AgentFor
                 <option value="open">Open Source</option>
               </select>
             </div>
+          </div>
+
+          <div>
+            <label className="block text-gray-300 text-sm font-medium mb-2">
+              Required Base
+              <span className="text-gray-500 font-normal text-xs ml-2">
+                (new workspaces requested by this agent use this Base)
+              </span>
+            </label>
+            <select
+              disabled={!canEdit}
+              value={formData.required_base_id}
+              onChange={(e) => setFormData({ ...formData, required_base_id: e.target.value })}
+              className="w-full bg-gray-700 text-white rounded-lg px-4 py-2 border border-[var(--text)]/20 disabled:opacity-50 [&>option]:bg-gray-700 [&>option]:text-white"
+            >
+              <option value="">No required Base</option>
+              {availableBases.map((base) => (
+                <option key={base.id} value={base.id}>
+                  {base.name} — /{base.slug}
+                </option>
+              ))}
+            </select>
           </div>
 
           {/* Pricing */}

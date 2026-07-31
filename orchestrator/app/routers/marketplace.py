@@ -3,6 +3,7 @@ Marketplace API endpoints for browsing, purchasing, and managing agents.
 """
 
 import asyncio
+import copy
 import logging
 import re
 import uuid
@@ -1842,7 +1843,10 @@ async def fork_agent(
         parent_agent_id=parent_agent.id,
         forked_by_user_id=current_user.id,
         created_by_user_id=current_user.id,
-        config={},  # User can customize this later
+        # Preserve execution policy (for example a required project Base) in
+        # a personal copy. Forks can then be safely customized without losing
+        # the catalog agent's runtime contract.
+        config=copy.deepcopy(parent_agent.config or {}),
         icon=parent_agent.icon,
         preview_image=parent_agent.preview_image,
         pricing_type="free",
@@ -2065,6 +2069,108 @@ async def update_custom_agent(
 
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
+
+    is_owner = (
+        agent.created_by_user_id == current_user.id
+        or agent.forked_by_user_id == current_user.id
+    )
+    if not is_owner and not getattr(current_user, "is_superuser", False):
+        # Editing a shared Library agent creates an independent personal
+        # fork. It never mutates the catalog definition shared by other
+        # users, including official and built-in rows.
+        purchase_scope = (
+            UserPurchasedAgent.team_id == current_user.default_team_id
+            if current_user.default_team_id
+            else UserPurchasedAgent.user_id == current_user.id
+        )
+        purchase = (
+            await db.execute(
+                select(UserPurchasedAgent)
+                .where(
+                    purchase_scope,
+                    UserPurchasedAgent.agent_id == agent.id,
+                    UserPurchasedAgent.is_active.is_(True),
+                )
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        if purchase is None:
+            raise HTTPException(status_code=403, detail="You don't have this agent in your library")
+        if agent.source_type != "open" or not agent.is_forkable:
+            raise HTTPException(
+                status_code=403,
+                detail="This agent cannot be customized. Choose a forkable open-source agent instead.",
+            )
+
+        forked_agent = MarketplaceAgent(
+            name=update_data.get("name", agent.name),
+            slug=f"{agent.slug}-fork-{current_user.id}-{datetime.now(UTC).timestamp()}",
+            description=update_data.get("description", agent.description),
+            long_description=update_data.get("description", agent.long_description),
+            category=agent.category,
+            item_type=agent.item_type,
+            system_prompt=update_data.get("system_prompt", agent.system_prompt),
+            mode=agent.mode,
+            agent_type=agent.agent_type,
+            tools=update_data.get("tools", agent.tools),
+            tool_configs=update_data.get("tool_configs", agent.tool_configs),
+            model=update_data.get("model", agent.model),
+            is_forkable=False,
+            parent_agent_id=agent.id,
+            forked_by_user_id=current_user.id,
+            created_by_user_id=current_user.id,
+            config=copy.deepcopy(agent.config or {}),
+            icon=agent.icon,
+            avatar_url=update_data.get("avatar_url", agent.avatar_url),
+            preview_image=agent.preview_image,
+            pricing_type="free",
+            price=0,
+            source_type="open",
+            source_id=LOCAL_SOURCE_ID,
+            requires_user_keys=agent.requires_user_keys,
+            downloads=0,
+            rating=5.0,
+            reviews_count=0,
+            features=agent.features,
+            required_models=[update_data.get("model", agent.model)],
+            tags=agent.tags,
+            is_featured=False,
+            is_active=True,
+            is_published=False,
+            is_builtin=False,
+        )
+        if isinstance(update_data.get("config"), dict):
+            forked_agent.config.update(copy.deepcopy(update_data["config"]))
+        db.add(forked_agent)
+        await db.flush()
+
+        db.add(
+            UserPurchasedAgent(
+                user_id=current_user.id,
+                team_id=current_user.default_team_id,
+                agent_id=forked_agent.id,
+                purchase_type="free",
+                is_active=True,
+            )
+        )
+        # Replace the shared row in every Library scope owned by this user so
+        # the next refresh consistently selects the private fork.
+        original_purchases = await db.execute(
+            select(UserPurchasedAgent).where(
+                UserPurchasedAgent.user_id == current_user.id,
+                UserPurchasedAgent.agent_id == agent.id,
+            )
+        )
+        for original_purchase in original_purchases.scalars().all():
+            original_purchase.is_active = False
+
+        await db.commit()
+        return {
+            "message": "Created a personal fork with your changes",
+            "agent_id": forked_agent.id,
+            "forked": True,
+            "success": True,
+        }
 
     await _require_agent_mutation_access(db, agent, current_user)
     _reject_if_builtin(agent, current_user)

@@ -261,6 +261,7 @@ services:
       - APP_PROTOCOL=${APP_PROTOCOL:-http}
       - APP_DOMAIN=${APP_DOMAIN:-localhost}
       - CORS_ORIGINS=${CORS_ORIGINS:-${APP_PROTOCOL:-http}://${APP_DOMAIN:-localhost}}
+      - TRAEFIK_CONTAINER_NAME=${TRAEFIK_CONTAINER_NAME:-tesslate-traefik}
       - ALLOWED_HOSTS=${ALLOWED_HOSTS:-${APP_DOMAIN:-localhost}}
       - DEV_SERVER_BASE_URL=${DEV_SERVER_BASE_URL:-}
       - DOCKER_PROJECTS_VOLUME_NAME=${DOCKER_PROJECTS_VOLUME_NAME:-tesslate-projects-data}
@@ -421,6 +422,7 @@ services:
       - AGENT_MAX_COST_PER_RUN=${AGENT_MAX_COST_PER_RUN:-5.0}
       - APP_DOMAIN=${APP_DOMAIN:-localhost}
       - DOCKER_PROJECTS_VOLUME_NAME=${DOCKER_PROJECTS_VOLUME_NAME:-tesslate-projects-data}
+      - TRAEFIK_CONTAINER_NAME=${TRAEFIK_CONTAINER_NAME:-tesslate-traefik}
       - LEGRAND_OFFICIAL_BASE_URL=${LEGRAND_OFFICIAL_BASE_URL:-http://marketplace:8800}
       - PYTHONUNBUFFERED=1
     depends_on:

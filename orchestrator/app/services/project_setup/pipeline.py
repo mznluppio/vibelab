@@ -370,6 +370,18 @@ async def setup_project(
         if spec.kind == "template_snapshot":
             db_project.compute_tier = "none"
 
+        # Keep a durable, container-independent record of the Base that
+        # created this project. Containers are intentionally deferred to the
+        # Setup screen, so they cannot be the sole source of Base provenance
+        # for workflows that need to act immediately after project creation.
+        if spec.base_id is not None:
+            project_settings = dict(db_project.settings or {})
+            project_settings["source_base"] = {
+                "id": str(spec.base_id),
+                "slug": spec.base_slug,
+            }
+            db_project.settings = project_settings
+
         # has_git_repo: every project gets a local `.git/` from Step 5.
         db_project.has_git_repo = True
 

@@ -35,6 +35,28 @@ describe('VibeLab diagram schema', () => {
     if (result.success) expect(result.data.preset).toBe('technical-dark');
   });
 
+  it('normalizes legacy workflow aliases from existing Assist to Build chats', () => {
+    const result = parse({
+      title: 'Incident workflow',
+      preset: 'business-process',
+      direction: 'TB',
+      nodes: [
+        { id: 'monitor', label: 'Monitor services' },
+        { id: 'incident', label: 'Create incident' },
+      ],
+      edges: [
+        { from: 'monitor', to: 'incident' },
+        { from: 'incident', to: 'incident', label: 'Progress update' },
+      ],
+    });
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.nodes.every((node) => node.type === 'step')).toBe(true);
+      expect(result.data.edges).toEqual([{ source: 'monitor', target: 'incident' }]);
+    }
+  });
+
   it.each([
     ['unknown field', { ...validDiagram, customTheme: 'not allowed' }],
     ['coordinates', { ...validDiagram, nodes: [{ ...validDiagram.nodes[0], x: 10 }] }],

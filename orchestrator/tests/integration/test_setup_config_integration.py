@@ -121,8 +121,9 @@ def test_setup_config_creates_app_container(
     assert len(data["container_ids"]) == 1
     assert data["primary_container_id"] == data["container_ids"][0]
 
-    names = _container_names(client, project["slug"])
-    assert "frontend" in names
+    containers = _containers(client, project["slug"])
+    frontend = next(container for container in containers if container["name"] == "frontend")
+    assert frontend["base_id"] == str(default_base_id)
 
 
 @pytest.mark.integration

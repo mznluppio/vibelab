@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { ChatSessionSidebar } from '../components/chat/ChatSessionSidebar';
 import { ChatTopBar } from '../components/chat/ChatTopBar';
@@ -27,6 +27,7 @@ const LANDING_SUGGESTIONS = [
 ];
 
 export default function Chat() {
+  const navigate = useNavigate();
   const { teamSwitchKey } = useTeam();
   // Agent state
   const [agents, setAgents] = useState<ChatAgent[]>([]);
@@ -103,6 +104,7 @@ export default function Chat() {
   const currentSession = sessions.find((s) => s.id === currentSessionId);
   const connectedProjectId = currentSession?.project_id ?? null;
   const connectedProjectName = currentSession?.project_name ?? null;
+  const attachedProjectSlugRef = useRef<string | null>(null);
 
   // Agent chat
   const {
@@ -126,6 +128,27 @@ export default function Chat() {
       },
       [updateSessionTitle]
     ),
+    onWorkspaceAttached: useCallback(
+      ({
+        chatId,
+        projectId,
+        projectName,
+        projectSlug,
+      }: {
+        chatId: string;
+        projectId: string;
+        projectName: string;
+        projectSlug: string;
+      }) => {
+        attachedProjectSlugRef.current = projectSlug;
+        void updateSessionProject(chatId, projectId, projectName);
+      },
+      [updateSessionProject]
+    ),
+    onProjectStarted: useCallback(() => {
+      const projectSlug = attachedProjectSlugRef.current;
+      if (projectSlug) navigate(`/project/${projectSlug}/builder`);
+    }, [navigate]),
     onSessionNeeded: createSession,
   });
 

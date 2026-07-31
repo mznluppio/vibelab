@@ -229,6 +229,11 @@ class Settings(BaseSettings):
     # Production: "cloudflare" (DNS challenge for wildcard certs)
     traefik_cert_resolver: str = "letsencrypt"
 
+    # Docker container name for the Traefik instance that joins each
+    # project-specific network. Isolated local stacks override this while
+    # production and the default Compose stack keep ``tesslate-traefik``.
+    traefik_container_name: str = "tesslate-traefik"
+
     # GitHub OAuth Configuration (for login)
     github_client_id: str = ""
     github_client_secret: str = ""

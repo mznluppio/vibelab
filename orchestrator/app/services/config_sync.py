@@ -201,6 +201,21 @@ async def sync_project_config(
 
     settings = get_settings()
 
+    # Projects created from a marketplace Base retain that provenance before
+    # any containers exist. Setup is intentionally allowed to create the
+    # graph later, so carry the recorded Base onto every app container it
+    # materializes. Legacy/custom projects simply leave ``base_id`` unset.
+    source_base_id: UUID | None = None
+    source_base = (project.settings or {}).get("source_base")
+    if isinstance(source_base, dict) and source_base.get("id"):
+        try:
+            source_base_id = UUID(str(source_base["id"]))
+        except (TypeError, ValueError):
+            logger.warning(
+                "[config_sync] Ignoring invalid source Base metadata for project %s",
+                project.id,
+            )
+
     for app_name, app_data in config_data.apps.items():
         if app_data.start:
             is_valid, error = validate_startup_command(app_data.start)
@@ -292,6 +307,8 @@ async def sync_project_config(
     for app_name, app_config in config.apps.items():
         if app_name in existing_containers:
             container = existing_containers[app_name]
+            if container.base_id is None and source_base_id is not None:
+                container.base_id = source_base_id
             container.directory = app_config.directory
             container.internal_port = app_config.port or 3000
             container.environment_vars = (
@@ -310,6 +327,7 @@ async def sync_project_config(
         else:
             container = Container(
                 project_id=project.id,
+                base_id=source_base_id,
                 name=app_name,
                 directory=app_config.directory,
                 container_name=f"{project.slug}-{app_name}",

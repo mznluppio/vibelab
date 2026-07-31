@@ -4,6 +4,7 @@ import AgentMessage from '../AgentMessage';
 import { ApprovalRequestCard } from './ApprovalRequestCard';
 import { BuilderReviewCard } from './BuilderReviewCard';
 import { AssistToBuildReviewCard } from './AssistToBuildReviewCard';
+import { WorkspaceAttachCard } from './WorkspaceAttachCard';
 import type { ChatMessage as ChatMessageType } from '../../hooks/useAgentChat';
 
 interface ChatMessageListProps {
@@ -133,6 +134,19 @@ export function ChatMessageList({
                 summary={msg.assistToBuildReviewSummary}
                 resolvedResponse={msg.assistToBuildReviewResponse}
                 onRespond={(approvalId, response, comment) => onApproval?.(approvalId, response, 'request_assist_to_build_review', comment)}
+              />
+            );
+          }
+
+          if (msg.type === 'workspace_attach_request' && msg.workspaceAttachInputId) {
+            return (
+              <WorkspaceAttachCard
+                key={msg.id}
+                mode="agent-prompt"
+                inputId={msg.workspaceAttachInputId}
+                candidates={msg.workspaceAttachCandidates || []}
+                reason={msg.workspaceAttachReason}
+                requiredBaseName={msg.workspaceAttachRequiredBaseName}
               />
             );
           }

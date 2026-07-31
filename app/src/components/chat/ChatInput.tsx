@@ -1154,7 +1154,7 @@ export function ChatInput({
   return (
     <form
       ref={containerRef}
-      className={`chat-input-wrapper flex-shrink-0 relative z-10 ${isDragging ? 'ring-2 ring-[var(--primary)]/40 rounded-[var(--radius-medium)]' : ''}`}
+      className={`chat-input-wrapper flex-shrink-0 relative ${isDragging ? 'ring-2 ring-[var(--primary)]/40 rounded-[var(--radius-medium)]' : ''}`}
       onSubmit={handleSubmit}
       onFocusCapture={() => setIsPromptFocused(true)}
       onBlurCapture={(event) => {

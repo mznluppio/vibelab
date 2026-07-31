@@ -34,17 +34,18 @@ def can_edit_agent(
     source: MarketplaceSource | None,
     user: User,
 ) -> bool:
-    """Whether the standard Library surface may expose agent editing.
+    """Whether Library may offer direct editing or a safe personal fork.
 
-    The Library and its mutation endpoint must agree: platform administrators
-    are allowed to maintain protected catalog rows, while personal agents stay
-    editable only by their creator.  This keeps the UI from hiding an action
-    that the API will accept, without granting administrators access to other
-    users' private agents.
+    Catalog rows are never changed by a standard user.  For an installed,
+    forkable open-source agent, editing creates a private fork; for a personal
+    agent it updates the owned row.  Platform administrators retain direct
+    maintenance access to protected catalog rows.
     """
-    if is_protected_agent(agent, source):
-        return bool(getattr(user, "is_superuser", False))
-    return is_agent_owner(agent, user)
+    if is_agent_owner(agent, user):
+        return True
+    if getattr(user, "is_superuser", False) and is_protected_agent(agent, source):
+        return True
+    return bool(agent.source_type == "open" and agent.is_forkable)
 
 
 async def require_agent_mutation_access(

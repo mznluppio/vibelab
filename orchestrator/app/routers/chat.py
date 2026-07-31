@@ -1233,6 +1233,45 @@ async def agent_chat(
                 status_code=500, detail=f"Database error while setting up chat: {str(e)}"
             ) from e
 
+        # Keep the non-streaming endpoint aligned with the live chat path:
+        # agents that declare a required Base must receive a real project
+        # created from it, rather than the lightweight standalone workspace.
+        # The shared resolver preserves an explicitly connected project and
+        # only promotes the disposable ``~workspace~`` attachment.
+        required_base_config = (agent_model.config or {}).get("required_base")
+        if required_base_config:
+            from ..services.agent_required_base_workspace import (
+                RequiredBaseWorkspaceError,
+                ensure_chat_project_for_required_base,
+            )
+
+            try:
+                required_workspace = await ensure_chat_project_for_required_base(
+                    db,
+                    user_id=current_user.id,
+                    chat_id=chat.id,
+                    required_base_config=required_base_config,
+                )
+            except RequiredBaseWorkspaceError as exc:
+                raise HTTPException(status_code=409, detail=str(exc)) from exc
+            except Exception as exc:
+                logger.exception(
+                    "[HTTP-AGENT] Required Base setup failed for agent=%s chat=%s",
+                    agent_model.slug,
+                    chat.id,
+                )
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Failed to prepare the agent's required Base: {exc}",
+                ) from exc
+
+            if required_workspace is not None:
+                project = required_workspace.project
+                request.project_id = project.id
+                # A container identifier from the former generic workspace
+                # cannot be valid for the newly-provisioned Base project.
+                request.container_id = None
+
         # Fetch chat history for context
         chat_history = await _get_chat_history(chat.id, db, limit=10)
 
@@ -1307,6 +1346,7 @@ async def agent_chat(
             # Credit deduction context
             "model_name": model_name,
             "agent_id": agent_model.id if agent_model else None,
+            "required_base": (agent_model.config or {}).get("required_base"),
             # v2 volume-first routing hints
             "volume_id": project.volume_id,
             "cache_node": project.cache_node,
@@ -1824,6 +1864,52 @@ async def agent_chat_stream(
                     yield f"data: {json.dumps(error_event)}\n\n"
                     return
 
+            # A standalone chat starts on the lightweight ``~workspace~``.
+            # If its selected agent declares a Base, promote this chat to a
+            # real project from that Base before either the queued or inline
+            # runner receives project tools. The service never overwrites a
+            # user-selected project with a different Base.
+            required_base_config = (agent_model.config or {}).get("required_base")
+            if required_base_config:
+                from ..services.agent_required_base_workspace import (
+                    RequiredBaseWorkspaceError,
+                    ensure_chat_project_for_required_base,
+                )
+
+                try:
+                    required_workspace = await ensure_chat_project_for_required_base(
+                        db,
+                        user_id=current_user.id,
+                        chat_id=chat.id,
+                        required_base_config=required_base_config,
+                    )
+                except RequiredBaseWorkspaceError as exc:
+                    error_event = {"type": "error", "data": {"message": str(exc)}}
+                    yield f"data: {json.dumps(error_event)}\n\n"
+                    return
+                except Exception as exc:
+                    logger.exception(
+                        "[SSE-AGENT] Required Base setup failed for agent=%s chat=%s",
+                        agent_model.slug,
+                        chat.id,
+                    )
+                    error_event = {
+                        "type": "error",
+                        "data": {"message": f"Failed to prepare the agent's required Base: {exc}"},
+                    }
+                    yield f"data: {json.dumps(error_event)}\n\n"
+                    return
+
+                if required_workspace is not None:
+                    project = required_workspace.project
+                    request.project_id = project.id
+                    project_slug = project.slug
+                    container_id = None
+                    container_name = None
+                    container_directory = None
+                    if required_workspace.created:
+                        yield f"data: {json.dumps({'type': 'workspace_attach_resumed', 'data': {'chat_id': str(chat.id), 'project_id': str(project.id), 'project_name': project.name, 'project_slug': project.slug, 'required_base_name': required_workspace.base.name, 'automatic': True}})}\n\n"
+
             # 3. Create model adapter
             model_adapter = await create_model_adapter(
                 model_name=model_name, user_id=current_user.id, db=db
@@ -1936,6 +2022,7 @@ async def agent_chat_stream(
                 "view_context": request.view_context,
                 "model_name": model_name,
                 "agent_id": agent_model.id if agent_model else None,
+                "required_base": (agent_model.config or {}).get("required_base"),
                 "volume_id": project.volume_id if project else None,
                 "cache_node": project.cache_node if project else None,
                 "compute_tier": project.compute_tier if project else None,
@@ -3196,6 +3283,7 @@ async def handle_chat_message(data: dict, user: User, db: AsyncSession, websocke
         "project_context_str": project_context_str,
         "has_existing_files": has_existing_files,
         "model": model_name,  # Use the resolved model name (user's selection or agent's default)
+        "required_base": (agent_model.config or {}).get("required_base"),
         "api_base": settings.litellm_api_base,
         "chat_history": chat_history,
         "edit_mode": edit_mode,

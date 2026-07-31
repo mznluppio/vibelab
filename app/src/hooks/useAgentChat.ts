@@ -104,6 +104,7 @@ export interface ChatMessage {
   // WorkspaceAttachCard in agent-prompt mode.
   workspaceAttachInputId?: string;
   workspaceAttachReason?: string;
+  workspaceAttachRequiredBaseName?: string;
   workspaceAttachCandidates?: Array<{
     id: string;
     name: string;
@@ -119,6 +120,13 @@ interface UseAgentChatOptions {
   agent: ChatAgent;
   editMode: EditMode;
   onTitleGenerated?: (chatId: string, title: string) => void;
+  onWorkspaceAttached?: (workspace: {
+    chatId: string;
+    projectId: string;
+    projectName: string;
+    projectSlug: string;
+  }) => void;
+  onProjectStarted?: () => void;
   /** Called when sendMessage needs a session but chatId is null. Must return the new chat ID or null on failure. */
   onSessionNeeded?: () => Promise<string | null>;
 }
@@ -129,6 +137,8 @@ export function useAgentChat({
   agent,
   editMode,
   onTitleGenerated,
+  onWorkspaceAttached,
+  onProjectStarted,
   onSessionNeeded,
 }: UseAgentChatOptions) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -140,7 +150,10 @@ export function useAgentChat({
   const agentTaskIdRef = useRef<string | null>(null);
   const editModeRef = useRef<EditMode>(editMode);
   const onTitleGeneratedRef = useRef(onTitleGenerated);
+  const onWorkspaceAttachedRef = useRef(onWorkspaceAttached);
+  const onProjectStartedRef = useRef(onProjectStarted);
   const onSessionNeededRef = useRef(onSessionNeeded);
+  const projectStartedDuringTaskRef = useRef(false);
 
   useEffect(() => {
     editModeRef.current = editMode;
@@ -149,6 +162,14 @@ export function useAgentChat({
   useEffect(() => {
     onTitleGeneratedRef.current = onTitleGenerated;
   }, [onTitleGenerated]);
+
+  useEffect(() => {
+    onWorkspaceAttachedRef.current = onWorkspaceAttached;
+  }, [onWorkspaceAttached]);
+
+  useEffect(() => {
+    onProjectStartedRef.current = onProjectStarted;
+  }, [onProjectStarted]);
 
   useEffect(() => {
     onSessionNeededRef.current = onSessionNeeded;
@@ -417,55 +438,19 @@ export function useAgentChat({
                 ];
               });
             } else if (
+              handleWorkspaceAttachEvent(
+                data.type as string,
+                data.data as Record<string, unknown> | undefined
+              )
+            ) {
+              // handled by the standalone workspace attach flow
+            } else if (
               dispatchNodeConfigEvent(
                 data.type as string,
                 data.data as Record<string, unknown> | undefined
               )
             ) {
               // handled via nodeConfigEvents bus
-            } else if (data.type === 'workspace_attach_required') {
-              const wa = (data.data || {}) as {
-                input_id?: string;
-                reason?: string;
-                candidate_workspaces?: Array<{
-                  id: string;
-                  name: string;
-                  slug: string;
-                  compute_tier: string;
-                  created_via?: string | null;
-                }>;
-              };
-              if (wa.input_id) {
-                setMessages((prev) => [
-                  ...prev,
-                  {
-                    id: `wa-${crypto.randomUUID()}`,
-                    type: 'workspace_attach_request',
-                    content: '',
-                    workspaceAttachInputId: wa.input_id,
-                    workspaceAttachReason: wa.reason,
-                    workspaceAttachCandidates: wa.candidate_workspaces || [],
-                  },
-                ]);
-              }
-            } else if (
-              data.type === 'workspace_attach_resumed' ||
-              data.type === 'workspace_attach_cancelled'
-            ) {
-              // After the user submits/cancels the card, retire it from the
-              // message list so the conversation flow stays clean.
-              const inputId = (data.data as { input_id?: string } | undefined)?.input_id;
-              if (inputId) {
-                setMessages((prev) =>
-                  prev.filter(
-                    (m) =>
-                      !(
-                        m.type === 'workspace_attach_request' &&
-                        m.workspaceAttachInputId === inputId
-                      )
-                  )
-                );
-              }
             } else if (data.type === 'approval_required') {
               const approvalData = data.data || data;
               // The `agent-builder` flow surfaces a richer review card
@@ -611,6 +596,65 @@ export function useAgentChat({
     };
   }, [chatId, agent]);
 
+  const handleWorkspaceAttachEvent = useCallback(
+    (type: string, data: Record<string, unknown> | undefined): boolean => {
+      if (type === 'workspace_attach_required') {
+        const inputId = data?.input_id;
+        if (typeof inputId !== 'string') return true;
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `wa-${crypto.randomUUID()}`,
+            type: 'workspace_attach_request',
+            content: '',
+            workspaceAttachInputId: inputId,
+            workspaceAttachReason: typeof data?.reason === 'string' ? data.reason : undefined,
+            workspaceAttachRequiredBaseName:
+              typeof data?.required_base_name === 'string' ? data.required_base_name : undefined,
+            workspaceAttachCandidates: Array.isArray(data?.candidate_workspaces)
+              ? (data.candidate_workspaces as ChatMessage['workspaceAttachCandidates'])
+              : [],
+          },
+        ]);
+        return true;
+      }
+
+      if (type !== 'workspace_attach_resumed' && type !== 'workspace_attach_cancelled') {
+        return false;
+      }
+
+      const inputId = data?.input_id;
+      if (typeof inputId === 'string') {
+        setMessages((prev) =>
+          prev.filter(
+            (message) =>
+              !(
+                message.type === 'workspace_attach_request' &&
+                message.workspaceAttachInputId === inputId
+              )
+          )
+        );
+      }
+
+      if (type === 'workspace_attach_resumed') {
+        const chatId = data?.chat_id;
+        const projectId = data?.project_id;
+        const projectName = data?.project_name;
+        const projectSlug = data?.project_slug;
+        if (
+          typeof chatId === 'string' &&
+          typeof projectId === 'string' &&
+          typeof projectName === 'string' &&
+          typeof projectSlug === 'string'
+        ) {
+          onWorkspaceAttachedRef.current?.({ chatId, projectId, projectName, projectSlug });
+        }
+      }
+      return true;
+    },
+    []
+  );
+
   const sendMessage = useCallback(
     async (
       message: string,
@@ -642,6 +686,7 @@ export function useAgentChat({
       setMessages((prev) => [...prev, userMessage]);
       isExecutingRef.current = true;
       setIsExecuting(true);
+      projectStartedDuringTaskRef.current = false;
 
       const controller = new AbortController();
       abortControllerRef.current = controller;
@@ -778,6 +823,17 @@ export function useAgentChat({
                 }
                 return [...withoutThinking, { ...thinkingMessage, id: thinkingMessageId }];
               });
+              const toolCalls = event.data.tool_calls as Array<{ name: string }> | undefined;
+              const toolResults = (event.data as Record<string, unknown>)
+                .tool_results as Array<{ success?: boolean }> | undefined;
+              if (
+                toolCalls?.some(
+                  (tool, index) =>
+                    tool.name === 'project_start' && toolResults?.[index]?.success === true
+                )
+              ) {
+                projectStartedDuringTaskRef.current = true;
+              }
             } else if (event.type === 'complete') {
               setMessages((prev) => prev.filter((msg) => msg.id !== thinkingMessageId));
 
@@ -844,6 +900,10 @@ export function useAgentChat({
                     ];
                   });
                 }
+                if (projectStartedDuringTaskRef.current) {
+                  projectStartedDuringTaskRef.current = false;
+                  onProjectStartedRef.current?.();
+                }
               }
             } else if (event.type === 'chat_title') {
               const title = event.data.title as string;
@@ -881,6 +941,13 @@ export function useAgentChat({
               const errorMsg =
                 (event.data as { message?: string })?.message || 'Agent execution failed';
               throw new Error(errorMsg);
+            } else if (
+              handleWorkspaceAttachEvent(
+                event.type as string,
+                event.data as Record<string, unknown> | undefined
+              )
+            ) {
+              // handled by the standalone workspace attach flow
             } else if (
               dispatchNodeConfigEvent(
                 event.type as string,

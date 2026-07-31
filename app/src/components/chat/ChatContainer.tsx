@@ -78,6 +78,7 @@ interface Message {
   // Workspace-attach (request_workspace tool) prompt fields.
   workspaceAttachInputId?: string;
   workspaceAttachReason?: string;
+  workspaceAttachRequiredBaseName?: string;
   workspaceAttachCandidates?: Array<{
     id: string;
     name: string;
@@ -2707,6 +2708,7 @@ export function ChatContainer({
                     inputId={message.workspaceAttachInputId}
                     candidates={message.workspaceAttachCandidates || []}
                     reason={message.workspaceAttachReason}
+                    requiredBaseName={message.workspaceAttachRequiredBaseName}
                   />
                 </div>
               );

@@ -16,15 +16,10 @@ const LazyPulsingBorder = lazy(async () => {
 
 /** Width of the visible ring (the wrapper padding the shader shows through). */
 const BORDER_WIDTH = 2;
-/**
- * The canvas is inflated by this many px on every side so the bloom/smoke can
- * spill *outside* the input instead of being cut off at its edge. The shader
- * `margin*` props push the border shape back onto the input's own box.
- */
+/** Lets the glow spill outside the input without moving its actual contour. */
 const GLOW_BLEED = 20;
-/** `thickness` is relative to the canvas short side, so the ring scales with the input height. */
-const BORDER_THICKNESS = 0.02;
-/** Used until the first measurement lands (and where ResizeObserver is unavailable). */
+/** ``thickness`` is relative to the canvas short side. */
+const BORDER_THICKNESS = 0.05;
 const FALLBACK_GEOMETRY = { roundness: 0.3, marginX: 0.02, marginY: 0.1 };
 
 class ShaderFallbackBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
@@ -53,15 +48,6 @@ function supportsWebGL() {
   }
 }
 
-/**
- * Keeps the shader shape locked onto the DOM box it decorates.
- *
- * The shader draws a rounded rect whose `roundness` is a 0..1 ratio of the
- * shape's short side and whose `margin*` are fractions of the canvas — none of
- * which are pixels. Measuring the wrapper lets us derive both, so the glowing
- * contour follows the real border radius and the real box at any width/height
- * (the prompt input grows as the textarea wraps) instead of drifting.
- */
 function usePulsingBorderGeometry() {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const [geometry, setGeometry] = useState(FALLBACK_GEOMETRY);
@@ -111,7 +97,6 @@ export function PromptInputPulsingBorder({
   const [canAnimate, setCanAnimate] = useState(false);
   const [reducedMotion, setReducedMotion] = useState(false);
   const { wrapperRef, geometry } = usePulsingBorderGeometry();
-
   useEffect(() => {
     setCanAnimate(supportsWebGL());
     const mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -126,11 +111,7 @@ export function PromptInputPulsingBorder({
   return (
     <div
       ref={wrapperRef}
-      // The ring the shader shows through. Under the shader it is only a dim
-      // accent floor: enough that the contour never breaks where a spot isn't
-      // passing, low enough that the travelling light still reads. Without the
-      // shader, that same accent carries the border on its own.
-      className="relative rounded-[var(--radius)] p-[2px] bg-transparent"
+      className="relative rounded-[var(--radius)] bg-transparent p-[2px]"
       data-testid="prompt-input-pulsing-border"
     >
       {canAnimate && (
@@ -184,16 +165,11 @@ export function PromptInputPulsingBorder({
         </ShaderFallbackBoundary>
       )}
 
-      {/* Opaque plate that hides the inner half of the glow, so only the ring
-          and its outward bloom remain visible. */}
       <div
         aria-hidden="true"
         className="pointer-events-none absolute z-0 rounded-[calc(var(--radius)-2px)] bg-[var(--surface)]"
         style={{ inset: BORDER_WIDTH }}
       />
-
-      {/* No overflow clipping here: the toolbar dropdowns (settings, plus menu)
-          are children and open upwards past this box. */}
       <div className="relative z-[1] rounded-[calc(var(--radius)-2px)]">{children}</div>
     </div>
   );

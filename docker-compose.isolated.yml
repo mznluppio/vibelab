@@ -56,11 +56,13 @@ services:
     environment:
       BASE_CACHE_VOLUME_NAME: vibelab-minimal-base-cache
       DOCKER_PROJECTS_VOLUME_NAME: vibelab-minimal-projects-data
+      TRAEFIK_CONTAINER_NAME: vibelab-minimal-traefik
 
   worker:
     container_name: vibelab-minimal-worker
     environment:
       DOCKER_PROJECTS_VOLUME_NAME: vibelab-minimal-projects-data
+      TRAEFIK_CONTAINER_NAME: vibelab-minimal-traefik
 
   app:
     container_name: vibelab-minimal-app

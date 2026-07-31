@@ -788,6 +788,7 @@ class AgentCreate(BaseModel):
     tags: list[str] = Field(default_factory=list)
     is_featured: bool = Field(default=False)
     is_active: bool = Field(default=True)
+    required_base_id: UUID | None = None
 
 
 class AgentUpdate(BaseModel):
@@ -814,6 +815,20 @@ class AgentUpdate(BaseModel):
     tags: list[str] | None = None
     is_featured: bool | None = None
     is_active: bool | None = None
+    required_base_id: UUID | None = None
+
+
+async def _required_base_config(
+    db: AsyncSession, required_base_id: UUID | None
+) -> dict[str, str] | None:
+    """Return the persisted agent configuration for an optional Base."""
+    if required_base_id is None:
+        return None
+
+    base = await db.get(MarketplaceBase, required_base_id)
+    if base is None or not base.is_active or base.deleted_upstream:
+        raise HTTPException(status_code=422, detail="Required Base is not available")
+    return {"id": str(base.id), "slug": base.slug, "name": base.name}
 
 
 def can_edit_agent(agent: MarketplaceAgent) -> bool:
@@ -922,6 +937,23 @@ async def get_agent(
         if not agent:
             raise HTTPException(status_code=404, detail="Agent not found")
 
+        config = agent.config if isinstance(agent.config, dict) else {}
+        required_base = config.get("required_base")
+        required_base_id = required_base.get("id") if isinstance(required_base, dict) else None
+        if not required_base_id and isinstance(required_base, dict):
+            required_base_slug = required_base.get("slug")
+            if isinstance(required_base_slug, str):
+                base_result = await db.execute(
+                    select(MarketplaceBase.id)
+                    .where(
+                        MarketplaceBase.slug == required_base_slug,
+                        MarketplaceBase.is_active.is_(True),
+                        MarketplaceBase.deleted_upstream.is_(False),
+                    )
+                    .limit(1)
+                )
+                required_base_id = base_result.scalar_one_or_none()
+
         return {
             "id": agent.id,
             "name": agent.name,
@@ -957,6 +989,7 @@ async def get_agent(
             else None,
             "forked_by_username": agent.forked_by_user.username if agent.forked_by_user else None,
             "can_edit": can_edit_agent(agent),
+            "required_base_id": str(required_base_id) if required_base_id else None,
         }
 
     except HTTPException:
@@ -995,6 +1028,8 @@ async def create_agent(
                     break
                 counter += 1
 
+        required_base = await _required_base_config(db, agent_data.required_base_id)
+
         # Create agent (created_by_user_id = NULL means Tesslate-created)
         agent = MarketplaceAgent(
             name=agent_data.name,
@@ -1020,6 +1055,7 @@ async def create_agent(
             tags=agent_data.tags,
             is_featured=agent_data.is_featured,
             is_active=agent_data.is_active,
+            config={"required_base": required_base} if required_base else None,
             created_by_user_id=None,  # NULL = Tesslate-created
             forked_by_user_id=None,
         )
@@ -1080,6 +1116,16 @@ async def update_agent(
         # loop so admin payloads can't flip the flag.
         update_data = agent_data.dict(exclude_unset=True)
         update_data.pop("is_builtin", None)
+        required_base_supplied = "required_base_id" in update_data
+        required_base_id = update_data.pop("required_base_id", None)
+        if required_base_supplied:
+            config = dict(agent.config or {})
+            required_base = await _required_base_config(db, required_base_id)
+            if required_base is None:
+                config.pop("required_base", None)
+            else:
+                config["required_base"] = required_base
+            agent.config = config or None
         for field, value in update_data.items():
             setattr(agent, field, value)
 

@@ -18,6 +18,7 @@ interface BaseProps {
   mode: WorkspaceAttachCardMode;
   candidates: WorkspaceCandidate[];
   reason?: string;
+  requiredBaseName?: string;
   /** Called after a successful local resolve (upload-prompt mode) so the
    * caller can proceed with the queued upload. */
   onResolve?: (projectId: string) => void;
@@ -35,7 +36,7 @@ interface UploadPromptProps extends BaseProps {
 }
 
 export function WorkspaceAttachCard(props: AgentPromptProps | UploadPromptProps) {
-  const { mode, candidates, reason, onResolve, onClose } = props;
+  const { mode, candidates, reason, requiredBaseName, onResolve, onClose } = props;
   const [filter, setFilter] = useState('');
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
@@ -188,7 +189,8 @@ export function WorkspaceAttachCard(props: AgentPromptProps | UploadPromptProps)
             onClick={() => setCreating(true)}
             className="w-full mt-3 px-3 py-2 bg-blue-500/15 hover:bg-blue-500/25 border border-blue-500/40 rounded-md text-blue-500 text-sm font-medium transition-all flex items-center justify-center gap-2"
           >
-            <Plus className="w-4 h-4" /> Create empty workspace
+            <Plus className="w-4 h-4" />{' '}
+            {requiredBaseName ? `Create ${requiredBaseName} workspace` : 'Create empty workspace'}
           </button>
         </>
       )}

@@ -241,8 +241,27 @@ export function parseVibeLabDiagram(
     return { success: false, error: 'The diagram does not match the supported VibeLab schema.' };
   }
 
+  // Older Assist to Build conversations used `from`/`to` and omitted a node
+  // kind. They still describe the same presentation-safe graph, so normalize
+  // those two legacy aliases at the renderer boundary instead of showing a
+  // raw JSON fallback. New agent responses remain on the explicit schema.
+  const normalizedNodes = nodes.map((node) => {
+    if (!isRecord(node) || node.type !== undefined) return node;
+    return { ...node, type: 'step' };
+  });
+  const normalizedEdges = edges
+    .map((edge) => {
+      if (!isRecord(edge) || edge.source !== undefined || edge.target !== undefined) return edge;
+      const { from, to, ...rest } = edge;
+      return { ...rest, source: from, target: to };
+    })
+    // A self-referential "update" edge is not useful in the rendered flow
+    // and React Flow cannot lay it out consistently. Preserve the process by
+    // keeping the node and its incoming/outgoing edges.
+    .filter((edge) => !isRecord(edge) || edge.source !== edge.target);
+
   if (
-    !nodes.every(
+    !normalizedNodes.every(
       (node) =>
         isRecord(node) &&
         hasOnlyKeys(node, NODE_KEYS) &&
@@ -276,7 +295,7 @@ export function parseVibeLabDiagram(
     return { success: false, error: 'One or more diagram groups are invalid.' };
   }
 
-  const typedNodes = nodes as VibeLabDiagramNode[];
+  const typedNodes = normalizedNodes as VibeLabDiagramNode[];
   const typedGroups = groups as VibeLabDiagramGroup[];
   const nodeIds = typedNodes.map((node) => node.id);
   const groupIds = typedGroups.map((group) => group.id);
@@ -288,7 +307,7 @@ export function parseVibeLabDiagram(
   }
 
   if (
-    !edges.every(
+    !normalizedEdges.every(
       (edge) =>
         isRecord(edge) &&
         hasOnlyKeys(edge, EDGE_KEYS) &&
@@ -335,7 +354,7 @@ export function parseVibeLabDiagram(
       preset: preset as DiagramPreset,
       direction: direction as DiagramDirection,
       nodes: typedNodes.map((node) => ({ ...node, label: node.label.trim() })),
-      edges: edges as VibeLabDiagramEdge[],
+      edges: normalizedEdges as VibeLabDiagramEdge[],
       ...(typedGroups.length ? { groups: typedGroups } : {}),
       ...(annotations.length ? { annotations: annotations as VibeLabDiagramAnnotation[] } : {}),
     },
