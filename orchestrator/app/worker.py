@@ -40,6 +40,53 @@ _WORKER_HEARTBEAT_KEY = "tesslate:worker:heartbeat"
 _WORKER_HEARTBEAT_TTL_SECONDS = 15
 _WORKER_HEARTBEAT_INTERVAL_SECONDS = 5
 
+# Agents may opt into automatically bringing a project online after they have
+# changed application files.  Keeping this opt-in avoids starting a project
+# after a discovery-only chat, while making build agents reliable by default.
+_PROJECT_MUTATION_TOOLS = frozenset(
+    {
+        "write_file",
+        "patch_file",
+        "multi_edit",
+        "apply_patch",
+        "apply_setup_config",
+    }
+)
+
+
+async def _start_project_after_agent_build(project, user_id: UUID, db) -> bool:
+    """Start an opted-in build agent's project once its files are ready.
+
+    ``start_project`` is idempotent in both orchestration modes.  We only call
+    it when a project has actual containers, so discovery-only workspaces and
+    non-application chats remain untouched.
+    """
+    from sqlalchemy import select
+
+    from .models import Container, ContainerConnection
+    from .services.orchestration import get_orchestrator
+
+    containers = list(
+        (
+            await db.execute(select(Container).where(Container.project_id == project.id))
+        ).scalars()
+    )
+    if not containers:
+        return False
+
+    connections = list(
+        (
+            await db.execute(
+                select(ContainerConnection).where(ContainerConnection.project_id == project.id)
+            )
+        ).scalars()
+    )
+    await asyncio.wait_for(
+        get_orchestrator().start_project(project, containers, connections, user_id, db),
+        timeout=90,
+    )
+    return True
+
 
 async def _write_worker_heartbeat() -> None:
     """Refresh the worker liveness marker without affecting job execution."""
@@ -1445,6 +1492,9 @@ async def execute_agent_task(ctx: dict, payload_dict: dict):
                 message_metadata={
                     "agent_mode": True,
                     "agent_type": agent_model.agent_type,
+                    "agent_name": agent_model.name,
+                    "agent_icon": agent_model.icon,
+                    "agent_avatar_url": agent_model.avatar_url,
                     "completion_reason": "in_progress",
                     "executed_by": "worker",
                     "task_id": task_id,
@@ -1503,6 +1553,9 @@ async def execute_agent_task(ctx: dict, payload_dict: dict):
             completion_reason = "task_complete"
             session_id = None
             event_count = 0
+            project_changed = False
+            project_started_by_agent = False
+            auto_start_project = bool((agent_model.config or {}).get("auto_start_project"))
 
             # AgentStep sink: called by run_turn() for every agent_step event so
             # the worker loop only handles cancellation, pubsub, and completion.
@@ -1840,6 +1893,24 @@ async def execute_agent_task(ctx: dict, payload_dict: dict):
                         )
                         session_id = complete_data.get("session_id")
 
+                        if (
+                            auto_start_project
+                            and project_changed
+                            and not project_started_by_agent
+                            and completion_reason != "cancelled"
+                            and project is not None
+                        ):
+                            try:
+                                complete_data["project_started"] = await _start_project_after_agent_build(
+                                    project, UUID(payload.user_id), db
+                                )
+                            except Exception as start_err:
+                                logger.warning(
+                                    "[WORKER] Auto-start after agent build failed for project %s: %s",
+                                    project.id,
+                                    start_err,
+                                )
+
                     elif event_type == "tool_error":
                         err_data = event.get("data", {})
                         logger.warning(
@@ -1848,6 +1919,20 @@ async def execute_agent_task(ctx: dict, payload_dict: dict):
                             err_data.get("tool_name"),
                             err_data.get("iteration"),
                             err_data.get("error"),
+                        )
+
+                    elif event_type == "agent_step":
+                        step_data = event.get("data", {})
+                        tool_names = {
+                            tool_call.get("name")
+                            for tool_call in step_data.get("tool_calls", [])
+                            if isinstance(tool_call, dict)
+                        }
+                        project_changed = project_changed or bool(
+                            tool_names & _PROJECT_MUTATION_TOOLS
+                        )
+                        project_started_by_agent = project_started_by_agent or (
+                            "project_start" in tool_names
                         )
 
                     # Publish event to Redis Stream for API pod to forward to SSE
@@ -1889,6 +1974,9 @@ async def execute_agent_task(ctx: dict, payload_dict: dict):
                     final_metadata = {
                         "agent_mode": True,
                         "agent_type": agent_model.agent_type,
+                        "agent_name": agent_model.name,
+                        "agent_icon": agent_model.icon,
+                        "agent_avatar_url": agent_model.avatar_url,
                         "iterations": iterations,
                         "tool_calls_made": tool_calls_made,
                         "completion_reason": completion_reason,

@@ -106,6 +106,9 @@ export interface DBMessage {
   message_metadata?: {
     agent_mode?: boolean;
     agent_type?: string;
+    agent_name?: string;
+    agent_icon?: string;
+    agent_avatar_url?: string;
     steps?: AgentStep[];
     iterations?: number;
     tool_calls_made?: number;

@@ -42,11 +42,7 @@ function formatAgentError(raw: string): string {
 
 interface Message {
   id: string;
-  type:
-    | 'user'
-    | 'ai'
-    | 'approval_request'
-    | 'workspace_attach_request';
+  type: 'user' | 'ai' | 'approval_request' | 'workspace_attach_request';
   content: string;
   agentData?: AgentMessageData;
   agentIcon?: string;
@@ -390,13 +386,17 @@ export function ChatContainer({
 
           // For agent messages, split iterations into separate messages
           // Find agent icon from initialAgents if available
+          const metadata = msg.message_metadata;
           const agentData =
             initialAgents.length > 0
-              ? initialAgents.find((a) => a.name === msg.message_metadata?.agent_type)
+              ? initialAgents.find(
+                  (agent) =>
+                    agent.name === metadata?.agent_name || agent.name === metadata?.agent_type
+                )
               : null;
-          const agentIcon = agentData?.icon || '🤖';
-          const agentAvatarUrl = agentData?.avatar_url;
-          const agentType = msg.message_metadata.agent_type;
+          const agentIcon = metadata?.agent_icon || agentData?.icon || '🤖';
+          const agentAvatarUrl = metadata?.agent_avatar_url || agentData?.avatar_url;
+          const agentType = metadata.agent_name || metadata.agent_type;
           const finalResponse = msg.content && msg.content.trim() ? msg.content : '';
 
           // Add each step as a separate message (filter out steps with no content)
@@ -1597,6 +1597,9 @@ export function ChatContainer({
               }
 
               toast.success('Task completed successfully');
+              if (event.data.project_started === true) {
+                onProjectStarted?.();
+              }
               if (projectStartedDuringTaskRef.current) {
                 projectStartedDuringTaskRef.current = false;
                 onProjectStarted?.();
@@ -2155,10 +2158,7 @@ export function ChatContainer({
 
   const handleApprovalResponse = async (
     approvalId: string,
-    response:
-      | 'allow_once'
-      | 'allow_all'
-      | 'stop',
+    response: 'allow_once' | 'allow_all' | 'stop',
     toolName: string
   ) => {
     // Define write tools that should switch mode
