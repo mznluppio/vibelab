@@ -678,13 +678,30 @@ async def create_project_from_payload(
     # platform default). Covers every caller of this helper: the public API,
     # the desktop import endpoint, and the agent's ``request_workspace``
     # create-empty branch.
-    from ..permissions import check_team_permission, require_workspace_creation
+    from ..permissions import (
+        check_team_permission,
+        require_team_feature_access,
+        require_workspace_creation,
+    )
 
     await require_workspace_creation(db, current_user)
 
     if current_user.default_team_id:
         await check_team_permission(
             db, current_user.default_team_id, current_user.id, Permission.PROJECT_CREATE
+        )
+
+    is_repository_import = bool(
+        payload.source_type in ("github", "gitlab", "bitbucket")
+        or payload.git_repo_url
+        or payload.github_repo_url
+    )
+    if is_repository_import:
+        await require_team_feature_access(
+            db,
+            current_user,
+            setting_name="repository_import_access_for_non_admins",
+            feature_name="Repository imports",
         )
 
     await enforce_project_limit(current_user, db)

@@ -3021,6 +3021,29 @@ export const assetsApi = {
 // Billing & Subscription API
 // ============================================================================
 
+export interface CreditAllocationMember {
+  user_id: string;
+  name: string | null;
+  email: string | null;
+  avatar_url: string | null;
+  role: string;
+  credit_limit: number;
+  consumed: number;
+  remaining: number;
+}
+
+export interface CreditAllocationResponse {
+  mode: 'shared' | 'individual';
+  team_remaining: number;
+  team_capacity: number;
+  cycle_started_at: string;
+  member: CreditAllocationMember;
+  is_admin: boolean;
+  members?: CreditAllocationMember[];
+  allocated_total?: number;
+  allocation_exceeds_capacity?: boolean;
+}
+
 export const billingApi = {
   // Get public billing configuration
   getConfig: async (): Promise<BillingConfig> => {
@@ -3080,6 +3103,26 @@ export const billingApi = {
   // Credits management
   getCreditsBalance: async (): Promise<CreditBalanceResponse> => {
     const response = await api.get('/api/billing/credits');
+    return response.data;
+  },
+
+  getAllocation: async (): Promise<CreditAllocationResponse> => {
+    const response = await api.get('/api/billing/allocation');
+    return response.data;
+  },
+
+  updateAllocationMode: async (mode: 'shared' | 'individual'): Promise<{ mode: string }> => {
+    const response = await api.patch('/api/billing/allocation', { mode });
+    return response.data;
+  },
+
+  updateMemberAllocation: async (
+    userId: string,
+    creditLimit: number
+  ): Promise<{ user_id: string; credit_limit: number }> => {
+    const response = await api.patch(`/api/billing/allocation/members/${userId}`, {
+      credit_limit: creditLimit,
+    });
     return response.data;
   },
 
@@ -3971,6 +4014,8 @@ export interface Team {
   automations_access_for_non_admins: boolean;
   apps_access_for_non_admins: boolean;
   library_access_for_non_admins: boolean;
+  repository_import_access_for_non_admins: boolean;
+  prompt_connectors_access_for_non_admins: boolean;
   created_at: string;
 }
 
@@ -3986,6 +4031,8 @@ export interface TeamList {
   automations_access_for_non_admins: boolean;
   apps_access_for_non_admins: boolean;
   library_access_for_non_admins: boolean;
+  repository_import_access_for_non_admins: boolean;
+  prompt_connectors_access_for_non_admins: boolean;
   role: string | null;
 }
 
@@ -4079,6 +4126,8 @@ export const teamsApi = {
       automations_access_for_non_admins: boolean;
       apps_access_for_non_admins: boolean;
       library_access_for_non_admins: boolean;
+      repository_import_access_for_non_admins: boolean;
+      prompt_connectors_access_for_non_admins: boolean;
     }>
   ): Promise<Team> {
     const response = await api.patch(`/api/teams/${slug}`, data);

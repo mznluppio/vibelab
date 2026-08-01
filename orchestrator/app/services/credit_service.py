@@ -10,7 +10,7 @@ import logging
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -48,6 +48,45 @@ def _get_byok_prefixes() -> tuple[str, ...]:
 def is_byok_model(model_name: str) -> bool:
     """Return True if the model uses the user's own API key (no credit charge)."""
     return any(model_name.startswith(p) for p in _get_byok_prefixes())
+
+
+def _allocation_cycle_start(team) -> datetime:
+    """Use the team's explicit cycle where available, with a safe legacy fallback."""
+    if team.credit_cycle_started_at:
+        return team.credit_cycle_started_at
+    now = datetime.now(UTC)
+    return datetime(now.year, now.month, 1, tzinfo=UTC)
+
+
+async def _member_allocation_remaining(
+    db: AsyncSession, *, team, user_id, lock_membership: bool = False
+) -> int | None:
+    """Return an individual allowance's remaining amount, or ``None`` in shared mode."""
+    from ..models import UsageLog
+    from ..models_team import TeamMembership
+
+    if team.credit_allocation_mode != "individual":
+        return None
+
+    membership_query = select(TeamMembership).where(
+        TeamMembership.team_id == team.id,
+        TeamMembership.user_id == user_id,
+        TeamMembership.is_active.is_(True),
+    )
+    if lock_membership:
+        membership_query = membership_query.with_for_update()
+    membership_result = await db.execute(membership_query)
+    membership = membership_result.scalar_one_or_none()
+    if membership is None:
+        return 0
+    used_result = await db.execute(
+        select(func.coalesce(func.sum(UsageLog.cost_total), 0)).where(
+            UsageLog.team_id == team.id,
+            UsageLog.user_id == user_id,
+            UsageLog.created_at >= _allocation_cycle_start(team),
+        )
+    )
+    return max(int(membership.credit_limit or 0) - int(used_result.scalar_one() or 0), 0)
 
 
 async def check_credits(
@@ -92,6 +131,18 @@ async def check_credits(
             "Please purchase credits or upgrade your plan to continue using AI features."
         )
 
+    if team.credit_allocation_mode == "individual" and db is not None:
+        remaining = await _member_allocation_remaining(
+            db,
+            team=team,
+            user_id=user.id,
+        )
+        if remaining <= 0:
+            return False, (
+                "Your individual allocation has been reached. "
+                "Please contact a team administrator for more capacity."
+            )
+
     return True, ""
 
 
@@ -104,6 +155,7 @@ async def deduct_credits(
     agent_id: UUID | None = None,
     project_id: UUID | None = None,
     team_id: UUID | None = None,
+    request_id: str | None = None,
 ) -> dict:
     """
     Deduct credits from team (or user) balance and create a UsageLog entry.
@@ -114,12 +166,59 @@ async def deduct_credits(
     Uses SELECT FOR UPDATE to prevent race conditions on concurrent requests.
     Deduction priority: daily → bundled → signup_bonus → purchased.
 
+    ``request_id`` makes an upstream model response idempotent.  Agent
+    workers can be retried after a successful DB commit, and must not debit
+    the same provider response twice.  Callers that do not have a stable
+    request id keep the legacy behavior.
+
     Returns dict with cost_total, credits_deducted, new_balance, usage_log_id.
     """
     from ..models import UsageLog, User
     from ..models_team import Team
 
     byok = is_byok_model(model_name)
+
+    # A task retry can replay the same successful provider response.  Reuse
+    # its ledger entry instead of performing a second debit.  The project/chat
+    # task lock prevents concurrent duplicate writers; this lookup handles the
+    # durable retry path after a worker loss or post-commit interruption.
+    if request_id:
+        existing_result = await db.execute(
+            select(UsageLog).where(UsageLog.request_id == request_id).limit(1)
+        )
+        existing = existing_result.scalar_one_or_none()
+        if existing is not None:
+            if existing.team_id:
+                balance_result = await db.execute(
+                    select(Team).where(Team.id == existing.team_id)
+                )
+            else:
+                balance_result = await db.execute(
+                    select(User).where(User.id == existing.user_id)
+                )
+            credit_source = balance_result.scalar_one_or_none()
+            new_balance = getattr(credit_source, "total_credits", 0) or 0
+            member_remaining = None
+            if credit_source is not None and existing.team_id:
+                member_remaining = await _member_allocation_remaining(
+                    db,
+                    team=credit_source,
+                    user_id=user_id,
+                )
+            return {
+                "cost_total": existing.cost_total,
+                "credits_deducted": 0,
+                "new_balance": new_balance,
+                "usage_log_id": str(existing.id),
+                "is_byok": bool(existing.is_byok),
+                "already_recorded": True,
+                "member_remaining": member_remaining,
+                "allocation_exhausted": bool(
+                    member_remaining is not None
+                    and member_remaining <= 0
+                    and not existing.is_byok
+                ),
+            }
 
     # Calculate cost (0 for BYOK)
     if byok:
@@ -154,6 +253,18 @@ async def deduct_credits(
             else:
                 result = await db.execute(select(User).where(User.id == user_id).with_for_update())
                 credit_source = result.scalar_one()
+
+            # Team-level locking serializes all shared credits.  Lock the
+            # member row as well before querying the per-user ledger so an
+            # individual allocation is evaluated against a stable cycle.
+            member_remaining_before = None
+            if resolved_team_id:
+                member_remaining_before = await _member_allocation_remaining(
+                    db,
+                    team=credit_source,
+                    user_id=user_id,
+                    lock_membership=True,
+                )
 
             if not byok and cost_total > 0:
                 remaining = cost_total
@@ -208,11 +319,25 @@ async def deduct_credits(
                 cost_output=cost_output,
                 cost_total=cost_total,
                 is_byok=byok,
+                request_id=request_id,
                 billed_status="credited"
                 if credits_deducted > 0
                 else ("exempt" if byok else "pending"),
             )
             db.add(usage_log)
+
+            # Flush the ledger row before calculating the per-member balance.
+            # This makes the result include this exact provider response while
+            # the team and membership locks remain held through the commit.
+            await db.flush()
+            if member_remaining_before is not None:
+                member_remaining = await _member_allocation_remaining(
+                    db,
+                    team=credit_source,
+                    user_id=user_id,
+                )
+            else:
+                member_remaining = None
 
             await db.commit()
             await db.refresh(usage_log)
@@ -242,4 +367,9 @@ async def deduct_credits(
         "new_balance": new_balance,
         "usage_log_id": str(usage_log.id),
         "is_byok": byok,
+        "already_recorded": False,
+        "member_remaining": member_remaining,
+        "allocation_exhausted": bool(
+            member_remaining is not None and member_remaining <= 0 and not byok
+        ),
     }

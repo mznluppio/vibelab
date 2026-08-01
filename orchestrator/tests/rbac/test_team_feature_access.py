@@ -36,6 +36,8 @@ def _user(*, team_id, superuser: bool = False):
     [
         ("marketplace_access_for_non_admins", "Marketplace"),
         ("automations_access_for_non_admins", "Automations"),
+        ("repository_import_access_for_non_admins", "Repository imports"),
+        ("prompt_connectors_access_for_non_admins", "Prompt connectors"),
     ],
 )
 async def test_non_admin_is_denied_when_team_feature_is_disabled(
@@ -89,6 +91,34 @@ async def test_team_feature_access_allows_admins_and_opted_in_members(monkeypatc
         setting_name="automations_access_for_non_admins",
         feature_name="Automations",
     )
+
+
+@pytest.mark.asyncio
+async def test_repository_import_uses_the_project_team_not_the_active_team(monkeypatch):
+    """Cloning into a shared project must honour that project's team setting."""
+    project_team_id = uuid4()
+    user = _user(team_id=None)
+    team = Team(
+        id=project_team_id,
+        name="Restricted",
+        slug="restricted",
+        repository_import_access_for_non_admins=False,
+    )
+
+    async def _membership(*_args):
+        return SimpleNamespace(role="editor")
+
+    monkeypatch.setattr(permissions, "get_team_membership", _membership)
+    with pytest.raises(HTTPException) as exc:
+        await permissions.require_team_feature_access(
+            _Db(team),
+            user,
+            team_id=project_team_id,
+            setting_name="repository_import_access_for_non_admins",
+            feature_name="Repository imports",
+        )
+
+    assert exc.value.status_code == 403
 
 
 @pytest.mark.asyncio

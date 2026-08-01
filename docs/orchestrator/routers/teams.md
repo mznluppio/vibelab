@@ -62,7 +62,8 @@ Team CRUD, memberships, invitations, project access control, and audit log. Back
 ## Auth
 
 - `POST /` additionally requires `User.is_superuser`; the sidebar hides this action for all other users.
-- Team administrators can opt editors and viewers into Marketplace and Automations in Team Settings. Both settings default to disabled.
+- Team administrators can opt editors and viewers into Marketplace, Automations, Apps, and Library in Team Settings. Those settings default to disabled.
+- Repository imports and prompt-menu connectors are independently configurable for non-administrators and default to enabled, preserving existing team behaviour. Repository restrictions are enforced both when creating an imported project and when cloning into an existing project.
 - `current_active_user` plus role check via `check_team_permission` / `get_project_with_access`.
 - Invite token preview is public; acceptance requires auth.
 - All state changes append to `AuditLog`.

@@ -31,6 +31,8 @@ class TeamUpdate(BaseModel):
     automations_access_for_non_admins: bool | None = None
     apps_access_for_non_admins: bool | None = None
     library_access_for_non_admins: bool | None = None
+    repository_import_access_for_non_admins: bool | None = None
+    prompt_connectors_access_for_non_admins: bool | None = None
 
 
 class TeamRead(BaseModel):
@@ -55,6 +57,8 @@ class TeamRead(BaseModel):
     automations_access_for_non_admins: bool
     apps_access_for_non_admins: bool
     library_access_for_non_admins: bool
+    repository_import_access_for_non_admins: bool
+    prompt_connectors_access_for_non_admins: bool
     created_at: datetime
 
 
@@ -72,6 +76,8 @@ class TeamList(BaseModel):
     automations_access_for_non_admins: bool
     apps_access_for_non_admins: bool
     library_access_for_non_admins: bool
+    repository_import_access_for_non_admins: bool
+    prompt_connectors_access_for_non_admins: bool
     role: str | None = None  # populated from membership
 
 

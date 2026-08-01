@@ -11,7 +11,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import get_settings
@@ -163,6 +163,69 @@ class TransactionResponse(BaseModel):
     amount_usd: float
     status: str
     created_at: str
+
+
+class AllocationModeRequest(BaseModel):
+    """Switch how a team's existing credit pool is governed."""
+
+    mode: str
+
+
+class MemberAllocationRequest(BaseModel):
+    """Individual credit ceiling, expressed in the existing credit units."""
+
+    credit_limit: int
+
+
+def _allocation_cycle_start(team) -> datetime:
+    """Return a stable reporting period without imposing a schema migration on old teams."""
+    if team.credit_cycle_started_at:
+        return team.credit_cycle_started_at
+    now = datetime.now(UTC)
+    return datetime(now.year, now.month, 1, tzinfo=UTC)
+
+
+async def _team_allocation_rows(team, db: AsyncSession) -> tuple[datetime, list[dict[str, Any]]]:
+    """Aggregate consumption once per active member for allocation and enforcement views."""
+    from ..models_team import TeamMembership
+
+    cycle_start = _allocation_cycle_start(team)
+    result = await db.execute(
+        select(
+            TeamMembership,
+            AuthUser.name,
+            AuthUser.email,
+            AuthUser.avatar_url,
+            func.coalesce(func.sum(UsageLog.cost_total), 0).label("consumed"),
+        )
+        .join(AuthUser, AuthUser.id == TeamMembership.user_id)
+        .outerjoin(
+            UsageLog,
+            (UsageLog.user_id == TeamMembership.user_id)
+            & (UsageLog.team_id == team.id)
+            & (UsageLog.created_at >= cycle_start),
+        )
+        .where(
+            TeamMembership.team_id == team.id,
+            TeamMembership.is_active.is_(True),
+        )
+        .group_by(
+            TeamMembership.id,
+            AuthUser.name,
+            AuthUser.email,
+            AuthUser.avatar_url,
+        )
+    )
+    return cycle_start, [
+        {
+            "membership": membership,
+            "name": name,
+            "email": email,
+            "avatar_url": avatar_url,
+            "consumed": int(consumed or 0),
+        }
+        for membership, name, email, avatar_url, consumed in result.all()
+    ]
 
 
 # ============================================================================
@@ -657,6 +720,122 @@ async def get_credits_balance(
         signup_bonus_expires_at=signup_bonus_expires_at,
         tier=tier,
     )
+
+
+@router.get("/allocation")
+async def get_credit_allocation(
+    user: AuthUser = Depends(current_active_user), db: AsyncSession = Depends(get_db)
+):
+    """Return the caller's allocation plus an administrator-only team overview."""
+    from ..permissions import Permission, check_team_permission
+
+    team = await _get_active_team(user, db)
+    cycle_start, rows = await _team_allocation_rows(team, db)
+    own = next((row for row in rows if row["membership"].user_id == user.id), None)
+    if own is None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not a team member")
+
+    is_admin = True
+    try:
+        await check_team_permission(db, team.id, user.id, Permission.BILLING_MANAGE)
+    except HTTPException:
+        is_admin = False
+
+    team_remaining = team.total_credits
+    mode = team.credit_allocation_mode or "shared"
+
+    def serialize(row: dict[str, Any]) -> dict[str, Any]:
+        limit = int(row["membership"].credit_limit or 0)
+        consumed = row["consumed"]
+        personal_remaining = max(limit - consumed, 0) if mode == "individual" else None
+        return {
+            "user_id": str(row["membership"].user_id),
+            "name": row["name"],
+            "email": row["email"],
+            "avatar_url": row["avatar_url"],
+            "role": row["membership"].role,
+            "credit_limit": limit,
+            "consumed": consumed,
+            "remaining": min(personal_remaining, team_remaining)
+            if personal_remaining is not None
+            else team_remaining,
+        }
+
+    response: dict[str, Any] = {
+        "mode": mode,
+        "team_remaining": team_remaining,
+        "team_capacity": team_remaining + sum(row["consumed"] for row in rows),
+        "cycle_started_at": cycle_start.isoformat(),
+        "member": serialize(own),
+        "is_admin": is_admin,
+    }
+    if is_admin:
+        members = [serialize(row) for row in rows]
+        response["members"] = members
+        response["allocated_total"] = sum(member["credit_limit"] for member in members)
+        response["allocation_exceeds_capacity"] = (
+            mode == "individual" and response["allocated_total"] > response["team_capacity"]
+        )
+    return response
+
+
+@router.patch("/allocation")
+async def update_credit_allocation_mode(
+    payload: AllocationModeRequest,
+    user: AuthUser = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Switch between shared and individual allocation without losing member limits."""
+    from ..permissions import Permission, check_team_permission
+
+    if payload.mode not in {"shared", "individual"}:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid mode")
+    team = await _get_active_team(user, db)
+    await check_team_permission(db, team.id, user.id, Permission.BILLING_MANAGE)
+    team.credit_allocation_mode = payload.mode
+    if team.credit_cycle_started_at is None:
+        team.credit_cycle_started_at = datetime.now(UTC)
+    await db.commit()
+    return {"mode": team.credit_allocation_mode}
+
+
+@router.patch("/allocation/members/{member_user_id}")
+async def update_member_credit_allocation(
+    member_user_id: str,
+    payload: MemberAllocationRequest,
+    user: AuthUser = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Set a future-proof per-member ceiling; a team balance always remains the hard cap."""
+    from uuid import UUID
+
+    from ..models_team import TeamMembership
+    from ..permissions import Permission, check_team_permission
+
+    if payload.credit_limit < 0:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Limit must be positive")
+    try:
+        target_user_id = UUID(member_user_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid user") from exc
+
+    team = await _get_active_team(user, db)
+    await check_team_permission(db, team.id, user.id, Permission.BILLING_MANAGE)
+    result = await db.execute(
+        select(TeamMembership).where(
+            TeamMembership.team_id == team.id,
+            TeamMembership.user_id == target_user_id,
+            TeamMembership.is_active.is_(True),
+        )
+    )
+    membership = result.scalar_one_or_none()
+    if membership is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team member not found")
+    membership.credit_limit = payload.credit_limit
+    if team.credit_cycle_started_at is None:
+        team.credit_cycle_started_at = datetime.now(UTC)
+    await db.commit()
+    return {"user_id": str(membership.user_id), "credit_limit": membership.credit_limit}
 
 
 @router.get("/credits/status", response_model=CreditStatusResponse)

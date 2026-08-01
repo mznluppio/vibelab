@@ -38,10 +38,41 @@ interface ThemeProviderProps {
 }
 
 const DEFAULT_THEME = 'default-dark';
+const TEAM_THEME_CACHE_KEY = 'tesslate_active_team_theme';
+
+function readCachedTeamTheme(): Theme | null {
+  try {
+    const raw = localStorage.getItem(TEAM_THEME_CACHE_KEY);
+    if (!raw) return null;
+    const theme = JSON.parse(raw) as Theme;
+    return isValidTheme(theme) ? theme : null;
+  } catch {
+    return null;
+  }
+}
+
+function cacheTeamTheme(theme: Theme | null) {
+  try {
+    if (theme) localStorage.setItem(TEAM_THEME_CACHE_KEY, JSON.stringify(theme));
+    else localStorage.removeItem(TEAM_THEME_CACHE_KEY);
+  } catch {
+    // Storage is an optimization only; rendering must remain non-blocking.
+  }
+}
+
+// A team theme is normally resolved after authentication. Reapply the last
+// validated one before React's first paint so returning members never see the
+// default palette flash between the document CSS and the team lookup.
+const cachedInitialTeamTheme = typeof window === 'undefined' ? null : readCachedTeamTheme();
+if (cachedInitialTeamTheme) applyThemePreset(cachedInitialTeamTheme);
 
 export function ThemeProvider({ children }: ThemeProviderProps) {
-  const [themePresetId, setThemePresetIdState] = useState<string>(DEFAULT_THEME);
-  const [teamThemePresetId, setTeamThemePresetId] = useState<string | null>(null);
+  const [themePresetId, setThemePresetIdState] = useState<string>(
+    cachedInitialTeamTheme?.id || DEFAULT_THEME
+  );
+  const [teamThemePresetId, setTeamThemePresetId] = useState<string | null>(
+    cachedInitialTeamTheme?.id || null
+  );
   const [availablePresets, setAvailablePresets] = useState<Theme[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [loadingState, setLoadingState] = useState<ThemeLoadingState>('idle');
@@ -51,6 +82,9 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
   const effectiveThemePresetId = teamThemePresetId || themePresetId;
   const themePreset = (() => {
     const preset = getThemePreset(effectiveThemePresetId);
+    if (cachedInitialTeamTheme?.id === effectiveThemePresetId && preset.id !== effectiveThemePresetId) {
+      return cachedInitialTeamTheme;
+    }
     // Runtime validation before use
     if (isValidTheme(preset)) {
       return preset;
@@ -128,6 +162,15 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
     const onTeamTheme = (e: Event) => {
       const presetId = (e as CustomEvent).detail as string | null;
       setTeamThemePresetId(presetId || null);
+      if (!presetId) {
+        cacheTeamTheme(null);
+        return;
+      }
+      const preset = getThemePreset(presetId);
+      if (isValidTheme(preset) && preset.id === presetId) {
+        cacheTeamTheme(preset);
+        applyThemePreset(preset);
+      }
     };
     window.addEventListener('team-theme-changed', onTeamTheme);
     return () => window.removeEventListener('team-theme-changed', onTeamTheme);
@@ -136,6 +179,7 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
   // Apply theme whenever it changes
   useEffect(() => {
     applyThemePreset(themePreset);
+    if (teamThemePresetId) cacheTeamTheme(themePreset);
   }, [effectiveThemePresetId, themePreset]);
 
   // Toggle between dark and light variant of current theme color

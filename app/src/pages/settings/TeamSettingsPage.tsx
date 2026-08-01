@@ -26,6 +26,8 @@ export default function TeamSettingsPage() {
   const [automationsAccessForNonAdmins, setAutomationsAccessForNonAdmins] = useState(false);
   const [appsAccessForNonAdmins, setAppsAccessForNonAdmins] = useState(false);
   const [libraryAccessForNonAdmins, setLibraryAccessForNonAdmins] = useState(false);
+  const [repositoryImportAccessForNonAdmins, setRepositoryImportAccessForNonAdmins] = useState(true);
+  const [promptConnectorsAccessForNonAdmins, setPromptConnectorsAccessForNonAdmins] = useState(true);
   const [saving, setSaving] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
@@ -46,6 +48,8 @@ export default function TeamSettingsPage() {
       setAutomationsAccessForNonAdmins(data.automations_access_for_non_admins);
       setAppsAccessForNonAdmins(data.apps_access_for_non_admins);
       setLibraryAccessForNonAdmins(data.library_access_for_non_admins);
+      setRepositoryImportAccessForNonAdmins(data.repository_import_access_for_non_admins !== false);
+      setPromptConnectorsAccessForNonAdmins(data.prompt_connectors_access_for_non_admins !== false);
     } catch (error) {
       console.error('Failed to load team:', error);
       toast.error('Failed to load team details');
@@ -86,6 +90,14 @@ export default function TeamSettingsPage() {
         library_access_for_non_admins:
           libraryAccessForNonAdmins !== team.library_access_for_non_admins
             ? libraryAccessForNonAdmins
+            : undefined,
+        repository_import_access_for_non_admins:
+          repositoryImportAccessForNonAdmins !== (team.repository_import_access_for_non_admins !== false)
+            ? repositoryImportAccessForNonAdmins
+            : undefined,
+        prompt_connectors_access_for_non_admins:
+          promptConnectorsAccessForNonAdmins !== (team.prompt_connectors_access_for_non_admins !== false)
+            ? promptConnectorsAccessForNonAdmins
             : undefined,
       });
       setTeam(updated);
@@ -259,6 +271,16 @@ export default function TeamSettingsPage() {
               aria-label="Allow non-admin members to access Automations"
             />
           }
+        />
+        <SettingsItem
+          label="Allow non-admin members to import repositories"
+          description="Editors and viewers can import GitHub, GitLab, and Bitbucket repositories when enabled. Administrators always have access."
+          control={<input type="checkbox" checked={repositoryImportAccessForNonAdmins} onChange={(event) => setRepositoryImportAccessForNonAdmins(event.target.checked)} disabled={!canEdit} aria-label="Allow non-admin members to import repositories" />}
+        />
+        <SettingsItem
+          label="Show connectors in the prompt menu for non-admin members"
+          description="When disabled, editors and viewers keep Add photo and file uploads but no longer see connector entries. Administrators always see them."
+          control={<input type="checkbox" checked={promptConnectorsAccessForNonAdmins} onChange={(event) => setPromptConnectorsAccessForNonAdmins(event.target.checked)} disabled={!canEdit} aria-label="Show connectors in the prompt menu for non-admin members" />}
         />
       </SettingsGroup>
 

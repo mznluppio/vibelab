@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { User, CaretDown, Coins, CreditCard, Gear, SignOut } from '@phosphor-icons/react';
+import { CaretDown, Coins, CreditCard, Gear, SignOut } from '@phosphor-icons/react';
 import { billingApi } from '../../lib/api';
 import { useAuth } from '../../contexts/AuthContext';
 import type { CreditBalanceResponse } from '../../types/billing';
@@ -15,12 +15,14 @@ export function UserDropdown() {
   const userName = user?.name || 'User';
   const totalCredits = creditBalance?.total_credits ?? 0;
 
-  // Determine avatar source: user-set avatar → DiceBear identicon → fallback icon
-  const avatarSrc = user?.avatar_url
-    ? user.avatar_url
-    : user?.id
-      ? `https://api.dicebear.com/9.x/identicon/svg?seed=${user.id}`
-      : null;
+  const avatarSrc = user?.avatar_url || null;
+  const userInitials = userName
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part.charAt(0).toUpperCase())
+    .join('') || 'U';
 
   // Reset img error state when avatar source changes
   useEffect(() => {
@@ -90,7 +92,7 @@ export function UserDropdown() {
             onError={() => setImgError(true)}
           />
         ) : (
-          <User size={18} className="text-[var(--text)]" weight="fill" />
+          <div className="w-6 h-6 rounded-full bg-[var(--primary)]/20 text-xs font-semibold text-[var(--primary)] flex items-center justify-center" aria-hidden="true">{userInitials}</div>
         )}
         <span className="text-sm font-medium text-[var(--text)]">{userName}</span>
         <CaretDown
@@ -148,7 +150,7 @@ export function UserDropdown() {
 
               <div className="h-px bg-white/10 my-2" />
 
-              {/* Subscriptions */}
+              {/* Allocation */}
               <button
                 onClick={() => {
                   setShowDropdown(false);
@@ -157,7 +159,7 @@ export function UserDropdown() {
                 className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-white/5 transition-colors text-left"
               >
                 <CreditCard size={18} className="text-[var(--text)]/80" />
-                <span className="text-sm font-medium text-[var(--text)]">Subscriptions</span>
+                <span className="text-sm font-medium text-[var(--text)]">Allocation</span>
               </button>
 
               {/* Settings */}

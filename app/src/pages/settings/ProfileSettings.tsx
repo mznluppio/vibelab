@@ -8,10 +8,12 @@ import { LoadingSpinner } from '../../components/PulsingGridSpinner';
 import { ImageUpload } from '../../components/ImageUpload';
 import { SettingsSection, SettingsGroup, SettingsItem } from '../../components/settings';
 import { useCancellableRequest } from '../../hooks/useCancellableRequest';
+import { useAuth } from '../../contexts/AuthContext';
 
 type UsernameStatus = 'idle' | 'checking' | 'available' | 'unavailable' | 'invalid';
 
 export default function ProfileSettings() {
+  const { refreshUser } = useAuth();
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [profileForm, setProfileForm] = useState<UserProfileUpdate>({});
@@ -110,6 +112,7 @@ export default function ProfileSettings() {
     try {
       const updatedProfile = await usersApi.updateProfile(profileForm);
       setProfile(updatedProfile);
+      await refreshUser();
       setUsernameStatus('idle');
       toast.success('Profile updated successfully');
     } catch (error: unknown) {

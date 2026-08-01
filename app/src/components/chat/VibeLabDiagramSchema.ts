@@ -132,6 +132,7 @@ const MAX_ANNOTATIONS = 30;
 const SAFE_ID = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/;
 
 const ROOT_KEYS = new Set([
+  'schema_version',
   'title',
   'subtitle',
   'preset',
@@ -214,6 +215,7 @@ export function parseVibeLabDiagram(
   }
 
   const {
+    schema_version,
     title,
     subtitle,
     preset,
@@ -224,6 +226,7 @@ export function parseVibeLabDiagram(
     annotations = [],
   } = parsed;
   if (
+    (schema_version !== undefined && schema_version !== '1.0') ||
     !safeText(title, MAX_TITLE_LENGTH) ||
     !safeOptionalText(subtitle, MAX_SUBTITLE_LENGTH) ||
     !DIAGRAM_PRESETS.includes(preset as DiagramPreset) ||
@@ -241,19 +244,24 @@ export function parseVibeLabDiagram(
     return { success: false, error: 'The diagram does not match the supported VibeLab schema.' };
   }
 
-  // Older Assist to Build conversations used `from`/`to` and omitted a node
-  // kind. They still describe the same presentation-safe graph, so normalize
-  // those two legacy aliases at the renderer boundary instead of showing a
-  // raw JSON fallback. New agent responses remain on the explicit schema.
+  // Existing Assist to Build conversations may include the compatible 1.0
+  // schema marker, `from`/`to`, omitted node kinds, or empty edge labels.
+  // They still describe the same presentation-safe graph, so normalize these
+  // compatibility aliases at the renderer boundary instead of showing raw
+  // JSON. New agent responses remain on the explicit schema.
   const normalizedNodes = nodes.map((node) => {
     if (!isRecord(node) || node.type !== undefined) return node;
     return { ...node, type: 'step' };
   });
   const normalizedEdges = edges
     .map((edge) => {
-      if (!isRecord(edge) || edge.source !== undefined || edge.target !== undefined) return edge;
-      const { from, to, ...rest } = edge;
-      return { ...rest, source: from, target: to };
+      if (!isRecord(edge)) return edge;
+      let normalizedEdge: Record<string, unknown> = edge;
+      if (edge.source === undefined && edge.target === undefined) {
+        const { from, to, ...rest } = edge;
+        normalizedEdge = { ...rest, source: from, target: to };
+      }
+      return normalizedEdge.label === '' ? { ...normalizedEdge, label: undefined } : normalizedEdge;
     })
     // A self-referential "update" edge is not useful in the rendered flow
     // and React Flow cannot lay it out consistently. Preserve the process by

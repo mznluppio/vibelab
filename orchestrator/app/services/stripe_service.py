@@ -627,6 +627,7 @@ class StripeService:
 
         bundled_credits = settings.get_tier_bundled_credits(tier)
         team.bundled_credits = bundled_credits
+        team.credit_cycle_started_at = datetime.now(UTC)
         team.credits_reset_date = datetime.now(UTC) + timedelta(days=30)
 
         await db.commit()
@@ -1149,6 +1150,7 @@ class StripeService:
             if team:
                 tier_credits = settings.get_tier_bundled_credits(team.subscription_tier)
                 team.bundled_credits = tier_credits
+                team.credit_cycle_started_at = datetime.now(UTC)
                 team.credits_reset_date = datetime.now(UTC) + timedelta(days=30)
                 await db.commit()
                 logger.info(

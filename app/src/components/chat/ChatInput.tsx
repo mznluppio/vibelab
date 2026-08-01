@@ -36,6 +36,7 @@ import { type SerializedAttachment, type ChatMention } from '../../types/agent';
 import { projectsApi, mentionApi, type MentionItem } from '../../lib/api';
 import { modKey } from '../../lib/keyboard-registry';
 import { useCommands } from '../../contexts/CommandContext';
+import { useTeam } from '../../contexts/TeamContext';
 import { useAttachments } from '../../hooks/useAttachments';
 import { AttachmentStrip } from './AttachmentStrip';
 import { PlusMenu } from './PlusMenu';
@@ -158,6 +159,7 @@ export function ChatInput({
   chatProjectName = null,
   onResolveWorkspaceForUpload,
 }: ChatInputProps) {
+  const { canAccessPromptConnectors } = useTeam();
   const [message, setMessage] = useState('');
   const [showCommands, setShowCommands] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
@@ -1484,6 +1486,7 @@ export function ChatInput({
                     : undefined
                 }
                 disabled={disabled || viewerMode}
+                showConnectors={canAccessPromptConnectors}
               />
             </div>
 

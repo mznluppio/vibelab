@@ -487,6 +487,7 @@ async def require_team_feature_access(
     *,
     setting_name: str,
     feature_name: str,
+    team_id: UUID | None = None,
 ) -> None:
     """Require access to an opt-in team feature for a non-administrator.
 
@@ -499,7 +500,7 @@ async def require_team_feature_access(
     if getattr(user, "is_superuser", False):
         return
 
-    team_id = getattr(user, "default_team_id", None)
+    team_id = team_id or getattr(user, "default_team_id", None)
     if team_id is None:
         return
 
@@ -696,7 +697,14 @@ async def get_project_with_access(
         # Don't leak existence — 404 for users with zero access
         raise HTTPException(status_code=404, detail="Project not found")
 
-    if not has_permission(effective_role, permission):
+    # A workspace creator remains responsible for the lifecycle of their own
+    # workspace. Project deletion is otherwise team-admin-only: this narrow
+    # exception never grants an editor the ability to delete a colleague's
+    # workspace.
+    is_project_owner_deleting_own_workspace = (
+        permission == Permission.PROJECT_DELETE and project.owner_id == user_id
+    )
+    if not has_permission(effective_role, permission) and not is_project_owner_deleting_own_workspace:
         raise HTTPException(
             status_code=403,
             detail=f"Role '{effective_role}' does not have permission '{permission.value}'",

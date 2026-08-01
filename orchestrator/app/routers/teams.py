@@ -474,6 +474,8 @@ async def update_team(
         "automations_access_for_non_admins",
         "apps_access_for_non_admins",
         "library_access_for_non_admins",
+        "repository_import_access_for_non_admins",
+        "prompt_connectors_access_for_non_admins",
     ):
         if setting in provided:
             changes[setting] = provided[setting]

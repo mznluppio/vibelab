@@ -487,7 +487,6 @@ export default function Chat() {
             <div className="mb-4 grid h-11 w-11 place-items-center">
               <MoodyFace
                 size={36}
-                mood="thinking"
                 animate
                 trackPointer
                 className="text-[var(--primary)]"

@@ -392,6 +392,7 @@ export default function Home() {
     activeTeam,
     teamSwitchKey,
     canCreateWorkspaces,
+    canImportRepositories,
     canAccessApps,
     canAccessLibrary,
     showHomeConnectionCards,
@@ -496,6 +497,10 @@ export default function Home() {
   // Clone-repo handler — mirror Dashboard.tsx:1298-… onCreateProject.
   const handleImportRepo = useCallback(
     async (provider: string, repoUrl: string, branch: string, projectName: string) => {
+      if (!canImportRepositories) {
+        toast.error('Repository imports are not available for your team role.');
+        return;
+      }
       if (isCreating) return;
       setIsCreating(true);
       const creatingToast = toast.loading(`Importing from ${provider}...`);
@@ -538,7 +543,7 @@ export default function Home() {
         setIsCreating(false);
       }
     },
-    [isCreating, navigate]
+    [canImportRepositories, isCreating, navigate]
   );
 
   const handleAllocationRequest = () => navigate('/settings/team/billing');
@@ -572,12 +577,12 @@ export default function Home() {
                 Workspace-creation policy. The backend re-checks regardless. */}
             {canCreateWorkspaces && (
               <>
-                <ActionCard
+                {canImportRepositories && <ActionCard
                   icon={<FolderPlus size={20} weight="duotone" />}
                   title="New Workspace"
                   tooltip="Create a fresh workspace. Name it, pick a template, and start building."
                   onClick={() => setShowCreateDialog(true)}
-                />
+                />}
                 <ActionCard
                   icon={<GitBranch size={20} weight="duotone" />}
                   title="Clone Repo"
@@ -595,7 +600,7 @@ export default function Home() {
               />
             )}
             <SplitActionCard
-              icon={<MoodyFace size={20} animate trackPointer className="text-[var(--primary)]" />}
+              icon={<MoodyFace size={20} animate trackPointer eyeColor="#ffffff" className="text-[var(--primary)]" />}
               title="Agents"
               tooltip="Chat with agents to automate workflows in your projects."
               onClick={() => navigate('/chat')}

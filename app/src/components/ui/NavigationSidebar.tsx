@@ -22,7 +22,6 @@ import {
 } from 'lucide-react';
 import { MoodyFace } from './MoodyFace';
 import {
-  User,
   CaretDown,
   Coins,
   CreditCard,
@@ -80,7 +79,7 @@ interface NavigationSidebarProps {
 // expressed via opacity at the call site instead.
 type SidebarIconProps = { size?: number; className?: string };
 const AgentFaceIcon = ({ size, className }: SidebarIconProps) => (
-  <MoodyFace size={size ?? 14} className={className} animate trackPointer />
+  <MoodyFace size={size ?? 14} className={className} eyeColor="#ffffff" animate trackPointer />
 );
 
 const LIBRARY_ITEMS: Array<{
@@ -235,11 +234,14 @@ export function NavigationSidebar({
   const [creatingTeam, setCreatingTeam] = useState(false);
   const userName = user?.name || 'User';
   const totalCredits = creditBalance?.total_credits ?? 0;
-  const avatarSrc = user?.avatar_url
-    ? user.avatar_url
-    : user?.id
-      ? `https://api.dicebear.com/9.x/identicon/svg?seed=${user.id}`
-      : null;
+  const avatarSrc = user?.avatar_url || null;
+  const userInitials = userName
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part.charAt(0).toUpperCase())
+    .join('') || 'U';
 
   useEffect(() => {
     setImgError(false);
@@ -659,11 +661,7 @@ export function NavigationSidebar({
                       onError={() => setImgError(true)}
                     />
                   ) : (
-                    <User
-                      size={14}
-                      className="text-[var(--text-subtle)] flex-shrink-0"
-                      weight="fill"
-                    />
+                    <div className="w-4 h-4 rounded-full bg-[var(--primary)]/20 text-[9px] font-semibold text-[var(--primary)] flex items-center justify-center flex-shrink-0" aria-hidden="true">{userInitials}</div>
                   )}
                   <span className="text-[10px] text-[var(--text-subtle)] truncate">{userName}</span>
                 </div>
@@ -676,7 +674,7 @@ export function NavigationSidebar({
                   className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-[var(--surface-hover)] transition-colors text-left"
                 >
                   <CreditCard size={14} className="text-[var(--text-subtle)]" />
-                  <span className="text-[11px] text-[var(--text-muted)]">Subscriptions</span>
+                  <span className="text-[11px] text-[var(--text-muted)]">Allocation</span>
                 </button>
 
                 <button
@@ -751,6 +749,7 @@ export function NavigationSidebar({
                   size={16}
                   animate
                   trackPointer
+                  eyeColor="#ffffff"
                   className={`text-[var(--primary)] transition-opacity ${
                     activePage === 'chat'
                       ? 'opacity-100'

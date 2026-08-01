@@ -1044,6 +1044,51 @@ async def execute_agent_task(ctx: dict, payload_dict: dict):
                     else agent_model.model or settings.default_model
                 )
 
+            # Perform the same team-aware guard in the worker as every
+            # dispatch path eventually reaches here (chat, external API,
+            # automations and channels).  It protects a new run before its
+            # first provider call; the per-response path below protects each
+            # following call as usage accrues.
+            try:
+                from .models_team import Team
+                from .services.credit_service import check_credits
+
+                owner_result = await db.execute(
+                    select(User).where(User.id == UUID(payload.user_id))
+                )
+                billing_user = owner_result.scalar_one_or_none()
+                if billing_user is not None:
+                    raw_team_id = (
+                        getattr(project, "team_id", None)
+                        or payload.team_id
+                        or billing_user.default_team_id
+                    )
+                    billing_team = None
+                    if raw_team_id:
+                        team_result = await db.execute(
+                            select(Team).where(Team.id == UUID(str(raw_team_id)))
+                        )
+                        billing_team = team_result.scalar_one_or_none()
+                    can_run, credit_error = await check_credits(
+                        billing_user,
+                        model_name,
+                        team=billing_team,
+                        db=db,
+                    )
+                    if not can_run:
+                        await _publish_error(pubsub, task_id, credit_error)
+                        return
+            except Exception:
+                # A temporary read failure must not turn into a stuck agent
+                # task.  The durable per-response debit remains the source of
+                # truth and will log any ledger failure separately.
+                logger.warning(
+                    "[WORKER] Credit preflight unavailable for task=%s; continuing to "
+                    "the per-response ledger",
+                    task_id,
+                    exc_info=True,
+                )
+
             # 5. Create model adapter
             model_adapter = await create_model_adapter(
                 model_name=model_name,
@@ -1593,6 +1638,15 @@ async def execute_agent_task(ctx: dict, payload_dict: dict):
             agent_succeeded = False
             terminal_error: str | None = None
             auto_start_project = bool((agent_model.config or {}).get("auto_start_project"))
+            credit_usage_events = 0
+            credit_deduction_failures = 0
+
+            def _credit_usage_value(data: dict, key: str) -> int:
+                """Normalise untrusted adapter usage into non-negative ints."""
+                try:
+                    return max(0, int(data.get(key, 0) or 0))
+                except (TypeError, ValueError):
+                    return 0
 
             # AgentStep sink: called by run_turn() for every agent_step event so
             # the worker loop only handles cancellation, pubsub, and completion.
@@ -1960,6 +2014,89 @@ async def execute_agent_task(ctx: dict, payload_dict: dict):
                                     start_err,
                                 )
 
+                    elif event_type == "model_usage":
+                        # ``model_usage`` is an internal runner event, not a
+                        # chat event.  It is emitted once for every successful
+                        # provider response and receives a durable idempotency
+                        # key so an ARQ retry cannot bill that response twice.
+                        usage_data = event.get("data", {})
+                        if not isinstance(usage_data, dict):
+                            usage_data = {}
+                        usage_model = str(usage_data.get("model") or model_name)
+                        usage_iteration = _credit_usage_value(usage_data, "iteration")
+                        try:
+                            from .services.credit_service import deduct_credits
+
+                            raw_team_id = getattr(project, "team_id", None) or payload.team_id
+                            usage_team_id = (
+                                UUID(str(raw_team_id)) if raw_team_id else None
+                            )
+                            credit_result = await deduct_credits(
+                                db=db,
+                                user_id=UUID(payload.user_id),
+                                model_name=usage_model,
+                                tokens_in=_credit_usage_value(usage_data, "tokens_input"),
+                                tokens_out=_credit_usage_value(usage_data, "tokens_output"),
+                                agent_id=agent_model.id,
+                                project_id=UUID(project_id) if project_id else None,
+                                team_id=usage_team_id,
+                                request_id=f"agent:{task_id}:model:{usage_iteration}",
+                            )
+                            credit_usage_events += 1
+                            credit_deduction_failures = 0
+
+                            # The UI already consumes this stable public event
+                            # to update the header allocation balance.  Never
+                            # forward ``model_usage`` itself: it is internal
+                            # accounting data, not a new frontend contract.
+                            if pubsub:
+                                await pubsub.publish_agent_event(
+                                    task_id,
+                                    {
+                                        "type": "credits_used",
+                                        "data": {
+                                            **credit_result,
+                                            "iteration": usage_iteration,
+                                            "model": usage_model,
+                                        },
+                                    },
+                                )
+
+                            # BYOK calls are always permitted, even when the
+                            # shared platform allocation is empty.  For hosted
+                            # calls, stop before the next LLM request while
+                            # retaining any tools the current response ran.
+                            if (
+                                not credit_result.get("is_byok")
+                                and (
+                                    credit_result.get("new_balance", 0) <= 0
+                                    or credit_result.get("allocation_exhausted", False)
+                                )
+                            ):
+                                context["credit_limit_reached"] = True
+                                context["credit_limit_message"] = (
+                                    "Your individual allocation has been reached. The changes already "
+                                    "made have been kept; ask a team administrator for more capacity."
+                                    if credit_result.get("allocation_exhausted", False)
+                                    else "Your team has no credits remaining. The changes already made "
+                                    "have been kept; add credits to continue."
+                                )
+                        except Exception:
+                            # Accounting must be observable but must not make
+                            # a healthy generation fail because its ledger is
+                            # temporarily unavailable.  A future event retries
+                            # independently; this mirrors the platform's
+                            # non-blocking credit-service contract.
+                            credit_deduction_failures += 1
+                            logger.exception(
+                                "[WORKER] Credit deduction failed for task=%s iteration=%s "
+                                "(consecutive failures=%s)",
+                                task_id,
+                                usage_iteration,
+                                credit_deduction_failures,
+                            )
+                        continue
+
                     elif event_type == "tool_error":
                         err_data = event.get("data", {})
                         logger.warning(
@@ -2063,6 +2200,8 @@ async def execute_agent_task(ctx: dict, payload_dict: dict):
                                 * 1000
                             ),
                         },
+                        "credit_usage_events": credit_usage_events,
+                        "credit_deduction_failures": credit_deduction_failures,
                         "session_id": session_id,
                         "executed_by": "worker",
                         "task_id": task_id,

@@ -110,6 +110,10 @@ async def _reset_team_bundled_credits():
         for team in teams:
             tier_credits = settings.get_tier_bundled_credits(team.subscription_tier)
             team.bundled_credits = tier_credits
+            # Individual member allocations follow the same billing cycle as
+            # the shared team balance; preserving limits must not preserve the
+            # previous cycle's consumption.
+            team.credit_cycle_started_at = now
             team.credits_reset_date = now + timedelta(days=30)
 
         await session.commit()

@@ -57,6 +57,17 @@ describe('VibeLab diagram schema', () => {
     }
   });
 
+  it('accepts the compatible 1.0 marker and empty edge labels from agent output', () => {
+    const result = parse({
+      ...validDiagram,
+      schema_version: '1.0',
+      edges: [{ source: 'request', target: 'check', label: '' }],
+    });
+
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.edges[0].label).toBeUndefined();
+  });
+
   it.each([
     ['unknown field', { ...validDiagram, customTheme: 'not allowed' }],
     ['coordinates', { ...validDiagram, nodes: [{ ...validDiagram.nodes[0], x: 10 }] }],

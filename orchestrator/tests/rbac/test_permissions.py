@@ -13,10 +13,12 @@ import pytest
 from fastapi import HTTPException
 
 import app.models  # noqa: F401 — register all ORM models so mapper resolves cross-module relationships
+import app.permissions as permissions_module
 from app.permissions import (
     ROLE_PERMISSIONS,
     Permission,
     get_effective_project_role,
+    get_project_with_access,
 )
 
 # ── Helpers ─────────────────────────────────────────────────────────────
@@ -181,6 +183,49 @@ class TestPermissionEnum:
 
     def test_editor_cannot_delete_deployments(self):
         assert Permission.DEPLOYMENT_DELETE not in ROLE_PERMISSIONS["editor"]
+
+
+class TestProjectOwnerDeletion:
+    @pytest.mark.asyncio
+    async def test_editor_can_delete_own_workspace(self, monkeypatch):
+        """Editors retain deletion rights for the workspace they created."""
+        owner_id = uuid.uuid4()
+        project = _make_project(owner_id=owner_id)
+        result = MagicMock()
+        result.scalar_one_or_none.return_value = project
+        db = AsyncMock()
+        db.execute.return_value = result
+
+        async def editor_role(*_args):
+            return "editor"
+
+        monkeypatch.setattr(permissions_module, "get_effective_project_role", editor_role)
+
+        returned_project, role = await get_project_with_access(
+            db, project.slug, owner_id, Permission.PROJECT_DELETE
+        )
+
+        assert returned_project is project
+        assert role == "editor"
+
+    @pytest.mark.asyncio
+    async def test_editor_cannot_delete_another_members_workspace(self, monkeypatch):
+        """The owner exception cannot be used to delete a colleague's workspace."""
+        project = _make_project(owner_id=uuid.uuid4())
+        result = MagicMock()
+        result.scalar_one_or_none.return_value = project
+        db = AsyncMock()
+        db.execute.return_value = result
+
+        async def editor_role(*_args):
+            return "editor"
+
+        monkeypatch.setattr(permissions_module, "get_effective_project_role", editor_role)
+
+        with pytest.raises(HTTPException, match="project.delete"):
+            await get_project_with_access(
+                db, project.slug, uuid.uuid4(), Permission.PROJECT_DELETE
+            )
 
 
 # ── Dual-Scope Access Resolution Tests ──────────────────────────────────
@@ -438,6 +483,29 @@ class TestCreditServiceTeamBilling:
         user = MagicMock()
         ok, msg = await check_credits(user, "openai/gpt-4", team=team)
         assert ok is True
+
+    @pytest.mark.asyncio
+    async def test_check_credits_blocks_exhausted_individual_allocation(self):
+        from app.services.credit_service import check_credits
+
+        user = SimpleNamespace(id=uuid.uuid4())
+        team = SimpleNamespace(
+            id=uuid.uuid4(),
+            total_credits=100,
+            credit_allocation_mode="individual",
+            credit_cycle_started_at=None,
+        )
+        membership_result = MagicMock()
+        membership_result.scalar_one_or_none.return_value = SimpleNamespace(credit_limit=50)
+        usage_result = MagicMock()
+        usage_result.scalar_one.return_value = 50
+        db = AsyncMock()
+        db.execute.side_effect = [membership_result, usage_result]
+
+        ok, msg = await check_credits(user, "tesslate/default", team=team, db=db)
+
+        assert ok is False
+        assert "individual allocation" in msg.lower()
 
     def test_is_byok_model(self):
         from app.services.credit_service import is_byok_model

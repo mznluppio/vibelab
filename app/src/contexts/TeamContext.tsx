@@ -41,6 +41,8 @@ interface TeamContextValue {
   canAccessAutomations: boolean;
   canAccessApps: boolean;
   canAccessLibrary: boolean;
+  canImportRepositories: boolean;
+  canAccessPromptConnectors: boolean;
   /** Effective platform permission to create a Team; backend remains authoritative. */
   canCreateTeams: boolean;
   /** Effective platform permission to create a Workspace; backend remains authoritative. */
@@ -158,6 +160,10 @@ export function TeamProvider({ children }: { children: React.ReactNode }) {
     isTeamAdmin || activeTeam?.apps_access_for_non_admins === true;
   const canAccessLibrary =
     isTeamAdmin || activeTeam?.library_access_for_non_admins === true;
+  const canImportRepositories =
+    isTeamAdmin || activeTeam?.repository_import_access_for_non_admins !== false;
+  const canAccessPromptConnectors =
+    isTeamAdmin || activeTeam?.prompt_connectors_access_for_non_admins !== false;
 
   return (
     <TeamContext.Provider
@@ -171,6 +177,8 @@ export function TeamProvider({ children }: { children: React.ReactNode }) {
         canAccessAutomations,
         canAccessApps,
         canAccessLibrary,
+        canImportRepositories,
+        canAccessPromptConnectors,
         canCreateTeams,
         canCreateWorkspaces,
         showHomeConnectionCards,

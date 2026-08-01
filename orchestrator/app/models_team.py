@@ -97,6 +97,13 @@ class Team(Base):
     signup_bonus_expires_at = Column(DateTime(timezone=True), nullable=True)
     credits_reset_date = Column(DateTime(timezone=True), nullable=True)
     daily_credits_reset_date = Column(DateTime(timezone=True), nullable=True)
+    # Credit governance. Shared allocation is the backward-compatible default;
+    # individual mode adds per-member ceilings while retaining this team pool as
+    # the final hard limit.
+    credit_allocation_mode = Column(
+        String(20), nullable=False, default="shared", server_default="shared"
+    )
+    credit_cycle_started_at = Column(DateTime(timezone=True), nullable=True)
     support_tier = Column(String(20), nullable=False, default="community")
     deployed_projects_count = Column(Integer, nullable=False, default=0)
 
@@ -117,6 +124,16 @@ class Team(Base):
     )
     library_access_for_non_admins = Column(
         Boolean, nullable=False, default=False, server_default="false"
+    )
+    # Importing source code and connecting external tools are enabled by
+    # default to preserve existing team behaviour. Team administrators can
+    # hide these entry points from editors and viewers without losing their
+    # own access.
+    repository_import_access_for_non_admins = Column(
+        Boolean, nullable=False, default=True, server_default="true"
+    )
+    prompt_connectors_access_for_non_admins = Column(
+        Boolean, nullable=False, default=True, server_default="true"
     )
 
     # Model preferences
@@ -167,6 +184,9 @@ class TeamMembership(Base):
     user_id = Column(GUID(), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     role = Column(String(20), nullable=False)  # 'admin', 'editor', 'viewer'
     is_active = Column(Boolean, nullable=False, default=True, server_default="true")
+    # Used only while the team's allocation mode is ``individual``. A zero
+    # value deliberately means no individual allocation, not unlimited usage.
+    credit_limit = Column(Integer, nullable=False, default=0, server_default="0")
     invited_by_id = Column(GUID(), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     joined_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())

@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..auth_unified import get_authenticated_user
 from ..database import get_db
 from ..models import Container, GitRepository, Project, User
-from ..permissions import Permission
+from ..permissions import Permission, require_team_feature_access
 from ..schemas import (
     GitBranchesResponse,
     GitBranchInfo,
@@ -140,6 +140,13 @@ async def clone_repository(
     try:
         # Verify project access
         project = await verify_project_access(project_id, current_user, db, Permission.GIT_WRITE)
+        await require_team_feature_access(
+            db,
+            current_user,
+            team_id=project.team_id,
+            setting_name="repository_import_access_for_non_admins",
+            feature_name="Repository imports",
+        )
 
         # Get GitHub access token
         credential_manager = get_credential_manager()

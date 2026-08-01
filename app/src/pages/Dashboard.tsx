@@ -4,6 +4,7 @@ import { useHotkeys } from 'react-hotkeys-hook';
 import { projectsApi, tasksApi, teamsApi } from '../lib/api';
 import { useTheme } from '../theme/ThemeContext';
 import { useTeam } from '../contexts/TeamContext';
+import { useAuth } from '../contexts/AuthContext';
 import { useCommandHandlers } from '../contexts/CommandContext';
 import { MobileMenu, ProjectCard } from '../components/ui';
 import type { Status } from '../components/ui';
@@ -40,6 +41,7 @@ type FilterEnvStatus = EnvironmentStatus | 'all';
 interface Project {
   id: string;
   slug: string;
+  owner_id: string;
   name: string;
   description: string;
   created_at: string;
@@ -56,11 +58,14 @@ interface Project {
 export default function Dashboard() {
   const navigate = useNavigate();
   const { theme, toggleTheme } = useTheme();
-  const { activeTeam, can, teamSwitchKey, canCreateWorkspaces } = useTeam();
+  const { user } = useAuth();
+  const { activeTeam, can, teamSwitchKey, canCreateWorkspaces, canImportRepositories, loading: teamLoading } = useTeam();
   const isAdmin = can('team.edit');
   // Team role AND the platform Workspace-creation policy must both allow it.
   const canCreateProject = can('project.create') && canCreateWorkspaces;
-  const canDeleteProject = can('project.delete');
+  const canDeleteAnyProject = can('project.delete');
+  const canDeleteProject = (project: Project) =>
+    canDeleteAnyProject || project.owner_id === user?.id;
   const [projects, setProjects] = useState<Project[]>([]);
   const [accessProject, setAccessProject] = useState<Project | null>(null);
   const [loading, setLoading] = useState(true);
@@ -96,7 +101,13 @@ export default function Dashboard() {
   // ⌘N (and the palette's "Create New Project" entry) opens the modal.
   // Also handles ⌘I for repo import.
   const openCreateProject = useCallback(() => setShowCreateDialog(true), []);
-  const openImportProject = useCallback(() => setShowImportDialog(true), []);
+  const openImportProject = useCallback(() => {
+    if (!canCreateProject || !canImportRepositories) {
+      toast.error('Repository imports are not available for your team role.');
+      return;
+    }
+    setShowImportDialog(true);
+  }, [canCreateProject, canImportRepositories]);
   useCommandHandlers({ openCreateProject });
 
   useHotkeys(
@@ -133,12 +144,17 @@ export default function Dashboard() {
 
     const importRepo = searchParams.get('import_repo');
     if (importRepo) {
+      if (teamLoading) return;
       autoCreateTriggered.current = true;
       setSearchParams({}, { replace: true });
+      if (!canCreateProject || !canImportRepositories) {
+        toast.error('Repository imports are not available for your team role.');
+        return;
+      }
       setImportRepoUrl(importRepo);
       setShowImportDialog(true);
     }
-  }, [searchParams]);
+  }, [searchParams, setSearchParams, teamLoading, canCreateProject, canImportRepositories]);
 
   // Poll for project status updates every 60 seconds
   useEffect(() => {
@@ -326,6 +342,9 @@ export default function Dashboard() {
   }, [selectedProjectIds.size]);
 
   const toggleProjectSelection = (id: string) => {
+    const project = projects.find((candidate) => candidate.id === id);
+    if (!project || !canDeleteProject(project)) return;
+
     setSelectedProjectIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) {
@@ -340,7 +359,9 @@ export default function Dashboard() {
   const clearSelection = () => setSelectedProjectIds(new Set());
 
   const confirmBulkDelete = async () => {
-    const toDelete = projects.filter((p) => selectedProjectIds.has(p.id));
+    const toDelete = projects.filter(
+      (project) => selectedProjectIds.has(project.id) && canDeleteProject(project)
+    );
     if (toDelete.length === 0) return;
 
     setShowBulkDeleteDialog(false);
@@ -414,7 +435,7 @@ export default function Dashboard() {
 
   const deleteProject = (id: string) => {
     const project = projects.find((p) => p.id === id);
-    if (project) {
+    if (project && canDeleteProject(project)) {
       setProjectToDelete(project);
       setShowDeleteDialog(true);
     }
@@ -1015,10 +1036,10 @@ export default function Dashboard() {
                 </button>
               )}
 
-              {/* Import from Repository Card — hidden for viewers */}
-              {canCreateProject && (
+              {/* Repository import also follows the team-level governance setting. */}
+              {canCreateProject && canImportRepositories && (
                 <button
-                  onClick={() => setShowImportDialog(true)}
+                  onClick={openImportProject}
                   className={`
                     group bg-[var(--surface)] rounded-[var(--radius)] p-6
                     border-2 border-dashed border-emerald-500/30
@@ -1061,13 +1082,13 @@ export default function Dashboard() {
                     memberCount: project.memberCount,
                   }}
                   onOpen={() => {
-                    if (project.environment_status === 'setup_failed') {
+                    if (project.environment_status === 'setup_failed' && canDeleteProject(project)) {
                       deleteProject(project.id);
                     } else {
                       navigate(`/project/${project.slug}`);
                     }
                   }}
-                  onDelete={canDeleteProject ? () => deleteProject(project.id) : undefined}
+                  onDelete={canDeleteProject(project) ? () => deleteProject(project.id) : undefined}
                   onStatusChange={(status) => updateProjectStatus(project.id, status)}
                   onFork={() => handleForkProject(project.id)}
                   onHibernate={
@@ -1078,7 +1099,9 @@ export default function Dashboard() {
                   }
                   isDeleting={deletingProjectIds.has(project.id)}
                   isSelected={selectedProjectIds.has(project.id)}
-                  onSelectionToggle={() => toggleProjectSelection(project.id)}
+                  onSelectionToggle={
+                    canDeleteProject(project) ? () => toggleProjectSelection(project.id) : undefined
+                  }
                   isAdmin={isAdmin}
                   visibility={project.visibility}
                   onManageAccess={() => setAccessProject(project)}
@@ -1110,7 +1133,7 @@ export default function Dashboard() {
                         : 'hover:bg-[var(--surface)]'
                     } ${deletingProjectIds.has(project.id) ? 'opacity-40 pointer-events-none' : ''} ${project.environment_status === 'setup_failed' ? 'border-l-2 border-red-500/50' : ''}`}
                     onClick={() => {
-                      if (project.environment_status === 'setup_failed') {
+                      if (project.environment_status === 'setup_failed' && canDeleteProject(project)) {
                         deleteProject(project.id);
                       } else {
                         navigate(`/project/${project.slug}`);
@@ -1119,31 +1142,33 @@ export default function Dashboard() {
                   >
                     {/* Checkbox */}
                     <div className="w-8 flex-shrink-0 flex items-center">
-                      <button
-                        role="checkbox"
-                        aria-checked={selectedProjectIds.has(project.id)}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          toggleProjectSelection(project.id);
-                        }}
-                        className={`w-4 h-4 rounded border flex items-center justify-center transition-all ${
-                          selectedProjectIds.has(project.id)
-                            ? 'bg-[var(--primary)] border-[var(--primary)]'
-                            : 'border-[var(--border-hover)] opacity-0 group-hover:opacity-100'
-                        }`}
-                      >
-                        {selectedProjectIds.has(project.id) && (
-                          <svg
-                            className="w-2.5 h-2.5 text-white"
-                            fill="none"
-                            viewBox="0 0 24 24"
-                            stroke="currentColor"
-                            strokeWidth={3}
-                          >
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                          </svg>
-                        )}
-                      </button>
+                      {canDeleteProject(project) && (
+                        <button
+                          role="checkbox"
+                          aria-checked={selectedProjectIds.has(project.id)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleProjectSelection(project.id);
+                          }}
+                          className={`w-4 h-4 rounded border flex items-center justify-center transition-all ${
+                            selectedProjectIds.has(project.id)
+                              ? 'bg-[var(--primary)] border-[var(--primary)]'
+                              : 'border-[var(--border-hover)] opacity-0 group-hover:opacity-100'
+                          }`}
+                        >
+                          {selectedProjectIds.has(project.id) && (
+                            <svg
+                              className="w-2.5 h-2.5 text-white"
+                              fill="none"
+                              viewBox="0 0 24 24"
+                              stroke="currentColor"
+                              strokeWidth={3}
+                            >
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                            </svg>
+                          )}
+                        </button>
+                      )}
                     </div>
 
                     {/* Project icon + name + description */}
@@ -1211,7 +1236,7 @@ export default function Dashboard() {
                       >
                         <GitBranch className="w-3.5 h-3.5" />
                       </button>
-                      {canDeleteProject && (
+                      {canDeleteProject(project) && (
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
@@ -1244,10 +1269,10 @@ export default function Dashboard() {
                       <FilePlus className="w-4 h-4" />
                       Create project
                     </button>
-                    <button onClick={() => setShowImportDialog(true)} className="btn">
+                    {canImportRepositories && <button onClick={openImportProject} className="btn">
                       <GitBranch className="w-4 h-4" />
                       Import repo
-                    </button>
+                    </button>}
                   </div>
                 )}
               </div>
@@ -1272,7 +1297,7 @@ export default function Dashboard() {
             <X className="w-4 h-4" />
           </button>
 
-          {canDeleteProject && (
+          {projects.some((project) => selectedProjectIds.has(project.id) && canDeleteProject(project)) && (
             <button
               onClick={() => setShowBulkDeleteDialog(true)}
               className="btn btn-danger"

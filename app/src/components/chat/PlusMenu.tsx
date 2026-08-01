@@ -17,6 +17,8 @@ interface PlusMenuProps {
   onAddFiles?: (files: File[]) => void;
   /** Disabled state — e.g., when the input is locked for viewers. */
   disabled?: boolean;
+  /** Whether the connector section is available for the active team member. */
+  showConnectors?: boolean;
 }
 
 // Project-wide upload cap (mirrors orchestrator's MAX_ATTACHMENT_BYTES + the
@@ -59,7 +61,7 @@ const CONNECTORS: ConnectorEntry[] = [
   },
 ];
 
-export function PlusMenu({ onAddImages, onAddFiles, disabled = false }: PlusMenuProps) {
+export function PlusMenu({ onAddImages, onAddFiles, disabled = false, showConnectors = true }: PlusMenuProps) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -189,8 +191,8 @@ export function PlusMenu({ onAddImages, onAddFiles, disabled = false }: PlusMenu
             </button>
           )}
 
-          {/* Section 2 — Connectors */}
-          <div className="border-t border-[var(--border)] mt-1 pt-1">
+          {/* Section 2 — Connectors. Add photo and file uploads remain available when this is hidden. */}
+          {showConnectors && <div className="border-t border-[var(--border)] mt-1 pt-1">
             <div className="flex items-center gap-1.5 px-2.5 pt-1 pb-1.5 text-[10px] font-medium uppercase tracking-wider text-[var(--text-subtle)]">
               <Plug size={10} weight="bold" />
               <span>Connectors</span>
@@ -220,7 +222,7 @@ export function PlusMenu({ onAddImages, onAddFiles, disabled = false }: PlusMenu
                 </button>
               );
             })}
-          </div>
+          </div>}
         </div>
       )}
     </div>
