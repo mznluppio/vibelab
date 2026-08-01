@@ -143,6 +143,54 @@ async def test_tool_call_name_present_in_assistant_message():
     )
 
 
+async def test_compact_history_keeps_outcome_and_paths_without_tool_payloads():
+    """Follow-up prompts receive one bounded summary, never prior source code."""
+    from app.services.agent_context import _get_chat_history
+
+    secret_source = "const internalImplementation = 'do-not-replay';"
+    step = {
+        "thought": "Long private reasoning that must not be replayed",
+        "response_text": "",
+        "tool_calls": [
+            {
+                "name": "patch_file",
+                "parameters": {
+                    "file_path": "src/App.tsx",
+                    "old_str": secret_source,
+                    "new_str": "updated source",
+                },
+                "result": {"success": True, "result": {"message": "patched"}},
+            }
+        ],
+    }
+    msg = _make_assistant_message(steps=[step])
+    db = _make_db_returning([msg])
+
+    result = await _get_chat_history(uuid4(), db, detail="compact")
+
+    assert len(result) == 1
+    assert "Agent summary" in result[0]["content"]
+    assert "patch_file" in result[0]["content"]
+    assert "src/App.tsx" in result[0]["content"]
+    assert secret_source not in result[0]["content"]
+    assert "Long private reasoning" not in result[0]["content"]
+
+
+async def test_full_history_remains_available_for_internal_opt_out():
+    """The internal full mode preserves the previous detailed replay behavior."""
+    from app.services.agent_context import _get_chat_history
+
+    step = _step(response_text="Detailed step response")
+    msg = _make_assistant_message(steps=[step])
+    db = _make_db_returning([msg])
+
+    result = await _get_chat_history(uuid4(), db, detail="full")
+
+    assert len(result) == 1
+    assert "THOUGHT: Thinking..." in result[0]["content"]
+    assert "Detailed step response" in result[0]["content"]
+
+
 async def test_regular_assistant_message_without_steps_preserved():
     """Non-agent assistant messages (no steps) pass through unchanged."""
     from app.services.agent_context import _get_chat_history

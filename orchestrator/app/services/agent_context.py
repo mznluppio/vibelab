@@ -8,6 +8,7 @@ worker tasks, and reconnect flows.
 import logging
 import os
 from dataclasses import dataclass
+from typing import Literal
 from uuid import UUID
 
 import aiofiles
@@ -41,8 +42,73 @@ def _resolve_container_name(container) -> str | None:
     return "".join(c for c in safe if c.isalnum() or c == "-")
 
 
+def _compact_agent_history_entry(message: Message, steps: list[dict]) -> str:
+    """Build one deterministic, bounded summary for an earlier agent turn.
+
+    Full step data remains in ``AgentStep`` for the UI and support tooling.
+    The model only needs the completed outcome, affected files, and failures
+    to make the next edit safely.
+    """
+    parts: list[str] = []
+    outcome = (message.content or "").strip()
+    if outcome:
+        parts.append(outcome[:12_000])
+
+    tools: list[str] = []
+    files: list[str] = []
+    errors: list[str] = []
+    for step in steps:
+        for tool_call in step.get("tool_calls", []) or []:
+            if not isinstance(tool_call, dict):
+                continue
+            name = str(tool_call.get("name") or "unknown")
+            if name not in tools:
+                tools.append(name)
+
+            parameters = tool_call.get("parameters") or {}
+            if isinstance(parameters, dict):
+                candidates = [parameters.get("file_path"), parameters.get("path")]
+                for collection_key in ("changes", "edits", "patches"):
+                    collection = parameters.get(collection_key)
+                    if isinstance(collection, list):
+                        candidates.extend(
+                            item.get("file_path")
+                            for item in collection
+                            if isinstance(item, dict)
+                        )
+                for candidate in candidates:
+                    if isinstance(candidate, str) and candidate and candidate not in files:
+                        files.append(candidate)
+
+            result = tool_call.get("result") or {}
+            if isinstance(result, dict) and not result.get("success", True):
+                inner = result.get("result")
+                error = result.get("error")
+                if not error and isinstance(inner, dict):
+                    error = inner.get("message") or inner.get("error")
+                if error:
+                    errors.append(str(error)[:500])
+
+    if tools:
+        parts.append("Actions: " + ", ".join(tools[:12]))
+    if files:
+        parts.append("Files changed: " + ", ".join(files[:20]))
+    if errors:
+        parts.append("Errors: " + " | ".join(errors[:3]))
+
+    if not parts:
+        for step in reversed(steps):
+            response_text = step.get("response_text")
+            if isinstance(response_text, str) and response_text.strip():
+                return response_text.strip()[:12_000]
+    return "\n".join(parts)
+
+
 async def _get_chat_history(
-    chat_id: UUID, db: AsyncSession, limit: int = 10
+    chat_id: UUID,
+    db: AsyncSession,
+    limit: int = 10,
+    detail: Literal["compact", "full"] = "compact",
 ) -> list[dict[str, str]]:
     """
     Fetch recent chat history for context.
@@ -108,7 +174,7 @@ async def _get_chat_history(
                 else:
                     steps = metadata.get("steps", [])
 
-                if steps:
+                if steps and detail == "full":
                     # Agent message with iterations - reconstruct full conversation
                     # Include each iteration's response as a separate assistant message
                     # to preserve the full context of the agent's thought process
@@ -155,6 +221,10 @@ async def _get_chat_history(
                             formatted_messages.append(
                                 {"role": "assistant", "content": iteration_content}
                             )
+                elif steps:
+                    compact_entry = _compact_agent_history_entry(msg, steps)
+                    if compact_entry:
+                        formatted_messages.append({"role": msg.role, "content": compact_entry})
                 else:
                     # Regular assistant message without iterations
                     formatted_messages.append({"role": msg.role, "content": msg.content})

@@ -17,6 +17,7 @@ import asyncio
 import contextlib
 import logging
 import os
+import time
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -52,6 +53,31 @@ _PROJECT_MUTATION_TOOLS = frozenset(
         "apply_setup_config",
     }
 )
+
+
+def _derive_execution_profile(project, containers: list[dict], chat_history: list[dict]) -> str:
+    """Classify execution from persisted project state, never user text.
+
+    The profile only changes platform guidance.  It does not constrain tools
+    or iterations, so a broad follow-up feature can still complete normally.
+    """
+    if project is None or not containers:
+        return "new_project"
+
+    has_prior_assistant_turn = any(
+        isinstance(entry, dict) and entry.get("role") == "assistant"
+        for entry in chat_history
+    )
+    if not has_prior_assistant_turn:
+        return "new_project"
+
+    if project.environment_status == "active" and any(
+        container.get("ready") or container.get("status") == "running"
+        for container in containers
+        if isinstance(container, dict)
+    ):
+        return "running_project"
+    return "existing_project"
 
 
 async def _start_project_after_agent_build(project, user_id: UUID, db) -> bool:
@@ -622,6 +648,8 @@ async def execute_agent_task(ctx: dict, payload_dict: dict):
     pubsub = get_pubsub()
     task_id = payload.task_id
     project_id = payload.project_id
+    task_started_at = time.monotonic()
+    agent_loop_started_at: float | None = None
     heartbeat_task = None
     lock_acquired = False
     lock_stolen = False
@@ -1380,6 +1408,11 @@ async def execute_agent_task(ctx: dict, payload_dict: dict):
 
             _tier_snapshot = await build_tier_snapshot(project, db)
             _tier_containers = _tier_snapshot.get("containers", [])
+            execution_profile = _derive_execution_profile(
+                project,
+                _tier_containers,
+                chat_history,
+            )
 
             # 8. Build execution context (same structure as chat.py)
             #
@@ -1415,6 +1448,7 @@ async def execute_agent_task(ctx: dict, payload_dict: dict):
                 "db": db,
                 "chat_history": chat_history,
                 "project_context": project_context,
+                "execution_profile": execution_profile,
                 "edit_mode": payload.edit_mode,
                 "container_id": container_id,
                 "container_name": container_name,
@@ -1550,11 +1584,14 @@ async def execute_agent_task(ctx: dict, payload_dict: dict):
             final_response = ""
             iterations = 0
             tool_calls_made = 0
-            completion_reason = "task_complete"
+            completion_reason = "interrupted"
             session_id = None
             event_count = 0
             project_changed = False
             project_started_by_agent = False
+            agent_completed = False
+            agent_succeeded = False
+            terminal_error: str | None = None
             auto_start_project = bool((agent_model.config or {}).get("auto_start_project"))
 
             # AgentStep sink: called by run_turn() for every agent_step event so
@@ -1844,6 +1881,7 @@ async def execute_agent_task(ctx: dict, payload_dict: dict):
                         mention_err,
                     )
 
+            agent_loop_started_at = time.monotonic()
             try:
                 async for event in agent_run_obj.run_turn(
                     effective_message, adapter_ctx, event_sink=_step_sink
@@ -1885,6 +1923,8 @@ async def execute_agent_task(ctx: dict, payload_dict: dict):
 
                     if event_type == "complete":
                         complete_data = event.get("data", {})
+                        agent_completed = True
+                        agent_succeeded = bool(complete_data.get("success", True))
                         final_response = complete_data.get("final_response", "")
                         iterations = complete_data.get("iterations", iterations)
                         tool_calls_made = complete_data.get("tool_calls_made", tool_calls_made)
@@ -1892,8 +1932,17 @@ async def execute_agent_task(ctx: dict, payload_dict: dict):
                             "completion_reason", completion_reason
                         )
                         session_id = complete_data.get("session_id")
+                        terminal_error = complete_data.get("error")
+
+                        if not agent_succeeded and not final_response:
+                            final_response = (
+                                "The agent could not complete this request. "
+                                + (terminal_error or "No successful completion was received.")
+                            )
 
                         if (
+                            agent_succeeded
+                            and
                             auto_start_project
                             and project_changed
                             and not project_started_by_agent
@@ -1939,7 +1988,27 @@ async def execute_agent_task(ctx: dict, payload_dict: dict):
                     if pubsub:
                         await pubsub.publish_agent_event(task_id, event)
 
+            except asyncio.CancelledError:
+                completion_reason = "interrupted"
+                terminal_error = "The agent execution was interrupted before it completed."
+                final_response = (
+                    "The agent was interrupted before completion. Any changes already written "
+                    "have been kept; you can continue from the current project state."
+                )
+                if pubsub:
+                    with contextlib.suppress(Exception):
+                        await _publish_error(pubsub, task_id, terminal_error)
+                with contextlib.suppress(Exception):
+                    await _update_task_status_redis(task_id, "failed", error=terminal_error)
+                raise
+
             finally:
+                task_succeeded = agent_completed and agent_succeeded
+                if not task_succeeded and not final_response:
+                    final_response = (
+                        "The agent did not complete this request. Any changes already written "
+                        "have been kept; you can continue from the current project state."
+                    )
                 # Finalize Message regardless of how we exit the loop
                 logger.info(
                     f"[WORKER] Agent finished: task={task_id}, events={event_count}, "
@@ -1970,7 +2039,7 @@ async def execute_agent_task(ctx: dict, payload_dict: dict):
                         task_id,
                     )
                 else:
-                    stale_msg.content = final_response or "Agent task completed."
+                    stale_msg.content = final_response
                     final_metadata = {
                         "agent_mode": True,
                         "agent_type": agent_model.agent_type,
@@ -1980,6 +2049,20 @@ async def execute_agent_task(ctx: dict, payload_dict: dict):
                         "iterations": iterations,
                         "tool_calls_made": tool_calls_made,
                         "completion_reason": completion_reason,
+                        "error": terminal_error,
+                        "partial_work_preserved": bool(project_changed and not task_succeeded),
+                        "last_completed_step": _step_idx - 1 if _step_idx else None,
+                        "timings_ms": {
+                            "total": int((time.monotonic() - task_started_at) * 1000),
+                            "context": int(
+                                ((agent_loop_started_at or time.monotonic()) - task_started_at)
+                                * 1000
+                            ),
+                            "agent_loop": int(
+                                (time.monotonic() - (agent_loop_started_at or task_started_at))
+                                * 1000
+                            ),
+                        },
                         "session_id": session_id,
                         "executed_by": "worker",
                         "task_id": task_id,
@@ -1999,7 +2082,7 @@ async def execute_agent_task(ctx: dict, payload_dict: dict):
                 # The new owner already set status="running"; we must not
                 # flip it back to "active"/"completed".
                 if chat and not lock_stolen:
-                    chat.status = "completed" if completion_reason != "cancelled" else "active"
+                    chat.status = "completed" if task_succeeded else "active"
                 await db.commit()
 
                 # 12b. CAS checkpoint snapshot — runs AFTER the finalize commit
@@ -2009,7 +2092,7 @@ async def execute_agent_task(ctx: dict, payload_dict: dict):
                 if (
                     project
                     and getattr(project, "volume_id", None)
-                    and completion_reason != "cancelled"
+                    and task_succeeded
                 ):
                     with contextlib.suppress(Exception):
                         await asyncio.wait_for(
@@ -2022,7 +2105,7 @@ async def execute_agent_task(ctx: dict, payload_dict: dict):
 
             # 13. Auto-generate chat title on first message (non-blocking)
             # Skip if our lock was stolen — the live owner will handle titling.
-            if completion_reason != "cancelled" and not lock_stolen:
+            if task_succeeded and not lock_stolen:
                 await _auto_title_chat(
                     chat,
                     model_adapter,
@@ -2044,8 +2127,21 @@ async def execute_agent_task(ctx: dict, payload_dict: dict):
                         },
                     )
 
-            # 14. Publish done event
-            if pubsub:
+            # 14. Publish a terminal status.  A runner that emitted an
+            # unsuccessful ``complete`` event must not look successful to
+            # clients, tickets, or automations.
+            if pubsub and completion_reason == "cancelled":
+                await pubsub.publish_agent_event(
+                    task_id,
+                    {"type": "done", "data": {"task_id": task_id, "status": "cancelled"}},
+                )
+            elif pubsub and not task_succeeded:
+                await _publish_error(
+                    pubsub,
+                    task_id,
+                    terminal_error or final_response or "Agent did not complete the request.",
+                )
+            elif pubsub:
                 await pubsub.publish_agent_event(
                     task_id, {"type": "done", "data": {"task_id": task_id}}
                 )
@@ -2125,11 +2221,22 @@ async def execute_agent_task(ctx: dict, payload_dict: dict):
             # Belt-and-suspenders: update task status in Redis directly
             # so get_active_agent_task sees COMPLETED even if the SSE relay
             # pod didn't call update_task_status.
-            await _update_task_status_redis(task_id, "completed")
+            terminal_task_status = (
+                "completed"
+                if task_succeeded
+                else "cancelled"
+                if completion_reason == "cancelled"
+                else "failed"
+            )
+            await _update_task_status_redis(
+                task_id,
+                terminal_task_status,
+                error=None if task_succeeded else terminal_error or final_response,
+            )
 
             # Mark the AgentTask ticket as completed / cancelled.
             if claimed_ticket_id is not None:
-                terminal = "cancelled" if completion_reason == "cancelled" else "completed"
+                terminal = "completed" if task_succeeded else terminal_task_status
                 with contextlib.suppress(Exception):
                     from .services.agent_tickets import finish_ticket
 
@@ -2142,7 +2249,7 @@ async def execute_agent_task(ctx: dict, payload_dict: dict):
             # successful. The WHERE-clause guard inside _finalize lets a
             # racing user-cancellation or contract-breach pause win.
             if auto_run_id is not None:
-                final_status = "cancelled" if completion_reason == "cancelled" else "succeeded"
+                final_status = "succeeded" if task_succeeded else terminal_task_status
                 await _finalize_automation_run(
                     auto_run_id,
                     status=final_status,
