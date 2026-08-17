@@ -2603,6 +2603,8 @@ async def execute_agent_task(ctx: dict, payload_dict: dict):
                             # calls, stop before the next LLM request while
                             # retaining any tools the current response ran.
                             if (
+                                credit_result.get("credit_enforcement_enabled", True)
+                                and
                                 not credit_result.get("is_byok")
                                 and (
                                     credit_result.get("new_balance", 0) <= 0

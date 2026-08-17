@@ -475,6 +475,22 @@ class TestCreditServiceTeamBilling:
         assert "no credits" in msg.lower()
 
     @pytest.mark.asyncio
+    async def test_check_credits_bypasses_the_ledger_in_internal_mode(self, monkeypatch):
+        from app.services import credit_service
+
+        monkeypatch.setattr(
+            "app.config.get_settings",
+            lambda: SimpleNamespace(credit_enforcement_enabled=False),
+        )
+        team = MagicMock()
+        team.total_credits = 0
+
+        ok, msg = await credit_service.check_credits(MagicMock(), "vibelab-default", team=team)
+
+        assert ok is True
+        assert msg == ""
+
+    @pytest.mark.asyncio
     async def test_check_credits_byok_always_passes(self):
         from app.services.credit_service import check_credits
 

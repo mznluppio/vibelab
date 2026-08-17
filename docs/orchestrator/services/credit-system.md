@@ -4,6 +4,14 @@
 
 Handles real-time credit deduction for AI usage billing with multi-source credit pools, BYOK bypass, and race condition protection.
 
+## Internal no-payment mode
+
+Set `CREDIT_ENFORCEMENT_ENABLED=false` for an internal VibeLab installation
+that does not sell credits. The platform continues to create `UsageLog` rows
+with the provider cost for observability, but it neither deducts credits nor
+blocks an agent run because a team's credit balance is zero. Public deployments
+retain the default `true` and therefore enforce the normal credit gate.
+
 ## Architecture
 
 ### Credit Types (4 pools)

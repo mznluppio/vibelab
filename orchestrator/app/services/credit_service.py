@@ -109,6 +109,14 @@ async def check_credits(
         (True, "") if user can proceed.
         (False, error_message) if insufficient credits.
     """
+    from ..config import get_settings
+
+    # VibeLab can be operated as an internal platform with no checkout. In
+    # that mode we still record provider usage, but an empty billing ledger
+    # must never prevent a colleague from using the agent.
+    if not get_settings().credit_enforcement_enabled:
+        return True, ""
+
     if is_byok_model(model_name):
         return True, ""
 
@@ -173,10 +181,12 @@ async def deduct_credits(
 
     Returns dict with cost_total, credits_deducted, new_balance, usage_log_id.
     """
+    from ..config import get_settings
     from ..models import UsageLog, User
     from ..models_team import Team
 
     byok = is_byok_model(model_name)
+    credit_enforcement_enabled = get_settings().credit_enforcement_enabled
 
     # A task retry can replay the same successful provider response.  Reuse
     # its ledger entry instead of performing a second debit.  The project/chat
@@ -214,10 +224,13 @@ async def deduct_credits(
                 "already_recorded": True,
                 "member_remaining": member_remaining,
                 "allocation_exhausted": bool(
+                    credit_enforcement_enabled
+                    and
                     member_remaining is not None
                     and member_remaining <= 0
                     and not existing.is_byok
                 ),
+                "credit_enforcement_enabled": credit_enforcement_enabled,
             }
 
     # Calculate cost (0 for BYOK)
@@ -266,7 +279,7 @@ async def deduct_credits(
                     lock_membership=True,
                 )
 
-            if not byok and cost_total > 0:
+            if credit_enforcement_enabled and not byok and cost_total > 0:
                 remaining = cost_total
 
                 # 1. Daily credits first
@@ -320,9 +333,13 @@ async def deduct_credits(
                 cost_total=cost_total,
                 is_byok=byok,
                 request_id=request_id,
-                billed_status="credited"
-                if credits_deducted > 0
-                else ("exempt" if byok else "pending"),
+                billed_status=(
+                    "credited"
+                    if credits_deducted > 0
+                    else ("exempt" if byok else "unmetered")
+                    if not credit_enforcement_enabled
+                    else "pending"
+                ),
             )
             db.add(usage_log)
 
@@ -358,7 +375,7 @@ async def deduct_credits(
         f"Credit deduction: user={user_id} team={resolved_team_id} model={model_name} "
         f"tokens_in={tokens_in} tokens_out={tokens_out} "
         f"cost={cost_total}¢ deducted={credits_deducted}¢ "
-        f"balance={new_balance} byok={byok}"
+        f"balance={new_balance} byok={byok} enforced={credit_enforcement_enabled}"
     )
 
     return {
@@ -370,6 +387,10 @@ async def deduct_credits(
         "already_recorded": False,
         "member_remaining": member_remaining,
         "allocation_exhausted": bool(
-            member_remaining is not None and member_remaining <= 0 and not byok
+            credit_enforcement_enabled
+            and member_remaining is not None
+            and member_remaining <= 0
+            and not byok
         ),
+        "credit_enforcement_enabled": credit_enforcement_enabled,
     }

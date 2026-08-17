@@ -344,6 +344,11 @@ class Settings(BaseSettings):
     stripe_webhook_secret: str = ""
     stripe_connect_client_id: str = ""  # For creator payouts (Stripe Connect)
 
+    # Internal installations can retain usage telemetry without treating the
+    # credit ledger as an access gate. Keep the production-safe default so a
+    # public deployment must opt in explicitly to unlimited internal usage.
+    credit_enforcement_enabled: bool = True
+
     # Wave 9 — federated payments global kill-switch. When False (default),
     # ``services/marketplace_federation.dispatch_purchase`` will NEVER route
     # through hub-owned checkout, regardless of per-source / per-flag state.
