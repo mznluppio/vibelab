@@ -47,6 +47,13 @@ The root Compose configuration disables `pricing.read`, `pricing.write`, and
 hub-checkout flag remains off, so the catalog is an internal install/library
 catalog rather than a commerce surface.
 
+The managed Next.js base is private. Set `BASE_CACHE_GIT_TOKEN` in the
+untracked `.env` to a fine-grained GitHub token restricted to that repository
+with **Contents: Read**. The token is only used for the backend's warm-cache
+clone; it is not written to the marketplace record, project metadata, logs,
+or cache manifest. A user-authenticated fallback clone uses that user's stored
+Git provider credential instead.
+
 ## Manage official content
 
 No administration UI is added. Use one of the existing routes:
@@ -61,8 +68,8 @@ No administration UI is added. Use one of the existing routes:
    publishing APIs; pricing and checkout capabilities are unavailable in the
    VibeLab deployment.
 
-Add a Base with a stable `slug`, `kind: "base"`, a public repository URL, and a
-documented commercial-use licence. Add an Agent, Skill, MCP server, or Theme
+Add a Base with a stable `slug`, `kind: "base"`, a repository URL accessible to
+the runtime, and a documented commercial-use licence. Add an Agent, Skill, MCP server, or Theme
 to its corresponding seed file with its existing kind and free pricing shape.
 Preserve third-party attribution fields; official entries inherit the visible
 `Legrand Official` creator identity while retaining the internal seed owner
@@ -72,7 +79,7 @@ or rewrite stable IDs.
 
 ## Seed and licence review
 
-The initial synchronization includes the existing official `Next.js 16` Base,
+The initial synchronization includes the managed internal `Next.js 16` Base,
 `VibeLab Default` Agent, `Testing Setup` Skill, `Microsoft Learn` MCP server,
 and published themes. All packaged seeds are free.
 
@@ -80,10 +87,12 @@ Repository accessibility was checked for the official Next.js 16 Base at
 `TesslateAI/Studio-NextJS-16-Base` (public `HEAD`
 `16b5032cc10bf6703a3483d69ece0f9c466bc8a1`). Its GitHub licence endpoint and
 `LICENSE` path did not provide an explicit licence at the time of this change.
-Therefore its commercial-use approval is **pending**: keep it restricted to
-internal validation and obtain an explicit licence before enabling it for a
-commercial deployment. Apply the same review to every repository-backed
-community Base before enabling it; a public repository alone is not approval.
+Therefore its commercial-use approval is **pending**: the VibeLab-managed
+variant at `mznluppio/vibelab-nextjs-16-base` is private, retains the upstream
+provenance, and is restricted to internal validation. Obtain an explicit
+licence before enabling it for a commercial deployment. Apply the same review
+to every repository-backed community Base before enabling it; a public
+repository alone is not approval.
 
 ## Validation checklist
 

@@ -16,7 +16,17 @@ from ...services.base_config_parser import (
 logger = logging.getLogger(__name__)
 
 SKIP_DIRS = frozenset(
-    {".git", "node_modules", ".next", "__pycache__", ".venv", "venv", "dist", "build"}
+    {
+        ".git",
+        "node_modules",
+        ".next",
+        "__pycache__",
+        ".venv",
+        "venv",
+        "dist",
+        "build",
+        ".vibelab-base-cache.json",
+    }
 )
 
 

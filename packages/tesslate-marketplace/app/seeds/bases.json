@@ -2,9 +2,9 @@
   {
     "name": "Next.js 16",
     "slug": "nextjs-16",
-    "description": "Integrated fullstack with Next.js 16, React Compiler, Turbopack, and instant startup",
-    "long_description": "Production-ready Next.js 16.1 starter with App Router, React 19.2, the stable React Compiler, Turbopack, API routes, TypeScript 5.9, and Tailwind CSS v4.2. Includes View Transitions, Cache Components, and Server Actions. Pre-baked dependencies for instant startup.",
-    "git_repo_url": "https://github.com/TesslateAI/Studio-NextJS-16-Base.git",
+    "description": "VibeLab's integrated Next.js 16 base with accessible UI foundations and instant startup",
+    "long_description": "Production-ready Next.js 16.1 starter with App Router, React 19.2, the stable React Compiler, Turbopack, API routes, TypeScript 5.9, and Tailwind CSS v4.2. Includes reusable SVG icon and responsive table foundations, View Transitions, Cache Components, Server Actions, and pre-baked dependencies for instant startup.",
+    "git_repo_url": "https://github.com/mznluppio/vibelab-nextjs-16-base.git",
     "default_branch": "main",
     "category": "fullstack",
     "icon": "\u26a1",
@@ -16,7 +16,8 @@
       "fullstack",
       "api-routes",
       "turbopack",
-      "react-compiler"
+      "react-compiler",
+      "ui-foundation"
     ],
     "pricing_type": "free",
     "price": 0,
@@ -33,7 +34,8 @@
       "Tailwind CSS v4.2",
       "View Transitions",
       "Cache Components",
-      "Instant Startup"
+      "Instant Startup",
+      "Accessible icon and responsive table foundation"
     ],
     "tech_stack": [
       "Next.js 16.1",

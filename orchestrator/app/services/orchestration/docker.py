@@ -727,6 +727,7 @@ class DockerOrchestrator(BaseOrchestrator):
                 "build",
                 "*.pyc",
                 ".DS_Store",
+                ".vibelab-base-cache.json",
             ]
 
         target_display = f"{project_slug}/{target_subdir}" if target_subdir else project_slug

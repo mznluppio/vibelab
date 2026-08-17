@@ -157,7 +157,12 @@ async def initialize_container_async(
                     await orchestrator.copy_base_to_project(
                         base_slug,
                         project.slug,
-                        exclude_patterns=[".git", "__pycache__", "*.pyc"],
+                        exclude_patterns=[
+                            ".git",
+                            "__pycache__",
+                            "*.pyc",
+                            ".vibelab-base-cache.json",
+                        ],
                         target_subdir=target_subdir,  # Copy to container's subdirectory
                     )
                     logger.info(

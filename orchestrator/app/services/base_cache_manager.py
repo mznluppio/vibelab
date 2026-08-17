@@ -6,12 +6,16 @@ Solves WSL slowness by installing in Linux, then copying to user projects.
 """
 
 import asyncio
+import json
 import logging
+import os
 import shutil
+from datetime import UTC, datetime
 from pathlib import Path
+from urllib.parse import quote, urlparse, urlunparse
+from uuid import uuid4
 
 import docker
-
 from sqlalchemy import select
 
 from ..config import get_settings
@@ -19,6 +23,10 @@ from ..database import AsyncSessionLocal
 from ..models import MarketplaceBase
 
 logger = logging.getLogger(__name__)
+
+
+CACHE_METADATA_FILENAME = ".vibelab-base-cache.json"
+CACHE_METADATA_SCHEMA_VERSION = 1
 
 
 def _node_install_command(directory: Path) -> str:
@@ -115,37 +123,92 @@ class BaseCacheManager:
         """
         base_path = self.cache_dir / base.slug
 
-        # Check if already cached with valid content
-        # A valid cache must have at least package.json or requirements.txt
-        if base_path.exists():
-            has_package_json = (base_path / "package.json").exists()
-            has_requirements = (base_path / "requirements.txt").exists()
-            has_go_mod = (base_path / "go.mod").exists()
+        if self._is_valid_cache(base_path) and self._cache_matches_base(base_path, base):
+            logger.info(f"[BASE-CACHE] ✓ {base.name} already cached at {base_path}")
+            return
 
-            if has_package_json or has_requirements or has_go_mod:
-                logger.info(f"[BASE-CACHE] ✓ {base.name} already cached at {base_path}")
-                return
-            else:
-                # Directory exists but is invalid/empty - remove and re-clone
-                logger.warning(f"[BASE-CACHE] ⚠ {base.name} cache is invalid/empty, re-cloning...")
-                shutil.rmtree(base_path, ignore_errors=True)
+        if base_path.exists():
+            logger.info(
+                "[BASE-CACHE] Refreshing %s because its cached source no longer matches",
+                base.name,
+            )
 
         logger.info(f"[BASE-CACHE] 📦 Caching {base.name}...")
+        staging_path = self.cache_dir / f".{base.slug}.staging-{uuid4().hex}"
 
         try:
-            # Clone repository
-            await self._clone_repository(base.git_repo_url, base.default_branch, base_path)
+            # Build the replacement away from readers. The existing cache stays
+            # available until the new clone and dependency installation succeed.
+            await self._clone_repository(base.git_repo_url, base.default_branch, staging_path)
 
-            # Install dependencies
-            await self._install_dependencies(base_path, base.name)
+            await self._install_dependencies(staging_path, base.name)
+            self._write_cache_metadata(staging_path, base)
+            await asyncio.to_thread(self._publish_cache, staging_path, base_path)
 
             logger.info(f"[BASE-CACHE] ✅ {base.name} cached successfully!")
 
         except Exception as e:
             logger.error(f"[BASE-CACHE] ❌ Failed to cache {base.name}: {e}", exc_info=True)
-            # Clean up partial download
-            if base_path.exists():
-                shutil.rmtree(base_path, ignore_errors=True)
+            # Never delete a previously usable cache because a refresh failed.
+            if staging_path.exists():
+                await asyncio.to_thread(shutil.rmtree, staging_path, ignore_errors=True)
+
+    @staticmethod
+    def _is_valid_cache(base_path: Path) -> bool:
+        """Return whether a cache directory has a recognizable project root."""
+        return base_path.is_dir() and any(
+            (base_path / filename).exists()
+            for filename in ("package.json", "requirements.txt", "go.mod")
+        )
+
+    @staticmethod
+    def _metadata_path(base_path: Path) -> Path:
+        return base_path / CACHE_METADATA_FILENAME
+
+    def _cache_matches_base(self, base_path: Path, base: MarketplaceBase) -> bool:
+        """Check cache provenance without ever serving a stale source."""
+        try:
+            metadata = json.loads(self._metadata_path(base_path).read_text())
+        except (OSError, json.JSONDecodeError):
+            return False
+
+        return (
+            metadata.get("schema_version") == CACHE_METADATA_SCHEMA_VERSION
+            and metadata.get("base_id") == str(base.id)
+            and metadata.get("git_repo_url") == base.git_repo_url
+            and metadata.get("default_branch") == (base.default_branch or "main")
+        )
+
+    def _write_cache_metadata(self, base_path: Path, base: MarketplaceBase) -> None:
+        """Write the provenance manifest before atomically publishing a cache."""
+        metadata = {
+            "schema_version": CACHE_METADATA_SCHEMA_VERSION,
+            "base_id": str(base.id),
+            # Marketplace bases store canonical token-free URLs. Do not write
+            # runtime clone credentials to the durable cache manifest.
+            "git_repo_url": base.git_repo_url,
+            "default_branch": base.default_branch or "main",
+            "built_at": datetime.now(UTC).isoformat(),
+        }
+        self._metadata_path(base_path).write_text(json.dumps(metadata, indent=2) + "\n")
+
+    @staticmethod
+    def _publish_cache(staging_path: Path, base_path: Path) -> None:
+        """Atomically replace a cache only after its staged build is complete."""
+        backup_path = base_path.parent / f".{base_path.name}.backup-{uuid4().hex}"
+        had_previous_cache = base_path.exists()
+
+        try:
+            if had_previous_cache:
+                os.replace(base_path, backup_path)
+            os.replace(staging_path, base_path)
+        except Exception:
+            if had_previous_cache and backup_path.exists() and not base_path.exists():
+                os.replace(backup_path, base_path)
+            raise
+        else:
+            if backup_path.exists():
+                shutil.rmtree(backup_path, ignore_errors=True)
 
     async def _clone_repository(self, repo_url: str, branch: str, destination: Path) -> None:
         """
@@ -157,6 +220,7 @@ class BaseCacheManager:
             destination: Destination path
         """
         logger.info(f"[BASE-CACHE]   Cloning {repo_url} (branch: {branch})...")
+        clone_url = self._get_cache_clone_url(repo_url)
 
         # Use git clone with depth=1 for faster cloning
         process = await asyncio.create_subprocess_exec(
@@ -167,7 +231,7 @@ class BaseCacheManager:
             "--branch",
             branch,
             "--single-branch",
-            repo_url,
+            clone_url,
             str(destination),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
@@ -180,6 +244,26 @@ class BaseCacheManager:
             raise RuntimeError(f"Git clone failed: {error_msg}")
 
         logger.info("[BASE-CACHE]   ✓ Clone complete")
+
+    @staticmethod
+    def _get_cache_clone_url(repo_url: str) -> str:
+        """Return an ephemeral authenticated URL for a managed private base.
+
+        Marketplace metadata and logs always retain the clean repository URL.
+        The token is scoped to cache warm-up, read from deployment configuration,
+        and passed only to the ``git`` subprocess.
+        """
+        token = get_settings().base_cache_git_token
+        if not token:
+            return repo_url
+
+        parsed = urlparse(repo_url)
+        if parsed.scheme not in {"http", "https"} or parsed.hostname != "github.com":
+            return repo_url
+
+        port = f":{parsed.port}" if parsed.port else ""
+        netloc = f"x-access-token:{quote(token, safe='')}@{parsed.hostname}{port}"
+        return urlunparse(parsed._replace(netloc=netloc))
 
     async def _install_dependencies(self, base_path: Path, base_name: str) -> None:
         """
@@ -293,12 +377,20 @@ class BaseCacheManager:
         except Exception as e:
             logger.error(f"[BASE-CACHE]     ❌ Container execution failed ({label}): {e}")
 
-    async def get_base_path(self, base_slug: str) -> Path | None:
+    async def get_base_path(
+        self,
+        base_slug: str,
+        *,
+        expected_base: MarketplaceBase | None = None,
+    ) -> Path | None:
         """
         Get the cached path for a marketplace base.
 
         Args:
-            base_slug: Slug of the marketplace base
+            base_slug: Slug of the marketplace base.
+            expected_base: When supplied, require the cache provenance to
+                match its current repository URL and branch. This prevents a
+                stale slug-only entry from being copied into a new project.
 
         Returns:
             Path to cached base, or None if not found (always None in K8s mode)
@@ -308,7 +400,9 @@ class BaseCacheManager:
             return None
 
         base_path = self.cache_dir / base_slug
-        if base_path.exists():
+        if self._is_valid_cache(base_path) and (
+            expected_base is None or self._cache_matches_base(base_path, expected_base)
+        ):
             return base_path
         return None
 

@@ -96,6 +96,9 @@ class Settings(BaseSettings):
     # or cached bases with another checkout.
     docker_projects_volume_name: str = "tesslate-projects-data"
     base_cache_volume_name: str = "tesslate-base-cache"
+    # Optional read-only token for private, platform-managed base repositories.
+    # It is used only by the Docker warm-cache worker and is never persisted.
+    base_cache_git_token: str = ""
 
     # Deployment mode: "docker" | "kubernetes" | "local" | "desktop"
     # Use the orchestration module for type-safe access: from app.services.orchestration import is_docker_mode

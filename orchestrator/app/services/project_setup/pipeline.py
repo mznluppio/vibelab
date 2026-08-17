@@ -104,11 +104,14 @@ async def _build_source_spec(
         # Desktop / local fast-path: check warm cache before any network I/O.
         # This mirrors the k8s template_snapshot shortcut and avoids a full git
         # clone when the user has created a project from this base before.
-        if settings.deployment_mode in ("desktop", "local"):
+        if settings.deployment_mode in ("desktop", "local") and not project_data.base_version:
             from ...services.base_cache_manager import get_base_cache_manager
 
             cache_mgr = get_base_cache_manager()
-            cached = await cache_mgr.get_base_path(base_repo.slug)
+            cached = await cache_mgr.get_base_path(
+                base_repo.slug,
+                expected_base=base_repo,
+            )
             if cached and os.path.exists(cached):
                 return SourceSpec(
                     kind="cache",
@@ -131,7 +134,15 @@ async def _build_source_spec(
         from ...services.base_cache_manager import get_base_cache_manager
 
         cache_mgr = get_base_cache_manager()
-        cached = await cache_mgr.get_base_path(base_repo.slug)
+        # A requested tag or branch must never silently receive the cache for
+        # the base's default branch. Until cache entries are version-keyed,
+        # clone explicit versions directly.
+        cached = None
+        if not project_data.base_version:
+            cached = await cache_mgr.get_base_path(
+                base_repo.slug,
+                expected_base=base_repo,
+            )
 
         if cached and os.path.exists(cached):
             return SourceSpec(
@@ -144,9 +155,20 @@ async def _build_source_spec(
 
         # Fallback: clone from git
         branch = project_data.base_version or base_repo.default_branch or "main"
+        # Marketplace bases may be private. Reuse the project owner's
+        # provider credential for this one-time clone, while keeping the
+        # canonical token-free URL in project metadata and logs.
+        from ...services.git_providers.url_utils import build_authenticated_git_url
+
+        authenticated_url = await build_authenticated_git_url(
+            base_repo.git_repo_url,
+            db_project.owner_id,
+            db,
+        )
         return SourceSpec(
             kind="git_clone",
             git_url=base_repo.git_repo_url,
+            git_clone_url=authenticated_url,
             git_branch=branch,
             base_slug=base_repo.slug,
             base_id=base_repo.id,

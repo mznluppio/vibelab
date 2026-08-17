@@ -71,16 +71,18 @@ class TesslateAgentAdapter:
         trajectory events as ``AgentStep`` rows without coupling the
         submodule to that plumbing.
         """
-        # Build the context dict the submodule agent expects from the frozen
-        # AgentAdapterContext dataclass (which has no to_submodule_context()).
-        ctx: dict[str, Any] = {
-            "project_id": adapter_context.project_id,
-            "user_id": adapter_context.user_id,
-        }
+        # The worker reads mutation state (``project_changed`` and preview
+        # metadata) from ``adapter_context.extra`` after this turn.  Tools
+        # mutate their execution context in place, so forwarding a merged copy
+        # would silently discard that state and prevent the preview lifecycle
+        # from being enqueued.  Reuse the worker-owned dict when present.
+        ctx: dict[str, Any] = (
+            adapter_context.extra if adapter_context.extra is not None else {}
+        )
+        ctx.setdefault("project_id", adapter_context.project_id)
+        ctx.setdefault("user_id", adapter_context.user_id)
         if adapter_context.goal_ancestry:
-            ctx["goal_ancestry"] = adapter_context.goal_ancestry
-        if adapter_context.extra:
-            ctx.update(adapter_context.extra)
+            ctx.setdefault("goal_ancestry", adapter_context.goal_ancestry)
         async for event in _iter_events(self._inner, user_request, ctx):
             if event_sink is not None:
                 try:

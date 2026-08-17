@@ -122,6 +122,41 @@ async def test_run_turn_context_includes_extra_fields() -> None:
     assert c["chat_id"] == "chat-99"
 
 
+@pytest.mark.asyncio
+async def test_run_turn_preserves_mutations_on_worker_context() -> None:
+    """Mutations made by tools must remain visible to the worker after a turn.
+
+    The worker uses these fields to enqueue the bounded preview lifecycle.
+    Passing a merged context copy to the agent used to lose them and left a
+    generated project running only after the user manually started it.
+    """
+    from collections.abc import AsyncIterator
+
+    class _MutatingAgent:
+        system_prompt = "test"
+        tools = None
+
+        async def run(
+            self, user_request: str, context: dict[str, Any]
+        ) -> AsyncIterator[dict[str, Any]]:
+            context["project_changed"] = True
+            context["preview_restart_required"] = True
+            context["project_mutation_paths"] = ["app/page.tsx"]
+            yield {"type": "complete", "data": {"success": True}}
+
+    wrapper = object.__new__(TesslateAgentAdapter)
+    wrapper._inner = _MutatingAgent()  # type: ignore[attr-defined]
+    worker_context: dict[str, Any] = {"chat_id": "chat-42"}
+    ctx = AgentAdapterContext(project_id="p2", user_id="u2", extra=worker_context)
+
+    async for _ in wrapper.run_turn("patch something", ctx):
+        pass
+
+    assert worker_context["project_changed"] is True
+    assert worker_context["preview_restart_required"] is True
+    assert worker_context["project_mutation_paths"] == ["app/page.tsx"]
+
+
 # ---------------------------------------------------------------------------
 # approval_handler injection via run_turn — Bug #198
 # ---------------------------------------------------------------------------
