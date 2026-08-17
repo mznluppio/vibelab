@@ -405,6 +405,10 @@ services:
       - ./orchestrator/alembic.ini:/app/alembic.ini
       - ./orchestrator/pyproject.toml:/app/pyproject.toml
       - ./orchestrator/users:/app/users
+      # Project setup runs in the worker, so it needs the same warm bases as
+      # the API service. Without this mount a private base falls back to an
+      # unauthenticated GitHub clone.
+      - base-cache:/app/base-cache
       - projects-data:/projects
       - /var/run/docker.sock:/var/run/docker.sock
     environment:

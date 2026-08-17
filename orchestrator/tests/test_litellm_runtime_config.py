@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
+import yaml
 
 from app.config import Settings
 
@@ -76,6 +77,13 @@ def test_compose_uses_non_blocking_litellm_validation() -> None:
     assert "litellm-db-bootstrap:" in compose
     assert "CREATE DATABASE litellm" in compose
     assert "@postgres:5432/litellm" in compose
+
+
+def test_worker_mounts_the_shared_base_cache_for_project_setup() -> None:
+    compose = yaml.safe_load((REPO_ROOT / "docker-compose.yml").read_text())
+
+    worker_volumes = compose["services"]["worker"]["volumes"]
+    assert "base-cache:/app/base-cache" in worker_volumes
 
 
 def test_aks_litellm_uses_a_dedicated_database() -> None:
