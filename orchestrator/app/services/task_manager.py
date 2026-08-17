@@ -269,6 +269,33 @@ class TaskManager:
 
         return task
 
+    async def create_task_async(
+        self,
+        user_id: UUID,
+        task_type: str,
+        metadata: dict[str, Any] | None = None,
+        task_id: str | None = None,
+    ) -> Task:
+        """Create a task and durably publish its initial queued state.
+
+        Agent workers can complete faster than an API request can finish
+        streaming.  The synchronous ``create_task`` intentionally writes to
+        Redis in the background for ordinary UI jobs, but that creates a race
+        for queued agent work: a worker may attempt its terminal update before
+        the task key exists.  Dispatchers that need an ordering guarantee use
+        this awaited variant before enqueueing.
+        """
+        task = self.create_task(
+            user_id=user_id,
+            task_type=task_type,
+            metadata=metadata,
+            task_id=task_id,
+        )
+        # ``create_task`` may have scheduled a best-effort store already; an
+        # explicit write is cheap and makes the key visible before enqueue.
+        await self._store_task_redis(task)
+        return task
+
     def get_task(self, task_id: str) -> Task | None:
         """Get a task by ID (local first, then Redis)"""
         task = self._tasks.get(task_id)
@@ -446,6 +473,30 @@ class TaskManager:
 
             # Notify local callbacks
             await self._notify_callbacks(task_id, task)
+
+    async def reset_task_for_retry(
+        self, task_id: str, *, metadata_updates: dict[str, Any] | None = None
+    ) -> Task | None:
+        """Return a terminal task to the queued state for one safe recovery.
+
+        The task id remains stable, so SSE reconnects and cancellation keep
+        targeting the same work item. Unlike a normal status transition this
+        deliberately clears the previous terminal timestamp and error.
+        """
+        async with self._lock:
+            task = self._tasks.get(task_id) or await self._load_task_redis(task_id)
+            if task is None:
+                return None
+            self._tasks[task_id] = task
+            task.status = TaskStatus.QUEUED
+            task.completed_at = None
+            task.error = None
+            if metadata_updates:
+                task.metadata = {**task.metadata, **metadata_updates}
+            await self._store_task_redis(task)
+            await self._publish_task_update(task)
+            await self._notify_callbacks(task_id, task)
+            return task
 
     async def run_task(self, task_id: str, coro: Callable, *args, **kwargs):
         """Run a coroutine as a background task with status tracking"""

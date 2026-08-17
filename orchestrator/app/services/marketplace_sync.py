@@ -118,6 +118,11 @@ class SyncResult:
 # gets stripped to free with the original preserved in the provenance fields.
 _TRUSTED_PRICING_LEVELS: Final[set[str]] = {"official", "admin_trusted"}
 
+# These platform-governance settings are intentionally local. Administrators
+# can attach a deployment-specific Base to an upstream agent without having
+# that choice erased by the next federated catalog refresh.
+_LOCAL_AGENT_CONFIG_OVERRIDE_KEYS: Final[frozenset[str]] = frozenset({"required_base"})
+
 
 # Wave 3 default: paginate /v1/changes by 200 events per call.
 _CHANGES_PAGE_LIMIT: Final[int] = 200
@@ -194,6 +199,26 @@ def _sanitize_manifest_for_persistence(manifest: dict[str, Any]) -> dict[str, An
     if isinstance(sv, str):
         cleaned.pop("source_visibility", None)
     return cleaned
+
+
+def _merge_local_agent_config_overrides(upstream: Any, existing: Any) -> Any:
+    """Apply explicitly recorded local config values over upstream config."""
+    if not isinstance(existing, dict):
+        return upstream
+    overrides = existing.get("_local_overrides")
+    if not isinstance(overrides, dict):
+        return upstream
+
+    effective_overrides = {
+        key: value for key, value in overrides.items() if key in _LOCAL_AGENT_CONFIG_OVERRIDE_KEYS
+    }
+    if not effective_overrides:
+        return upstream
+
+    merged = dict(upstream) if isinstance(upstream, dict) else {}
+    merged.update(effective_overrides)
+    merged["_local_overrides"] = effective_overrides
+    return merged
 
 
 # Type aliases for the factories the worker accepts (testable injection).
@@ -930,7 +955,9 @@ class MarketplaceSyncWorker:
             common_fields["agent_type"] = _agent_field("agent_type")
             common_fields["model"] = _agent_field("model")
             common_fields["tools"] = _agent_field("tools")
-            common_fields["config"] = _agent_field("config")
+            common_fields["config"] = _merge_local_agent_config_overrides(
+                _agent_field("config"), existing.config if existing is not None else None
+            )
             common_fields["mode"] = _agent_field("mode")
             common_fields["is_forkable"] = bool(_agent_field("is_forkable"))
 

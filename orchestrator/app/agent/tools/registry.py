@@ -6,12 +6,104 @@ Each tool is defined with name, description, parameters schema, and executor fun
 """
 
 import logging
+import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+
+# Preview lifecycle is a platform concern.  Tool metadata, rather than an
+# agent-specific allow-list, records whether a successful tool call changed a
+# project and whether that change requires a runtime restart.
+_RUNTIME_RESTART_FILENAMES = frozenset(
+    {
+        "package.json",
+        "package-lock.json",
+        "pnpm-lock.yaml",
+        "yarn.lock",
+        "requirements.txt",
+        "poetry.lock",
+        "pyproject.toml",
+        "dockerfile",
+        "docker-compose.yml",
+        "docker-compose.yaml",
+        ".tesslate/config.json",
+    }
+)
+_LIFECYCLE_TOOLS = frozenset(
+    {
+        "project_start",
+        "project_stop",
+        "project_restart",
+        "container_start",
+        "container_stop",
+        "container_restart",
+    }
+)
+_COMPACTED_SOURCE_RE = re.compile(
+    r"^\[completed source omitted:\s*\d+ chars, sha256:[0-9a-f]{8,64}\]$",
+    re.IGNORECASE,
+)
+_SOURCE_ARGUMENT_KEYS = frozenset({"content", "old_str", "new_str", "patch", "diff"})
+
+
+def _source_artifact_error(value: Any) -> str | None:
+    """Reject a history-compaction placeholder before it becomes source code."""
+    if isinstance(value, list):
+        return next((error for item in value if (error := _source_artifact_error(item))), None)
+    if not isinstance(value, dict):
+        return None
+    for key, item in value.items():
+        if key in _SOURCE_ARGUMENT_KEYS and isinstance(item, str) and _COMPACTED_SOURCE_RE.fullmatch(item.strip()):
+            return (
+                f"'{key}' contains a compacted source marker, not real file content. "
+                "Read the file and provide the actual source before retrying."
+            )
+        if key in {"edits", "changes", "patches"}:
+            error = _source_artifact_error(item)
+            if error:
+                return error
+    return None
+
+
+def _parameter_error(tool: "Tool", parameters: Any) -> str | None:
+    """Perform minimal deterministic validation before invoking an executor."""
+    if not isinstance(parameters, dict):
+        return "Tool arguments must be a JSON object."
+    required = tool.parameters.get("required", []) if isinstance(tool.parameters, dict) else []
+    missing = [key for key in required if key not in parameters or parameters[key] is None]
+    if missing:
+        return "Missing required parameter(s): " + ", ".join(missing) + "."
+    return _source_artifact_error(parameters)
+
+
+def _mutation_paths(parameters: dict[str, Any]) -> list[str]:
+    """Extract project-relative paths from the common file-tool payloads."""
+    paths: list[str] = []
+    for key in ("file_path", "path", "filename"):
+        value = parameters.get(key)
+        if isinstance(value, str) and value:
+            paths.append(value)
+    changes = parameters.get("changes")
+    if isinstance(changes, list):
+        for change in changes:
+            if isinstance(change, dict) and isinstance(change.get("path"), str):
+                paths.append(change["path"])
+    return paths
+
+
+def _path_requires_preview_restart(path: str) -> bool:
+    normalized = path.replace("\\", "/").lstrip("./").lower()
+    basename = normalized.rsplit("/", 1)[-1]
+    return (
+        basename in _RUNTIME_RESTART_FILENAMES
+        or basename.startswith(".env")
+        or normalized == ".tesslate/config.json"
+        or normalized.endswith("/.tesslate/config.json")
+    )
 
 
 # Sentinel used to detect Tool instances that omit the required state-shape
@@ -105,6 +197,10 @@ class Tool:
     #   double-counting against ``max_spend_per_run_usd``.
     compute_tier: int = 0
     delegates_to_model: bool = False
+    # Internal lifecycle metadata. A project is considered changed only after
+    # an executor returns success, never because a model described a change.
+    mutates_project: bool = False
+    requires_preview_restart: bool = False
 
     def __post_init__(self):
         # Enforce the Phase 1 tool-state annotation contract at construction
@@ -312,6 +408,32 @@ class ToolRegistry:
                 "error": f"Unknown tool '{tool_name}'. Available tools: {', '.join(self._tools.keys())}",
             }
 
+        parameter_error = _parameter_error(tool, parameters)
+        if parameter_error:
+            logger.warning("[TOOL-EXEC] Rejected invalid parameters for %s: %s", tool_name, parameter_error)
+            return {
+                "success": False,
+                "tool": tool_name,
+                "error": parameter_error,
+                "error_code": "invalid_tool_arguments",
+                "required": tool.parameters.get("required", []),
+            }
+
+        if (
+            context.get("project_changed")
+            and tool_name in _LIFECYCLE_TOOLS
+            and not context.get("allow_lifecycle_after_mutation", False)
+        ):
+            return {
+                "success": False,
+                "tool": tool_name,
+                "error": (
+                    "Project files were already changed in this turn. The platform will "
+                    "perform one bounded preview lifecycle after the response; continue "
+                    "with validation that does not restart containers."
+                ),
+            }
+
         # ============================================================================
         # API Key Scope Enforcement — block tools the key doesn't permit
         # ============================================================================
@@ -415,6 +537,20 @@ class ToolRegistry:
             tool_succeeded = result.get("success", True) if isinstance(result, dict) else True
 
             if tool_succeeded:
+                if tool.mutates_project:
+                    context["project_changed"] = True
+                    context["preview_restart_required"] = bool(
+                        context.get("preview_restart_required")
+                        or tool.requires_preview_restart
+                    )
+                    paths = context.setdefault("project_mutation_paths", [])
+                    changed_paths = _mutation_paths(parameters)
+                    if isinstance(paths, list):
+                        for path in changed_paths:
+                            if path not in paths:
+                                paths.append(path)
+                    if any(_path_requires_preview_restart(path) for path in changed_paths):
+                        context["preview_restart_required"] = True
                 logger.info(f"[TOOL-EXEC] Completed tool: {tool_name}, success=True")
             else:
                 logger.warning(
@@ -427,6 +563,15 @@ class ToolRegistry:
             logger.error(
                 f"[TOOL-EXEC] Tool {tool_name} execution FAILED with exception: {e}", exc_info=True
             )
+            # A failed database operation leaves the shared async session in
+            # an aborted transaction. Recover it so later tools and step
+            # persistence remain usable in the same worker task.
+            rollback = getattr(context.get("db"), "rollback", None)
+            if callable(rollback):
+                try:
+                    await rollback()
+                except Exception:
+                    logger.exception("[TOOL-EXEC] Failed to roll back after %s", tool_name)
             return {"success": False, "tool": tool_name, "error": str(e)}
 
 

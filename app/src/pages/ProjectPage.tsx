@@ -2286,9 +2286,32 @@ function ProjectPageInner() {
 }
 
 function ProjectPageWithRuns() {
-  const { projectId } = useParams<{ projectId: string }>();
+  const { slug } = useParams<{ slug: string }>();
+  const [projectUuid, setProjectUuid] = useState<string | null>(null);
+
+  // Routes are addressed by slug, while the task API is addressed by the
+  // project's immutable UUID. Keep that distinction at the provider boundary
+  // so all active-run recovery calls use the right identifier.
+  useEffect(() => {
+    let cancelled = false;
+    setProjectUuid(null);
+    if (!slug) return;
+    void projectsApi
+      .get(slug)
+      .then((project) => {
+        const id = project?.id;
+        if (!cancelled && typeof id === 'string') setProjectUuid(id);
+      })
+      .catch(() => {
+        // ProjectPageInner owns the visible project-load error state.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [slug]);
+
   return (
-    <AgentRunsProvider projectId={projectId ?? null}>
+    <AgentRunsProvider projectId={projectUuid}>
       <ProjectPageInner />
     </AgentRunsProvider>
   );

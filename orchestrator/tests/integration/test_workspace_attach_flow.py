@@ -31,6 +31,7 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import event
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 
@@ -75,6 +76,21 @@ class _Recorder:
 
     async def publish_agent_event(self, task_id: str, event: dict) -> None:
         self.events.append(event)
+
+
+def test_workspace_query_filters_by_required_base_without_distinct_json_rows() -> None:
+    """The required-base filter must remain valid on PostgreSQL JSON columns."""
+    from app.agent.tools.workspace_ops import request_workspace as rw
+    from app.models import Project
+
+    statement = rw._workspace_query_for_user(
+        uuid.uuid4(), required_base_id=uuid.uuid4()
+    )
+    sql = str(statement.compile(dialect=postgresql.dialect()))
+
+    assert "EXISTS" in sql
+    assert "DISTINCT" not in sql
+    assert "projects.settings" in sql
 
 
 async def _seed_user_chat_and_workspace(maker, with_workspace: bool):

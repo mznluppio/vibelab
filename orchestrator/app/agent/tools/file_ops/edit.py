@@ -215,6 +215,32 @@ async def patch_file_tool(params: dict[str, Any], context: dict[str, Any]) -> di
 
     diff_preview = _generate_diff_preview(current_content, result.content)
 
+    from .integrity import verify_file_content
+
+    verified, integrity = await verify_file_content(
+        orchestrator,
+        user_id=user_id,
+        project_id=project_id,
+        container_name=container_name,
+        file_path=file_path,
+        expected_content=result.content,
+        project_slug=project_slug,
+        subdir=container_directory,
+        volume_id=volume_hints["volume_id"],
+        cache_node=volume_hints["cache_node"],
+    )
+    if not verified:
+        context["project_mutation_integrity_failure"] = {
+            "file_path": file_path,
+            "integrity": integrity,
+        }
+        return error_output(
+            message=f"Patch verification failed for '{file_path}'",
+            suggestion="Read the file and retry the patch before continuing.",
+            file_path=file_path,
+            details={"integrity": integrity},
+        )
+
     try:
         from ....services.recent_files import get_recent_file_tracker
 
@@ -235,6 +261,7 @@ async def patch_file_tool(params: dict[str, Any], context: dict[str, Any]) -> di
             "occurrences": result.occurrences,
             "repair_applied": result.repair_applied,
             "size_bytes": len(result.content),
+            "integrity": integrity,
         },
     )
 
@@ -383,6 +410,32 @@ async def multi_edit_tool(params: dict[str, Any], context: dict[str, Any]) -> di
 
     diff_preview = _generate_diff_preview(current_content, buffer)
 
+    from .integrity import verify_file_content
+
+    verified, integrity = await verify_file_content(
+        orchestrator,
+        user_id=user_id,
+        project_id=project_id,
+        container_name=container_name,
+        file_path=file_path,
+        expected_content=buffer,
+        project_slug=project_slug,
+        subdir=container_directory,
+        volume_id=volume_hints["volume_id"],
+        cache_node=volume_hints["cache_node"],
+    )
+    if not verified:
+        context["project_mutation_integrity_failure"] = {
+            "file_path": file_path,
+            "integrity": integrity,
+        }
+        return error_output(
+            message=f"Edit verification failed for '{file_path}'",
+            suggestion="Read the file and retry the edit before continuing.",
+            file_path=file_path,
+            details={"integrity": integrity},
+        )
+
     try:
         from ....services.recent_files import get_recent_file_tracker
 
@@ -399,6 +452,7 @@ async def multi_edit_tool(params: dict[str, Any], context: dict[str, Any]) -> di
             "applied": applied,
             "applied_edits": applied,
             "size_bytes": len(buffer),
+            "integrity": integrity,
         },
     )
 
@@ -450,6 +504,7 @@ def register_edit_tools(registry) -> None:
             state_serializable=True,
             # Single atomic edit per call; no persistent matcher state across calls.
             holds_external_state=False,
+            mutates_project=True,
             examples=[
                 '{"tool_name": "patch_file", "parameters": {"file_path": "src/App.jsx", "old_str": "bg-blue-500", "new_str": "bg-green-500"}}',
             ],
@@ -494,6 +549,7 @@ def register_edit_tools(registry) -> None:
             state_serializable=True,
             # Each call self-contained; no in-flight matcher session held open.
             holds_external_state=False,
+            mutates_project=True,
             examples=[
                 '{"tool_name": "multi_edit", "parameters": {"file_path": "src/App.jsx", "edits": [{"old_str": "useState(0)", "new_str": "useState(10)"}, {"old_str": "bg-blue-500", "new_str": "bg-green-500"}]}}',
             ],

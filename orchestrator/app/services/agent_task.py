@@ -124,6 +124,23 @@ class AgentTaskPayload:
     # channels, schedules, external_agent) need no change.
     compute_profile: str = "persistent_workspace"
 
+    # Internal retry counter used when two turns from the same chat overlap
+    # briefly.  Keeping it in the queued payload lets workers defer the newer
+    # turn without occupying a worker slot or losing the user's message.
+    chat_lock_retry_count: int = 0
+
+    # Required-Base provisioning is performed by the existing project setup
+    # pipeline.  A worker records its task id here and defers itself between
+    # checks so template setup never consumes an agent execution slot.
+    workspace_setup_task_id: str | None = None
+    workspace_setup_retry_count: int = 0
+
+    # A worker timeout/loss can happen after valid file mutations. One
+    # idempotent recovery attempt reuses the same task stream and chat lock;
+    # a second interruption remains terminal and is surfaced to the user.
+    resume_attempt: int = 0
+    resume_reason: str | None = None
+
     def to_dict(self) -> dict:
         """Serialize to dict for ARQ job dispatch."""
         return asdict(self)

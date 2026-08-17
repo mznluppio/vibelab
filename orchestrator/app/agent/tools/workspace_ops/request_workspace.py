@@ -108,6 +108,34 @@ async def _await_with_heartbeat(task_id: str | None, input_id: str, timeout: int
             await hb_task
 
 
+def _workspace_query_for_user(user_id: UUID, required_base_id: UUID | None = None):
+    """Build the workspace selection query shared by runtime and tests."""
+    from ....models_team import ProjectMembership
+    from ....services.apps.project_scopes import exclude_internal_workspaces_clause
+
+    member_subq = select(ProjectMembership.project_id).where(ProjectMembership.user_id == user_id)
+    query = select(Project).where(
+        or_(
+            Project.owner_id == user_id,
+            Project.id.in_(member_subq),
+        ),
+        exclude_internal_workspaces_clause(),
+    )
+    if required_base_id is not None:
+        # A project may contain several matching containers. Use EXISTS rather
+        # than JOIN + DISTINCT so PostgreSQL never has to compare Project's
+        # JSON settings column while de-duplicating complete model rows.
+        query = query.where(
+            select(Container.id)
+            .where(
+                Container.project_id == Project.id,
+                Container.base_id == required_base_id,
+            )
+            .exists()
+        )
+    return query.order_by(Project.updated_at.desc())
+
+
 async def _list_user_workspaces(
     db, user_id: UUID, required_base_id: UUID | None = None
 ) -> list[Project]:
@@ -124,22 +152,7 @@ async def _list_user_workspaces(
     Excludes internal system Workspaces — they are agent / automation
     plumbing, not something the user picks from a list.
     """
-    from ....models_team import ProjectMembership
-    from ....services.apps.project_scopes import exclude_internal_workspaces_clause
-
-    member_subq = select(ProjectMembership.project_id).where(ProjectMembership.user_id == user_id)
-    query = select(Project).where(
-        or_(
-            Project.owner_id == user_id,
-            Project.id.in_(member_subq),
-        ),
-        exclude_internal_workspaces_clause(),
-    )
-    if required_base_id is not None:
-        query = query.join(Container, Container.project_id == Project.id).where(
-            Container.base_id == required_base_id
-        )
-    rows = await db.execute(query.distinct().order_by(Project.updated_at.desc()))
+    rows = await db.execute(_workspace_query_for_user(user_id, required_base_id))
     return list(rows.scalars().all())
 
 

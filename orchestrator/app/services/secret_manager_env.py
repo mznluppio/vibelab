@@ -390,10 +390,13 @@ async def _apply_workspace_data_overrides(
     workspace-data service node wired to specific containers populates
     only those; unwired base containers fall back to the blanket default.
 
-    Skips:
-      * service containers (postgres/redis/etc don't consume the SDK)
-      * containers that already have ``OPENSAIL_*`` env (user / explicit
-        graph override wins — we never clobber)
+    Skips service containers (postgres/redis/etc don't consume the SDK).
+
+    The ``OPENSAIL_DATA_*`` namespace is platform-owned.  It intentionally
+    overwrites any same-name values written into a project config so an agent
+    cannot leave a stale URL or key after a workspace is attached.  Custom
+    aliases from ``env_mapping`` remain additive and unrelated user variables
+    are preserved.
     """
     from ..models import Project
     from .workspace_data_env import compute_env_for_containers
@@ -423,11 +426,8 @@ async def _apply_workspace_data_overrides(
         if not env:
             continue
         existing = overrides.setdefault(c.id, {})
-        if any(k.startswith("OPENSAIL_") or "_OPENSAIL_" in k for k in existing):
-            # User or explicit graph override already populated — don't clobber.
-            continue
         for k, v in env.items():
-            existing.setdefault(k, v)
+            existing[k] = v
 
 
 def _is_workspace_data_source(source) -> bool:

@@ -4,6 +4,8 @@ Unit tests for ToolRegistry.
 Tests tool registration, lookup, execution, and scoped registries.
 """
 
+from unittest.mock import AsyncMock
+
 import pytest
 
 from app.agent.tools.registry import Tool, ToolCategory, ToolRegistry, create_scoped_tool_registry
@@ -181,6 +183,56 @@ class TestToolRegistry:
         assert "Unknown tool" in result["error"]
 
     @pytest.mark.asyncio
+    async def test_required_parameters_are_rejected_before_executor(self, registry):
+        executor = AsyncMock(return_value={"success": True})
+        registry.register(
+            Tool(
+                name="workspace_data",
+                description="Workspace data",
+                parameters={"type": "object", "required": ["action"]},
+                executor=executor,
+                category=ToolCategory.PROJECT,
+                state_serializable=True,
+                holds_external_state=False,
+            )
+        )
+
+        result = await registry.execute("workspace_data", {}, {})
+
+        assert result["success"] is False
+        assert result["error_code"] == "invalid_tool_arguments"
+        assert "action" in result["error"]
+        executor.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_compacted_source_marker_is_rejected_before_executor(self, registry):
+        executor = AsyncMock(return_value={"success": True})
+        registry.register(
+            Tool(
+                name="write_file",
+                description="Write file",
+                parameters={"type": "object", "required": ["file_path", "content"]},
+                executor=executor,
+                category=ToolCategory.FILE_OPS,
+                state_serializable=True,
+                holds_external_state=False,
+            )
+        )
+
+        result = await registry.execute(
+            "write_file",
+            {
+                "file_path": "app/page.tsx",
+                "content": "[completed source omitted: 100 chars, sha256:0123456789abcdef]",
+            },
+            {},
+        )
+
+        assert result["success"] is False
+        assert result["error_code"] == "invalid_tool_arguments"
+        executor.assert_not_awaited()
+
+    @pytest.mark.asyncio
     async def test_execute_tool_executor_exception(self, registry):
         """Test handling of exceptions during tool execution."""
 
@@ -203,6 +255,33 @@ class TestToolRegistry:
 
         assert result["success"] is False
         assert "Something went wrong" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_execute_tool_executor_exception_rolls_back_shared_db_session(self, registry):
+        """A failed tool must not poison the worker session for later steps."""
+
+        async def failing_executor(params, context):
+            raise RuntimeError("database operation failed")
+
+        registry.register(
+            Tool(
+                name="failing_db_tool",
+                description="Fails after using the database",
+                parameters={},
+                executor=failing_executor,
+                category=ToolCategory.FILE_OPS,
+                state_serializable=True,
+                holds_external_state=False,
+            )
+        )
+        db = AsyncMock()
+
+        result = await registry.execute(
+            tool_name="failing_db_tool", parameters={}, context={"db": db}
+        )
+
+        assert result["success"] is False
+        db.rollback.assert_awaited_once()
 
     def test_tool_to_prompt_format(self, mock_tool_executor):
         """Test converting tool to prompt format."""

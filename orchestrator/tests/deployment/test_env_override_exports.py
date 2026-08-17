@@ -13,6 +13,7 @@ pytestmark = pytest.mark.mocked
 from uuid import uuid4
 
 from app.services.secret_manager_env import (
+    _apply_workspace_data_overrides,
     _resolve_via_exports,
     build_env_overrides,
     get_injected_env_vars_for_container,
@@ -328,6 +329,38 @@ class TestBuildEnvOverridesWithExports:
         result = await build_env_overrides(db, uuid4(), [backend])
 
         assert result[backend.id]["DB_URL"] == "pg://proj-postgres:5432"
+
+    @pytest.mark.asyncio
+    async def test_workspace_data_canonical_env_replaces_stale_agent_values(self):
+        """Platform-managed data settings must win over an agent-written config."""
+        backend = _make_container(
+            environment_vars={
+                "OPENSAIL_DATA_API_URL": "http://stale.invalid",
+                "OPENSAIL_DATA_KEY": "stale-key",
+                "KEEP_ME": "yes",
+            }
+        )
+        project = MagicMock()
+        project.owner_id = uuid4()
+        db = AsyncMock()
+        db.get = AsyncMock(return_value=project)
+        overrides = {backend.id: {**backend.environment_vars}}
+        canonical = {
+            "OPENSAIL_DATA_API_URL": "http://platform/api/data/v1",
+            "OPENSAIL_DATA_KEY": "wsk_anon_platform",
+            "VITE_OPENSAIL_DATA_KEY": "wsk_anon_platform",
+        }
+
+        with patch(
+            "app.services.workspace_data_env.compute_env_for_containers",
+            new=AsyncMock(return_value={backend.id: canonical}),
+        ):
+            await _apply_workspace_data_overrides(db, uuid4(), [backend], overrides)
+
+        assert overrides[backend.id]["OPENSAIL_DATA_API_URL"] == canonical["OPENSAIL_DATA_API_URL"]
+        assert overrides[backend.id]["OPENSAIL_DATA_KEY"] == canonical["OPENSAIL_DATA_KEY"]
+        assert overrides[backend.id]["VITE_OPENSAIL_DATA_KEY"] == canonical["VITE_OPENSAIL_DATA_KEY"]
+        assert overrides[backend.id]["KEEP_ME"] == "yes"
 
 
 class TestGetInjectedEnvVarsWithExports:

@@ -1437,6 +1437,46 @@ class DockerOrchestrator(BaseOrchestrator):
             **status,
         }
 
+    async def probe_container_http(
+        self,
+        project_slug: str,
+        project_id: UUID,
+        container_id: UUID,
+        container_name: str,
+        port: int | None,
+    ) -> dict[str, Any]:
+        """Probe the project through Traefik from the platform network.
+
+        ``*.localhost`` resolves on a developer's host, not reliably from the
+        orchestrator container.  Traefik is attached to every project network,
+        so reaching it by container name and supplying the public Host header
+        exercises the same route users receive without inventing a Docker
+        container name from the source directory.
+        """
+        _ = project_id, container_id, port
+        import httpx
+
+        service_name = self._sanitize_service_name(container_name)
+        hostname = f"{project_slug}-{service_name}.{self.settings.app_domain}"
+        public_url = f"http://{hostname}"
+        target = f"http://{self.settings.traefik_container_name}"
+
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                response = await client.get(target, headers={"Host": hostname})
+            return {
+                "healthy": response.status_code < 500,
+                "status_code": response.status_code,
+                "url": public_url,
+            }
+        except httpx.HTTPError as exc:
+            return {
+                "healthy": False,
+                "status_code": None,
+                "url": public_url,
+                "error": str(exc),
+            }
+
     # =========================================================================
     # ACTIVITY TRACKING (Database-based, consistent with K8s)
     # =========================================================================

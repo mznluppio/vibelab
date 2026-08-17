@@ -16,10 +16,16 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from ..worker import execute_agent_task, refresh_templates, send_webhook_callback
+from ..worker import (
+    execute_agent_task,
+    refresh_templates,
+    send_webhook_callback,
+    start_project_preview_task,
+)
 
 TASK_HANDLERS: dict[str, Callable[..., Any]] = {
     "execute_agent_task": execute_agent_task,
+    "start_project_preview_task": start_project_preview_task,
     "send_webhook_callback": send_webhook_callback,
     "refresh_templates": refresh_templates,
 }

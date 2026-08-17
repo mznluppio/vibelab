@@ -41,6 +41,7 @@ from ..registry import Tool, ToolCategory
 from ..retry_config import tool_retry
 from .edit_history import EDIT_HISTORY
 from .fuzzy_editor import EditError, EditResult, apply_edit, llm_repair
+from .integrity import verify_file_content
 
 logger = logging.getLogger(__name__)
 
@@ -165,6 +166,18 @@ class _PatchState:
         except Exception as exc:
             logger.error("[APPLY-PATCH] shell delete failed: %s", exc)
             return False
+
+    async def verify(self, rel_path: str, expected_content: str) -> tuple[bool, dict[str, Any]]:
+        return await verify_file_content(
+            self.orchestrator,
+            user_id=self.user_id,
+            project_id=self.project_id,
+            container_name=self.container_name,
+            file_path=rel_path,
+            expected_content=expected_content,
+            project_slug=self.project_slug,
+            subdir=self.container_directory,
+        )
 
 
 def _validate_entry(entry: dict[str, Any], index: int) -> _Change:
@@ -404,12 +417,16 @@ async def _phase2_apply(state: _PatchState, staged: list[_Change]) -> list[dict[
             ok = await state.write(change.path, change.content or "")
             if not ok:
                 raise RuntimeError(f"create: write_file returned False for {change.path}")
+            verified, integrity = await state.verify(change.path, change.content or "")
+            if not verified:
+                raise RuntimeError(f"create: write verification failed for {change.path}")
             applied.append(
                 {
                     "index": change.index,
                     "op": "create",
                     "path": change.path,
                     "status": "ok",
+                    "integrity": integrity,
                 }
             )
 
@@ -418,6 +435,9 @@ async def _phase2_apply(state: _PatchState, staged: list[_Change]) -> list[dict[
             ok = await state.write(change.path, change.new_content or "")
             if not ok:
                 raise RuntimeError(f"update: write_file returned False for {change.path}")
+            verified, integrity = await state.verify(change.path, change.new_content or "")
+            if not verified:
+                raise RuntimeError(f"update: write verification failed for {change.path}")
             applied.append(
                 {
                     "index": change.index,
@@ -426,6 +446,7 @@ async def _phase2_apply(state: _PatchState, staged: list[_Change]) -> list[dict[
                     "status": "ok",
                     "strategy": change.strategy,
                     "repair_applied": change.repair_applied,
+                    "integrity": integrity,
                 }
             )
 
@@ -454,6 +475,9 @@ async def _phase2_apply(state: _PatchState, staged: list[_Change]) -> list[dict[
             ok = await state.write(change.path, change.prev_content_at_source or "")
             if not ok:
                 raise RuntimeError(f"move: write_file returned False for {change.path}")
+            verified, integrity = await state.verify(change.path, change.prev_content_at_source or "")
+            if not verified:
+                raise RuntimeError(f"move: write verification failed for {change.path}")
             ok = await state.delete(change.source_path or "")
             if not ok:
                 raise RuntimeError(f"move: could not remove source {change.source_path}")
@@ -464,6 +488,7 @@ async def _phase2_apply(state: _PatchState, staged: list[_Change]) -> list[dict[
                     "path": change.path,
                     "from": change.source_path,
                     "status": "ok",
+                    "integrity": integrity,
                 }
             )
 
@@ -583,6 +608,7 @@ def register_apply_patch_tool(registry) -> None:
             state_serializable=True,
             # Patches applied atomically; no persistent patch session held.
             holds_external_state=False,
+            mutates_project=True,
             examples=[
                 (
                     '{"tool_name": "apply_patch", "parameters": {"cwd": "", '

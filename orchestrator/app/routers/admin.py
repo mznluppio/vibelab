@@ -1148,13 +1148,14 @@ async def update_agent(
         required_base_supplied = "required_base_id" in update_data
         required_base_id = update_data.pop("required_base_id", None)
         if required_base_supplied:
-            config = dict(agent.config or {})
+            from .marketplace import _merge_agent_config
+
             required_base = await _required_base_config(db, required_base_id)
-            if required_base is None:
-                config.pop("required_base", None)
-            else:
-                config["required_base"] = required_base
-            agent.config = config or None
+            agent.config = _merge_agent_config(
+                agent.config,
+                {"required_base": required_base},
+                track_local_overrides=True,
+            )
         for field, value in update_data.items():
             setattr(agent, field, value)
 

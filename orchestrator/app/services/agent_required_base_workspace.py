@@ -33,6 +33,7 @@ class RequiredBaseWorkspaceResult:
     project: Project
     base: MarketplaceBase
     created: bool
+    setup_task_id: str | None = None
 
 
 async def resolve_required_base(
@@ -134,6 +135,35 @@ async def create_project_from_required_base(
     return project
 
 
+async def begin_project_from_required_base(
+    db,
+    *,
+    user_id: UUID,
+    base: MarketplaceBase,
+    name: str,
+) -> tuple[Project, str | None]:
+    """Start the normal Base setup pipeline without waiting for it.
+
+    The setup task already owns filesystem/template materialisation.  Agent
+    workers must not spend their execution slot polling it; callers can defer
+    their own task until the returned task reaches a terminal state.
+    """
+    from ..models_auth import User
+    from ..routers.projects import create_project_from_payload
+    from ..schemas import ProjectCreate
+
+    user = await db.get(User, user_id)
+    if user is None:
+        raise ValueError(f"User {user_id} not found")
+
+    result = await create_project_from_payload(
+        ProjectCreate(name=name, source_type="base", base_id=base.id),
+        current_user=user,
+        db=db,
+    )
+    return result["project"], result.get("task_id")
+
+
 async def ensure_chat_project_for_required_base(
     db,
     *,
@@ -141,6 +171,7 @@ async def ensure_chat_project_for_required_base(
     chat_id: UUID,
     required_base_config: Any,
     project_name: str | None = None,
+    wait_for_setup: bool = True,
 ) -> RequiredBaseWorkspaceResult | None:
     """Ensure a direct chat has a project matching its agent's required Base."""
     if not required_base_config:
@@ -165,13 +196,24 @@ async def ensure_chat_project_for_required_base(
         )
 
     name = (project_name or "").strip() or f"New {base.name} project"
-    created = await create_project_from_required_base(
-        db, user_id=user_id, base=base, name=name
-    )
+    if wait_for_setup:
+        created = await create_project_from_required_base(
+            db, user_id=user_id, base=base, name=name
+        )
+        setup_task_id = None
+    else:
+        created, setup_task_id = await begin_project_from_required_base(
+            db, user_id=user_id, base=base, name=name
+        )
     chat.project_id = created.id
     await db.commit()
     await db.refresh(created)
-    return RequiredBaseWorkspaceResult(project=created, base=base, created=True)
+    return RequiredBaseWorkspaceResult(
+        project=created,
+        base=base,
+        created=True,
+        setup_task_id=setup_task_id,
+    )
 
 
 __all__ = [
@@ -179,6 +221,7 @@ __all__ = [
     "RequiredBaseWorkspaceError",
     "RequiredBaseWorkspaceResult",
     "create_project_from_required_base",
+    "begin_project_from_required_base",
     "ensure_chat_project_for_required_base",
     "is_default_chat_workspace",
     "project_uses_base",

@@ -10,7 +10,7 @@ stop, restart, apply config) moved out into dedicated tools:
 What remains here is pure observation:
 
   * ``status``          — list containers with running state and URLs
-  * ``container_logs``  — tail the last 100 lines from a container
+  * ``container_logs``  — tail recent lines from the current runtime window
   * ``health_check``    — HTTP probe against a container's dev-server port
 """
 
@@ -94,17 +94,6 @@ async def _get_available_names(db, project_id) -> list[str]:
     return [row[0] for row in result.all()]
 
 
-def _is_local_mode() -> bool:
-    """Return True when running in desktop/local mode (no docker compose, no kubectl)."""
-    from ....config import get_settings
-    from ....services.orchestration import is_kubernetes_mode
-
-    if is_kubernetes_mode():
-        return False
-    mode = (get_settings().deployment_mode or "").lower()
-    return mode in ("desktop", "local")
-
-
 async def _fetch_project(db, project_id):
     """Return the Project model for *project_id*, or ``None``."""
     from sqlalchemy import select
@@ -142,6 +131,38 @@ async def _fetch_connections(db, project_id):
     return result.scalars().all()
 
 
+async def _runtime_status_for_container(
+    project_id, container, status_map: dict[str, Any]
+) -> dict[str, Any]:
+    """Find a runtime status without deriving a Docker name from a directory.
+
+    Kubernetes publishes the database container id, while Docker publishes the
+    Compose service key.  Looking up both contracts keeps this observation tool
+    runtime-neutral and, crucially, avoids treating root-directory containers
+    as a UUID-prefixed service.
+    """
+    container_id = str(container.id)
+    for info in status_map.values():
+        if info.get("container_id") == container_id:
+            return info
+
+    from ....services.project_setup.naming import sanitize_name
+
+    candidates = [
+        getattr(container, "name", None),
+        sanitize_name(getattr(container, "name", "")),
+        getattr(container, "container_name", None),
+    ]
+    for key in candidates:
+        if key and key in status_map:
+            return status_map[key]
+
+    # K8s resources historically use the resolved directory as their map key.
+    # It is only a final compatibility fallback, never a Docker container name.
+    dir_key = await resolve_container_dir(project_id, container)
+    return status_map.get(dir_key, {})
+
+
 # ---------------------------------------------------------------------------
 # Action implementations
 # ---------------------------------------------------------------------------
@@ -161,22 +182,10 @@ async def _action_status(context: dict[str, Any]) -> dict[str, Any]:
     orchestrator = get_orchestrator()
     status = await orchestrator.get_project_status(project_slug, project_id)
 
-    from ....services.compute_manager import resolve_k8s_container_dir
-
     status_map = status.get("containers", {})
     container_list = []
     for container in containers:
-        cid = str(container.id)
-        dir_key = resolve_k8s_container_dir(container)
-        container_status: dict[str, Any] = {}
-        # Prefer matching by container_id in values (K8s / local modes set this).
-        for _key, info in status_map.items():
-            if info.get("container_id") == cid:
-                container_status = info
-                break
-        # Fallback: Docker compose sets service_name as the map key directly.
-        if not container_status:
-            container_status = status_map.get(dir_key, {})
+        container_status = await _runtime_status_for_container(project_id, container, status_map)
 
         container_list.append(
             {
@@ -494,10 +503,6 @@ async def _action_reload_config(context: dict[str, Any]) -> dict[str, Any]:
 async def _action_container_logs(container_name: str, context: dict[str, Any]) -> dict[str, Any]:
     db = context["db"]
     project_id = context["project_id"]
-    project_slug = context.get("project_slug", "")
-
-    from ....services.orchestration import is_kubernetes_mode
-
     container = await lookup_container_by_name(db, project_id, container_name)
     if not container:
         available = await _get_available_names(db, project_id)
@@ -507,68 +512,47 @@ async def _action_container_logs(container_name: str, context: dict[str, Any]) -
             suggestion=f"Available containers: {available}",
         )
 
-    dir_key = await resolve_container_dir(project_id, container)
+    from ....services.orchestration import get_orchestrator
 
-    if _is_local_mode():
-        # Local/desktop: read from the PTY session history — no docker or kubectl.
-        from ....services.orchestration.local import _LOCAL_DEV_SERVERS, PTY_SESSIONS
-
-        cid = str(container.id)
-        sid = _LOCAL_DEV_SERVERS.get(cid) or _LOCAL_DEV_SERVERS.get(container_name)
-        if not sid:
-            return error_output(
-                message=f"No running session found for '{container_name}'",
-                suggestion="Start the container first with the 'restart_container' action",
-            )
-        try:
-            raw = PTY_SESSIONS.read_history(sid, max_bytes=_MAX_LOG_BYTES)
-            logs_text = raw.decode("utf-8", errors="replace")
-        except KeyError:
-            logs_text = "(session ended)"
-        return success_output(
-            message=f"Last logs for '{container_name}'",
-            container_name=container_name,
-            logs=logs_text,
-        )
-
-    if is_kubernetes_mode():
-        namespace = f"proj-{project_id}"
-        pod_prefix = f"dev-{dir_key}"
-        cmd = (
-            f"kubectl --context=tesslate logs -n {namespace} "
-            f"-l app={pod_prefix} --tail={_LOG_TAIL_LINES} --timestamps"
-        )
-    else:
-        # Docker Compose service naming uses the directory key, not the container name.
-        service = f"{project_slug}-{dir_key}-1"
-        cmd = f"docker logs {service} --tail={_LOG_TAIL_LINES}"
-
+    # The orchestrator owns runtime naming (Docker SDK, Kubernetes labels or
+    # local PTY).  Read a bounded initial window instead of invoking docker or
+    # kubectl from the agent worker.
+    stream = get_orchestrator().stream_logs(
+        project_id=project_id,
+        user_id=context["user_id"],
+        container_id=container.id,
+        tail_lines=_LOG_TAIL_LINES,
+    )
+    lines: list[str] = []
     try:
-        proc = await asyncio.create_subprocess_shell(
-            cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=15)
+        async with asyncio.timeout(2.0):
+            async for line in stream:
+                lines.append(str(line))
+                if sum(len(item.encode("utf-8", errors="replace")) for item in lines) >= _MAX_LOG_BYTES:
+                    break
     except TimeoutError:
-        return error_output(
-            message=f"Timed out fetching logs for '{container_name}'",
-            suggestion="The container may be unresponsive — try restarting it",
-        )
+        # A live log stream normally stays open; timeout just closes the
+        # bounded observation window and returns everything received so far.
+        pass
     except Exception as exc:
         return error_output(
             message=f"Failed to fetch logs: {exc}",
             suggestion="Ensure the container is running",
         )
+    finally:
+        aclose = getattr(stream, "aclose", None)
+        if aclose is not None:
+            try:
+                await aclose()
+            except Exception:
+                logger.debug("Could not close log stream", exc_info=True)
 
-    output = (stdout or b"") + (stderr or b"")
-    if len(output) > _MAX_LOG_BYTES:
-        output = output[-_MAX_LOG_BYTES:]
-
-    logs_text = output.decode("utf-8", errors="replace")
+    logs_text = "".join(lines)
+    if len(logs_text.encode("utf-8", errors="replace")) > _MAX_LOG_BYTES:
+        logs_text = logs_text[-_MAX_LOG_BYTES:]
 
     return success_output(
-        message=f"Last logs for '{container_name}'",
+        message=f"Recent logs for '{container_name}' (up to {_LOG_TAIL_LINES} lines)",
         container_name=container_name,
         logs=logs_text,
     )
@@ -579,8 +563,6 @@ async def _action_health_check(container_name: str, context: dict[str, Any]) -> 
     project_id = context["project_id"]
     project_slug = context.get("project_slug", "")
 
-    from ....services.orchestration import is_kubernetes_mode
-
     container = await lookup_container_by_name(db, project_id, container_name)
     if not container:
         available = await _get_available_names(db, project_id)
@@ -590,48 +572,24 @@ async def _action_health_check(container_name: str, context: dict[str, Any]) -> 
             suggestion=f"Available containers: {available}",
         )
 
-    port = container.effective_port
-    dir_key = await resolve_container_dir(project_id, container)
+    from ....services.orchestration import get_orchestrator
 
-    if is_kubernetes_mode():
-        namespace = f"proj-{project_id}"
-        url = f"http://dev-{dir_key}.{namespace}.svc.cluster.local:{port}"
-    elif _is_local_mode():
-        url = f"http://localhost:{port}" if port else ""
-    else:
-        # Docker Compose: service hostname uses dir_key (same as service name).
-        url = f"http://{project_slug}-{dir_key}.localhost"
-
-    import httpx
-
-    try:
-        async with httpx.AsyncClient(timeout=5) as client:
-            resp = await client.get(url)
-        return success_output(
-            message=f"Health check for '{container_name}'",
-            container_name=container_name,
-            healthy=resp.status_code < 500,
-            status_code=resp.status_code,
-            url=url,
-        )
-    except httpx.ConnectError as exc:
-        return success_output(
-            message=f"Health check for '{container_name}' — connection refused",
-            container_name=container_name,
-            healthy=False,
-            status_code=None,
-            url=url,
-            error=str(exc),
-        )
-    except Exception as exc:
-        return success_output(
-            message=f"Health check for '{container_name}' — error",
-            container_name=container_name,
-            healthy=False,
-            status_code=None,
-            url=url,
-            error=str(exc),
-        )
+    probe = await get_orchestrator().probe_container_http(
+        project_slug=project_slug,
+        project_id=project_id,
+        container_id=container.id,
+        container_name=container.name,
+        port=container.effective_port,
+    )
+    return success_output(
+        message=(
+            f"Health check for '{container_name}'"
+            if probe.get("healthy")
+            else f"Health check for '{container_name}' — unavailable"
+        ),
+        container_name=container_name,
+        **probe,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -733,7 +691,8 @@ def register_project_control_tools(registry):
                 "compute_tier / active_compute_pod / environment_status / "
                 "per-container readiness — call this before bash_exec with "
                 "tier='environment' to confirm the env is up), "
-                "'container_logs' (tail 100 lines), 'health_check' (HTTP "
+                "'container_logs' (up to 100 lines), "
+                "'health_check' (HTTP "
                 "probe). For starting/stopping use project_start/project_stop/"
                 "project_restart or container_start/container_stop/"
                 "container_restart. For config changes use apply_setup_config."

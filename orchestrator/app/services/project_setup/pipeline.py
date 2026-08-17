@@ -10,15 +10,18 @@ Steps:
 3. Resolve project configuration (.tesslate/config.json → fallback).
 4. Place files into Docker volume or K8s btrfs volume.
 5. Initialize git in the project root if no `.git/` already exists.
+6. (Template config only) Sync config into Container DB records so agents
+   and preview tasks have runnable containers immediately.
 
-Container creation is deferred to the Setup page where the user
-can review and adjust the config before committing.
+Container creation is still deferred for fallback configs, where the
+Setup page must first determine a valid startup command.
 """
 
 from __future__ import annotations
 
 import asyncio
 import io
+import json
 import logging
 import os
 import shutil
@@ -32,7 +35,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...models import MarketplaceBase, Project
-from ...schemas import ProjectCreate
+from ...schemas import ProjectCreate, TesslateConfigCreate
+from ..base_config_parser import serialize_config_to_json
+from ..config_sync import ConfigSyncError, sync_project_config
 from .config_resolver import (
     fallback_config,
     resolve_config,
@@ -360,9 +365,44 @@ async def setup_project(
                 "[PIPELINE] git init skipped (best-effort): %s", exc
             )
 
-        # Container creation deferred to Setup page
+        # Step 6: For real template configs, materialize Container DB rows now
+        # so agents and preview tasks have runnable containers immediately.
+        # Fallback configs are still deferred to the Setup page.
         task.update_progress(90, 100, "Finalizing...")
         primary_id, all_ids = None, []
+        if config_from_template:
+            try:
+                payload = json.loads(serialize_config_to_json(config))
+                if not payload.get("primaryApp") and config.apps:
+                    payload["primaryApp"] = next(iter(config.apps))
+                config_create = TesslateConfigCreate(**payload)
+                response = await sync_project_config(
+                    db, db_project, config_create, user_id
+                )
+                primary_id = response.primary_container_id
+                all_ids = response.container_ids
+                logger.info(
+                    "[PIPELINE] Synced template config to containers for project %s: "
+                    "primary=%s, total=%d",
+                    db_project.id,
+                    primary_id,
+                    len(all_ids),
+                )
+            except ConfigSyncError as exc:
+                logger.warning(
+                    "[PIPELINE] Template config sync failed for project %s: %s — "
+                    "continuing without containers",
+                    db_project.id,
+                    exc,
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "[PIPELINE] Unexpected config sync error for project %s: %s — "
+                    "continuing without containers",
+                    db_project.id,
+                    exc,
+                    exc_info=True,
+                )
 
         # Update project metadata — cache_node is NOT written (Hub is truth).
         if placed.volume_id:

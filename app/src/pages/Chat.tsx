@@ -31,6 +31,7 @@ export default function Chat() {
   const { teamSwitchKey } = useTeam();
   // Agent state
   const [agents, setAgents] = useState<ChatAgent[]>([]);
+  const [isLoadingAgents, setIsLoadingAgents] = useState(true);
   const [currentAgent, setCurrentAgent] = useState<ChatAgent>({
     id: 'default',
     name: 'Agent',
@@ -179,6 +180,7 @@ export default function Chat() {
   // Load user's agents (same pattern as Project.tsx) — re-fetch on team switch
   useEffect(() => {
     let cancelled = false;
+    setIsLoadingAgents(true);
     marketplaceApi
       .getMyAgents()
       .then((libraryData) => {
@@ -204,7 +206,12 @@ export default function Chat() {
           setCurrentAgent(agentList[0]);
         }
       })
-      .catch(() => {});
+      .catch(() => {
+        if (!cancelled) setAgents([]);
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingAgents(false);
+      });
     return () => {
       cancelled = true;
     };
@@ -257,9 +264,13 @@ export default function Chat() {
   // Handle send message — sendMessage handles session creation via onSessionNeeded
   const handleSendMessage = useCallback(
     async (message: string, attachments?: SerializedAttachment[], mentions?: ChatMention[]) => {
-      sendMessage(message, undefined, attachments, mentions);
+      if (isLoadingAgents || !currentAgent.backendId) {
+        toast.error('An agent must finish loading before you can send a message.');
+        return;
+      }
+      await sendMessage(message, undefined, attachments, mentions);
     },
-    [sendMessage]
+    [sendMessage, isLoadingAgents, currentAgent.backendId]
   );
 
   // Handle model change
@@ -435,6 +446,7 @@ export default function Chat() {
 
   const sessionTitle = currentSession?.title || 'Agents';
   const isLanding = messages.length === 0 && !isExecuting && !isLoadingHistory;
+  const inputDisabled = isLoadingAgents || !currentAgent.backendId;
 
   return (
     <div className="flex h-full w-full">
@@ -500,7 +512,7 @@ export default function Chat() {
                 currentAgent={currentAgent}
                 onSelectAgent={handleSelectAgent}
                 onSendMessage={handleSendMessage}
-                disabled={isLoadingSessions}
+                disabled={isLoadingSessions || inputDisabled}
                 isExecuting={isExecuting}
                 onStop={stopExecution}
                 onClearHistory={clearMessages}
@@ -542,10 +554,11 @@ export default function Chat() {
                 <button
                   key={s}
                   onClick={() => handleSendMessage(s)}
+                  disabled={inputDisabled}
                   className="px-3 py-1.5 text-[11px] rounded-full border border-[var(--border)]
                              text-[var(--text-muted)] hover:text-[var(--text)]
                              hover:border-[var(--border-hover)] hover:bg-[var(--surface-hover)]
-                             transition-colors"
+                             transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {s}
                 </button>
@@ -587,7 +600,7 @@ export default function Chat() {
                 currentAgent={currentAgent}
                 onSelectAgent={handleSelectAgent}
                 onSendMessage={handleSendMessage}
-                disabled={isLoadingHistory || isLoadingSessions}
+                disabled={isLoadingHistory || isLoadingSessions || inputDisabled}
                 isExecuting={isExecuting}
                 onStop={stopExecution}
                 onClearHistory={clearMessages}

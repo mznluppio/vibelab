@@ -642,15 +642,14 @@ async def get_project_messages(
         redis = await get_redis_client()
         pubsub = get_pubsub()
 
-        # If the project lock is held, the worker is genuinely running —
-        # don't heal any messages for this project.
-        lock_holder = await pubsub.get_project_lock(project_id) if pubsub else None
-
         healed_any = False
         for msg in stale_in_progress:
             task_id = (msg.message_metadata or {}).get("task_id")
 
-            # Skip healing if this task's project lock is still held
+            # The worker owns per-chat locks, not project locks.  A page
+            # refresh must never turn a live placeholder into an error just
+            # because another API pod cannot see its in-memory task state.
+            lock_holder = await pubsub.get_chat_lock(str(chat.id)) if pubsub else None
             if lock_holder and task_id and lock_holder == task_id:
                 continue
 
@@ -1884,13 +1883,19 @@ async def agent_chat_stream(
                     yield f"data: {json.dumps(error_event)}\n\n"
                     return
 
+            # The queued worker owns project/Base preparation.  Do not wait
+            # for template setup in this SSE request when an ARQ worker is
+            # available: it can otherwise remain silent for several minutes
+            # before the client even receives a task id.
+            arq_pool = await _get_arq_pool()
+
             # A standalone chat starts on the lightweight ``~workspace~``.
             # If its selected agent declares a Base, promote this chat to a
             # real project from that Base before either the queued or inline
             # runner receives project tools. The service never overwrites a
             # user-selected project with a different Base.
             required_base_config = (agent_model.config or {}).get("required_base")
-            if required_base_config:
+            if required_base_config and not arq_pool:
                 from ..services.agent_required_base_workspace import (
                     RequiredBaseWorkspaceError,
                     ensure_chat_project_for_required_base,
@@ -1930,48 +1935,58 @@ async def agent_chat_stream(
                     if required_workspace.created:
                         yield f"data: {json.dumps({'type': 'workspace_attach_resumed', 'data': {'chat_id': str(chat.id), 'project_id': str(project.id), 'project_name': project.name, 'project_slug': project.slug, 'required_base_name': required_workspace.base.name, 'automatic': True}})}\n\n"
 
-            # 3. Create model adapter
-            model_adapter = await create_model_adapter(
-                model_name=model_name, user_id=current_user.id, db=db
-            )
-
-            # 4. Create view-scoped tool registry if view_context is provided
-            tools_override = None
-            if request.view_context:
-                from ..agent.tools.view_context import ViewContext
-                from ..agent.tools.view_scoped_factory import create_view_scoped_registry
-
-                view_context = ViewContext.from_string(request.view_context)
-                tools_override = create_view_scoped_registry(
-                    view_context=view_context,
-                    project_id=request.project_id,
-                    container_id=request.container_id,
-                    base_tool_names=(
-                        agent_model.tools if isinstance(getattr(agent_model, "tools", None), list) else None
-                    ),
-                )
-                logger.info(
-                    f"[SSE-AGENT] Created view-scoped registry for view: {view_context.value}"
+            # The queued worker is the sole owner of runner construction and
+            # rich project context. Repeating that preparation in this SSE
+            # request made edits slower while producing a subtly different
+            # context from the one that actually executed. The local fallback
+            # still builds the runner here because no worker is available.
+            model_adapter = None
+            agent_instance = None
+            if not arq_pool:
+                # 3. Create model adapter
+                model_adapter = await create_model_adapter(
+                    model_name=model_name, user_id=current_user.id, db=db
                 )
 
-            # 5. Create agent via adapter
-            from ..config import get_settings as _get_settings
-            from ..worker import _create_agent_runner
+                # 4. Create view-scoped tool registry if view_context is provided
+                tools_override = None
+                if request.view_context:
+                    from ..agent.tools.view_context import ViewContext
+                    from ..agent.tools.view_scoped_factory import create_view_scoped_registry
 
-            agent_instance = await _create_agent_runner(
-                agent_model=agent_model,
-                model_adapter=model_adapter,
-                tools_override=tools_override,
-                settings=_get_settings(),
-            )
+                    view_context = ViewContext.from_string(request.view_context)
+                    tools_override = create_view_scoped_registry(
+                        view_context=view_context,
+                        project_id=request.project_id,
+                        container_id=request.container_id,
+                        base_tool_names=(
+                            agent_model.tools
+                            if isinstance(getattr(agent_model, "tools", None), list)
+                            else None
+                        ),
+                    )
+                    logger.info(
+                        f"[SSE-AGENT] Created view-scoped registry for view: {view_context.value}"
+                    )
 
-            # Set max_iterations when supported by the runner (None = unlimited; submodule uses 0)
-            if hasattr(agent_instance, "max_iterations"):
-                agent_instance.max_iterations = request.max_iterations or 0
+                # 5. Create agent via adapter
+                from ..config import get_settings as _get_settings
+                from ..worker import _create_agent_runner
+
+                agent_instance = await _create_agent_runner(
+                    agent_model=agent_model,
+                    model_adapter=model_adapter,
+                    tools_override=tools_override,
+                    settings=_get_settings(),
+                )
+
+                # Set max_iterations when supported by the runner (None = unlimited; submodule uses 0)
+                if hasattr(agent_instance, "max_iterations"):
+                    agent_instance.max_iterations = request.max_iterations or 0
 
             # Build project context and inject TESSLATE.md for the system prompt
             project_context = {}
-            if project:
+            if project and not arq_pool:
                 project_context = {
                     "project_name": project.name,
                     "project_description": project.description,
@@ -1990,7 +2005,7 @@ async def agent_chat_stream(
             # Note: container_directory was already captured during initial container lookup above
             from ..services.agent_context import build_tier_snapshot
 
-            _tier_snapshot = await build_tier_snapshot(project, db)
+            _tier_snapshot = await build_tier_snapshot(project, db) if not arq_pool else {}
             # Pre-split @-mentions for both the queue (payload) and in-process
             # (context) paths. The worker rebuilds context from the payload,
             # so the queue path picks these up via payload.mention_*. The
@@ -2016,16 +2031,17 @@ async def agent_chat_stream(
             # mirrors the WebSocket branch above. The worker path enriches
             # again on the worker pod from payload.mention_* so the queue
             # round-trip stays stateless.
-            _run_ctx = await enrich_project_context_for_run(
-                db=db,
-                project=project,
-                user_id=current_user.id,
-                mentions=MentionPayload.from_lists(
-                    data_collection_refs=_ctx_mention_data_refs,
-                    project_ids=_ctx_mention_project_ids,
-                ),
-            )
-            _run_ctx.apply(project_context)
+            if not arq_pool:
+                _run_ctx = await enrich_project_context_for_run(
+                    db=db,
+                    project=project,
+                    user_id=current_user.id,
+                    mentions=MentionPayload.from_lists(
+                        data_collection_refs=_ctx_mention_data_refs,
+                        project_ids=_ctx_mention_project_ids,
+                    ),
+                )
+                _run_ctx.apply(project_context)
 
             context = {
                 "user_id": current_user.id,
@@ -2062,7 +2078,7 @@ async def agent_chat_stream(
             # ================================================================
             # Dispatch: ARQ Worker (if Redis available) or In-Process
             # ================================================================
-            arq_pool = await _get_arq_pool()
+            # Reuse the capability check performed before Base preparation.
             assistant_message = None  # initialized here so except block can reference it
 
             if arq_pool:
@@ -2160,15 +2176,13 @@ async def agent_chat_stream(
                     mention_project_ids=_mention_project_ids,
                 )
 
-                # Enqueue the job
-                await get_task_queue().enqueue("execute_agent_task", payload.to_dict())
-                logger.info(f"[SSE-AGENT] Enqueued agent task {agent_task_id} to ARQ worker")
-
-                # Register task with TaskManager for cross-pod visibility
+                # Persist the queued task BEFORE enqueueing. A fast worker may
+                # otherwise publish its terminal state before the Redis task
+                # key exists, leaving the UI with a permanent spinner.
                 from ..services.task_manager import TaskStatus, get_task_manager
 
                 task_manager = get_task_manager()
-                task_manager.create_task(
+                await task_manager.create_task_async(
                     user_id=current_user.id,
                     task_type="agent_execution",
                     metadata={
@@ -2178,7 +2192,23 @@ async def agent_chat_stream(
                     },
                     task_id=agent_task_id,
                 )
+                try:
+                    await get_task_queue().enqueue("execute_agent_task", payload.to_dict())
+                except Exception as enqueue_error:
+                    await task_manager.update_task_status(
+                        agent_task_id, TaskStatus.FAILED, error=str(enqueue_error)
+                    )
+                    from ..services.concurrency_limits import release_slot
+
+                    await release_slot(
+                        user_id=str(current_user.id),
+                        project_id=str(request.project_id) if request.project_id else None,
+                        task_id=agent_task_id,
+                    )
+                    yield f"data: {json.dumps({'type': 'error', 'data': {'message': 'Unable to queue the agent task. Please retry.'}})}\n\n"
+                    return
                 await task_manager.update_task_status(agent_task_id, TaskStatus.RUNNING)
+                logger.info(f"[SSE-AGENT] Enqueued agent task {agent_task_id} to ARQ worker")
 
                 # Subscribe to Redis Pub/Sub and relay events to SSE
                 pubsub = get_pubsub()
@@ -2190,28 +2220,20 @@ async def agent_chat_stream(
                         async for event in pubsub.subscribe_agent_events(agent_task_id):
                             event_type = event.get("type", "unknown")
                             if event_type == "done":
-                                # Worker finished — don't forward "done" meta-event
+                                # The worker owns the terminal status.  Forward
+                                # it so reconnecting clients can distinguish a
+                                # success, failure, and cancellation.
+                                yield f"data: {json.dumps(event)}\n\n"
                                 break
                             yield f"data: {json.dumps(event)}\n\n"
                     except (asyncio.CancelledError, GeneratorExit):
                         # Client disconnected (page refresh or cancel).
-                        # Mark COMPLETED so the local TaskManager cache is clean.
-                        # If the worker is still genuinely running,
-                        # get_active_agent_task has a project-lock fallback
-                        # that detects the worker is alive and returns the task.
                         logger.info(
                             f"[SSE-AGENT] Client disconnected from task {agent_task_id} "
                             f"— agent continues running in worker"
                         )
-                        with contextlib.suppress(Exception):
-                            await task_manager.update_task_status(
-                                agent_task_id, TaskStatus.COMPLETED
-                            )
                         return
 
-                # Worker finished — mark task COMPLETED so get_active_agent_task
-                # returns null when the project is reopened.
-                await task_manager.update_task_status(agent_task_id, TaskStatus.COMPLETED)
                 logger.info(f"[SSE-AGENT] Worker-based streaming complete for task {agent_task_id}")
 
             else:
@@ -2594,9 +2616,9 @@ async def subscribe_agent_events(
                         break
             else:
                 async for event in pubsub.subscribe_agent_events(task_id):
+                    yield f"data: {json.dumps(event)}\n\n"
                     if event.get("type") == "done":
                         break
-                    yield f"data: {json.dumps(event)}\n\n"
         except (asyncio.CancelledError, GeneratorExit):
             return
 

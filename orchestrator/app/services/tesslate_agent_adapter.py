@@ -86,7 +86,12 @@ class TesslateAgentAdapter:
                 try:
                     await event_sink(event)
                 except Exception as exc:
-                    logger.debug("event_sink raised; swallowing: %s", exc)
+                    # Progressive persistence is part of the execution
+                    # contract, not optional telemetry.  Continuing after a
+                    # fatal sink failure can spend credits and modify files
+                    # while the user no longer has a recoverable task record.
+                    logger.exception("event_sink failed; stopping agent turn: %s", exc)
+                    raise
             yield event
 
 

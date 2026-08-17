@@ -753,7 +753,7 @@ if [ -f "bun.lock" ] || [ -f "bun.lockb" ]; then
     bun install --frozen-lockfile 2>&1 || echo "[CLONE] bun install completed with warnings"
 elif [ -f "pnpm-lock.yaml" ]; then
     echo "[CLONE] Installing Node.js dependencies with pnpm..."
-    pnpm install --frozen-lockfile 2>&1 || echo "[CLONE] pnpm install completed with warnings"
+    pnpm install --frozen-lockfile --config.dangerouslyAllowAllBuilds=true 2>&1 || echo "[CLONE] pnpm install completed with warnings"
 elif [ -f "package.json" ]; then
     echo "[CLONE] Installing Node.js dependencies with npm..."
     npm install --prefer-offline --no-audit 2>&1 || echo "[CLONE] npm install completed with warnings"
@@ -1121,7 +1121,7 @@ for dir in $DIRS; do
     cd "/workspace/$dir"
     if [ -f package-lock.json ]; then npm ci
     elif [ -f yarn.lock ]; then yarn install --frozen-lockfile
-    elif [ -f pnpm-lock.yaml ]; then pnpm install --frozen-lockfile
+    elif [ -f pnpm-lock.yaml ]; then pnpm install --frozen-lockfile --config.dangerouslyAllowAllBuilds=true
     elif [ -f bun.lockb ] || [ -f bun.lock ]; then bun install
     elif [ -f package.json ]; then npm install
     elif [ -f requirements.txt ]; then pip install -r requirements.txt

@@ -107,7 +107,16 @@ async def _seed(maker, fake_user_id):
     from app.models import MarketplaceAgent, UserPurchasedAgent
 
     system_agent = MarketplaceAgent(**_make_agent(slug="librarian", is_system=True))
-    regular_agent = MarketplaceAgent(**_make_agent(slug="tesslate-agent", is_system=False))
+    regular_agent = MarketplaceAgent(
+        **_make_agent(slug="tesslate-agent", is_system=False),
+        config={
+            "required_base": {
+                "id": "base-id",
+                "slug": "nextjs-16",
+                "name": "Next.js 16",
+            }
+        },
+    )
 
     async with maker() as s:
         s.add(system_agent)
@@ -131,7 +140,7 @@ async def _seed(maker, fake_user_id):
 
 
 def test_my_agents_excludes_system_agents(db_setup) -> None:
-    """GET /my-agents must not return is_system=True agents."""
+    """GET /my-agents excludes system agents and returns editable config."""
     app, maker, _engine, fake_user = db_setup
     asyncio.run(_seed(maker, fake_user.id))
 
@@ -139,9 +148,16 @@ def test_my_agents_excludes_system_agents(db_setup) -> None:
         resp = client.get("/api/marketplace/my-agents")
 
     assert resp.status_code == 200
-    slugs = {a["slug"] for a in resp.json()["agents"]}
+    agents = resp.json()["agents"]
+    slugs = {a["slug"] for a in agents}
     assert "tesslate-agent" in slugs
     assert "librarian" not in slugs
+    regular_agent = next(agent for agent in agents if agent["slug"] == "tesslate-agent")
+    assert regular_agent["config"]["required_base"] == {
+        "id": "base-id",
+        "slug": "nextjs-16",
+        "name": "Next.js 16",
+    }
 
 
 def test_browse_agents_excludes_system_agents(db_setup) -> None:

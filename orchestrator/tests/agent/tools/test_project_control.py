@@ -279,6 +279,32 @@ class TestStatusAction:
         api = next(c for c in result["containers"] if c["name"] == "api")
         assert api["status"] == "stopped"
 
+    @pytest.mark.asyncio
+    async def test_status_matches_docker_service_not_root_directory_key(
+        self, project_ops_context, container_a
+    ):
+        """A root app maps to its Compose service, never its UUID directory key."""
+        container_a.directory = "."
+        project_ops_context["db"].execute = AsyncMock(return_value=_scalars_all([container_a]))
+        mock_orch = Mock()
+        mock_orch.get_project_status = AsyncMock(
+            return_value={
+                "status": "running",
+                "containers": {
+                    "frontend": {
+                        "running": True,
+                        "url": "http://test-project-abc123-frontend.localhost",
+                    }
+                },
+            }
+        )
+
+        with patch(_ORCH_GET, return_value=mock_orch):
+            result = await project_control_executor({"action": "status"}, project_ops_context)
+
+        assert result["containers"][0]["status"] == "running"
+        assert result["containers"][0]["url"].endswith("-frontend.localhost")
+
 
 # ---------------------------------------------------------------------------
 # apply_setup_config
@@ -425,7 +451,7 @@ class TestApplySetupConfig:
         assert result["success"] is True
         assert result["container_ids"] == ["uuid-1", "uuid-2"]
         assert result["primary_container_id"] == "uuid-1"
-        assert result["next_tool"] == "project_start"
+        assert result["next_tool"] == "platform_preview"
 
 
 # ---------------------------------------------------------------------------
@@ -693,18 +719,12 @@ class TestHealthCheckAction:
             return_value=_mock_scalar_one_or_none(container_a)
         )
 
-        mock_resp = Mock()
-        mock_resp.status_code = 200
+        mock_orch = Mock()
+        mock_orch.probe_container_http = AsyncMock(
+            return_value={"healthy": True, "status_code": 200, "url": "http://frontend.localhost"}
+        )
 
-        mock_client = AsyncMock()
-        mock_client.get = AsyncMock(return_value=mock_resp)
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
-
-        with (
-            patch(_ORCH_IS_K8S, return_value=False),
-            patch("httpx.AsyncClient", return_value=mock_client),
-        ):
+        with patch(_ORCH_GET, return_value=mock_orch):
             result = await project_control_executor(
                 {"action": "health_check", "container_name": "frontend"},
                 project_control_context,
@@ -713,6 +733,13 @@ class TestHealthCheckAction:
         assert result["success"] is True
         assert result["healthy"] is True
         assert result["status_code"] == 200
+        mock_orch.probe_container_http.assert_awaited_once_with(
+            project_slug=project_control_context["project_slug"],
+            project_id=project_control_context["project_id"],
+            container_id=container_a.id,
+            container_name="frontend",
+            port=3000,
+        )
 
     @pytest.mark.asyncio
     async def test_health_check_unhealthy_500(self, project_control_context, container_a):
@@ -720,18 +747,12 @@ class TestHealthCheckAction:
             return_value=_mock_scalar_one_or_none(container_a)
         )
 
-        mock_resp = Mock()
-        mock_resp.status_code = 500
+        mock_orch = Mock()
+        mock_orch.probe_container_http = AsyncMock(
+            return_value={"healthy": False, "status_code": 500, "url": "http://frontend.localhost"}
+        )
 
-        mock_client = AsyncMock()
-        mock_client.get = AsyncMock(return_value=mock_resp)
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
-
-        with (
-            patch(_ORCH_IS_K8S, return_value=False),
-            patch("httpx.AsyncClient", return_value=mock_client),
-        ):
+        with patch(_ORCH_GET, return_value=mock_orch):
             result = await project_control_executor(
                 {"action": "health_check", "container_name": "frontend"},
                 project_control_context,
@@ -743,21 +764,21 @@ class TestHealthCheckAction:
 
     @pytest.mark.asyncio
     async def test_health_check_connection_refused(self, project_control_context, container_a):
-        import httpx
-
         project_control_context["db"].execute = AsyncMock(
             return_value=_mock_scalar_one_or_none(container_a)
         )
 
-        mock_client = AsyncMock()
-        mock_client.get = AsyncMock(side_effect=httpx.ConnectError("Connection refused"))
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_orch = Mock()
+        mock_orch.probe_container_http = AsyncMock(
+            return_value={
+                "healthy": False,
+                "status_code": None,
+                "url": "http://frontend.localhost",
+                "error": "Connection refused",
+            }
+        )
 
-        with (
-            patch(_ORCH_IS_K8S, return_value=False),
-            patch("httpx.AsyncClient", return_value=mock_client),
-        ):
+        with patch(_ORCH_GET, return_value=mock_orch):
             result = await project_control_executor(
                 {"action": "health_check", "container_name": "frontend"},
                 project_control_context,
@@ -767,6 +788,38 @@ class TestHealthCheckAction:
         assert result["healthy"] is False
         assert result["status_code"] is None
         assert "error" in result
+
+
+@pytest.mark.unit
+class TestContainerLogsAction:
+    @pytest.mark.asyncio
+    async def test_logs_use_orchestrator_stream_not_runtime_shell(
+        self, project_control_context, container_a
+    ):
+        project_control_context["db"].execute = AsyncMock(
+            return_value=_mock_scalar_one_or_none(container_a)
+        )
+
+        async def lines():
+            yield "ready\\n"
+            yield "listening\\n"
+
+        mock_orch = Mock()
+        mock_orch.stream_logs = Mock(return_value=lines())
+        with patch(_ORCH_GET, return_value=mock_orch):
+            result = await project_control_executor(
+                {"action": "container_logs", "container_name": "frontend"},
+                project_control_context,
+            )
+
+        assert result["success"] is True
+        assert result["logs"] == "ready\\nlistening\\n"
+        mock_orch.stream_logs.assert_called_once_with(
+            project_id=project_control_context["project_id"],
+            user_id=project_control_context["user_id"],
+            container_id=container_a.id,
+            tail_lines=100,
+        )
 
 
 # ---------------------------------------------------------------------------

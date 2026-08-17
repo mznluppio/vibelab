@@ -1579,6 +1579,33 @@ class LocalOrchestrator(BaseOrchestrator):
             "mode": "local",
         }
 
+    async def probe_container_http(
+        self,
+        project_slug: str,
+        project_id: UUID,
+        container_id: UUID,
+        container_name: str,
+        port: int | None,
+    ) -> dict[str, Any]:
+        """Probe a desktop dev server without relying on Docker or Kubernetes."""
+        _ = project_slug, project_id, container_id, container_name
+        import httpx
+
+        url = f"http://localhost:{port}" if port else None
+        if not url:
+            return {
+                "healthy": False,
+                "status_code": None,
+                "url": None,
+                "error": "Container has no HTTP port",
+            }
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                response = await client.get(url)
+            return {"healthy": response.status_code < 500, "status_code": response.status_code, "url": url}
+        except httpx.HTTPError as exc:
+            return {"healthy": False, "status_code": None, "url": url, "error": str(exc)}
+
     # =========================================================================
     # ACTIVITY TRACKING
     # =========================================================================

@@ -397,6 +397,26 @@ class BaseOrchestrator(ABC):
         """
         pass
 
+    @abstractmethod
+    async def probe_container_http(
+        self,
+        project_slug: str,
+        project_id: UUID,
+        container_id: UUID,
+        container_name: str,
+        port: int | None,
+    ) -> dict[str, Any]:
+        """Probe an app through this orchestrator's runtime network.
+
+        The caller deliberately does not construct Docker, Kubernetes, or
+        desktop URLs.  Each runtime knows the only routable path it can use:
+        Docker probes Traefik with the public Host header, Kubernetes probes
+        the per-project Service, and local mode probes its local dev server.
+
+        Returns a JSON-safe ``healthy/status_code/url/error`` payload.
+        """
+        pass
+
     # =========================================================================
     # ACTIVITY TRACKING
     # =========================================================================

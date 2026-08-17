@@ -110,10 +110,10 @@ async def apply_setup_config_executor(
         message=f"Synced {len(response.container_ids)} container(s) from config",
         container_ids=response.container_ids,
         primary_container_id=response.primary_container_id,
-        next_tool="project_start",
+        next_tool="platform_preview",
         suggestion=(
-            "Call project_start next to bring the configured application online and verify its preview, "
-            "unless the user explicitly asked to configure without starting it"
+            "The platform will start and verify the preview after the agent completes. "
+            "Continue with file-level validation instead of manually restarting containers."
         ),
     )
 
@@ -128,8 +128,8 @@ def register_setup_config_tool(registry):
                 "container/connection/deployment/preview graph to match. Use this instead "
                 "of write_file for config.json — it is the single source of truth and "
                 "syncs every related record in one transaction. Validates startup commands. "
-                "After configuring an application, call project_start immediately to bring it online and "
-                "verify its preview, unless the user explicitly asked for configuration only. "
+                "After configuring an application, continue with file-level validation. The platform "
+                "starts and verifies the preview once the agent response is complete. "
                 "Returns the resulting container_ids and next_tool."
             ),
             category=ToolCategory.PROJECT,
@@ -139,6 +139,8 @@ def register_setup_config_tool(registry):
             state_serializable=True,
             # Atomic DB+filesystem write; no in-tool persistent handle.
             holds_external_state=False,
+            mutates_project=True,
+            requires_preview_restart=True,
             examples=[
                 (
                     '{"tool_name": "apply_setup_config", "parameters": {"config": {'

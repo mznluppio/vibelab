@@ -214,6 +214,9 @@ k8s/overlays/*/generated-*.yaml
 .claude/settings.local.json
 .claude/scheduled_tasks.lock
 
+# Local OpenCode provider configuration may contain API credentials.
+opencode.json
+
 # Jupyter Notebooks
 .ipynb_checkpoints/
 *.ipynb_checkpoints

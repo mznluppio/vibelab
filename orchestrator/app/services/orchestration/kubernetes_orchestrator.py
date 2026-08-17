@@ -1776,6 +1776,55 @@ find /app -maxdepth 2 -name 'package.json' 2>/dev/null | head -1
             container_name=container_name,
         )
 
+    async def probe_container_http(
+        self,
+        project_slug: str,
+        project_id: UUID,
+        container_id: UUID,
+        container_name: str,
+        port: int | None,
+    ) -> dict[str, Any]:
+        """Probe the internal Kubernetes Service for one project container."""
+        _ = container_name
+        import httpx
+
+        status = await self.get_project_status(project_slug, project_id)
+        container_dir = next(
+            (
+                key
+                for key, info in status.get("containers", {}).items()
+                if info.get("container_id") == str(container_id)
+            ),
+            None,
+        )
+        if not container_dir:
+            return {
+                "healthy": False,
+                "status_code": None,
+                "url": None,
+                "error": "Container has no active Kubernetes service",
+            }
+
+        namespace = status.get("namespace") or self._get_namespace(str(project_id))
+        service_name = f"dev-{container_dir}"
+        target_url = f"http://{service_name}.{namespace}.svc.cluster.local:{port or 3000}"
+        public_url = status.get("containers", {}).get(container_dir, {}).get("url")
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                response = await client.get(target_url)
+            return {
+                "healthy": response.status_code < 500,
+                "status_code": response.status_code,
+                "url": public_url or target_url,
+            }
+        except httpx.HTTPError as exc:
+            return {
+                "healthy": False,
+                "status_code": None,
+                "url": public_url or target_url,
+                "error": str(exc),
+            }
+
     # =========================================================================
     # ACTIVITY TRACKING & CLEANUP (Database-based for horizontal scaling)
     # =========================================================================

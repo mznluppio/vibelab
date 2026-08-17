@@ -68,6 +68,42 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 settings = get_settings()
 
+_LOCAL_AGENT_CONFIG_OVERRIDE_KEYS = frozenset({"required_base"})
+
+
+def _merge_agent_config(
+    current: Any,
+    updates: dict[str, Any],
+    *,
+    track_local_overrides: bool = False,
+) -> dict[str, Any]:
+    """Return a fresh config object so SQLAlchemy persists JSON updates.
+
+    ``JSON`` columns do not track mutations made to the already-loaded dict.
+    Platform administrators may also override selected deployment-local
+    settings that must survive a later federated catalog refresh.
+    """
+    merged = copy.deepcopy(current) if isinstance(current, dict) else {}
+    for key, value in updates.items():
+        if key in _LOCAL_AGENT_CONFIG_OVERRIDE_KEYS:
+            merged[key] = copy.deepcopy(value)
+        elif isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = {**merged[key], **copy.deepcopy(value)}
+        else:
+            merged[key] = copy.deepcopy(value)
+
+    if track_local_overrides:
+        local_overrides = (
+            copy.deepcopy(merged.get("_local_overrides"))
+            if isinstance(merged.get("_local_overrides"), dict)
+            else {}
+        )
+        for key in _LOCAL_AGENT_CONFIG_OVERRIDE_KEYS.intersection(updates):
+            local_overrides[key] = copy.deepcopy(updates[key])
+        if local_overrides:
+            merged["_local_overrides"] = local_overrides
+    return merged
+
 
 async def require_marketplace_feature_access(
     db: AsyncSession = Depends(get_db),
@@ -2226,13 +2262,11 @@ async def update_custom_agent(
             purchase.selected_model = update_data["model"]
     # Merge config (features, etc.) - deep merge so partial updates work
     if "config" in update_data and isinstance(update_data["config"], dict):
-        existing_config = agent.config or {}
-        for key, value in update_data["config"].items():
-            if isinstance(value, dict) and isinstance(existing_config.get(key), dict):
-                existing_config[key] = {**existing_config[key], **value}
-            else:
-                existing_config[key] = value
-        agent.config = existing_config
+        agent.config = _merge_agent_config(
+            agent.config,
+            update_data["config"],
+            track_local_overrides=bool(getattr(current_user, "is_superuser", False)),
+        )
 
     await db.commit()
 
@@ -2351,6 +2385,13 @@ async def get_user_agents(
                 "features": agent.features,
                 "tools": agent.tools,  # List of enabled tool names
                 "tool_configs": agent.tool_configs,  # Custom tool descriptions/examples
+                # The Library edit form derives persisted settings such as
+                # ``required_base`` from this object when it is reopened.
+                # Return a copy so response handling cannot mutate the ORM
+                # JSON value in-place.
+                "config": copy.deepcopy(agent.config)
+                if isinstance(agent.config, dict)
+                else {},
                 "purchase_date": purchase.purchase_date.isoformat(),
                 "purchase_type": purchase.purchase_type,
                 "expires_at": purchase.expires_at.isoformat() if purchase.expires_at else None,

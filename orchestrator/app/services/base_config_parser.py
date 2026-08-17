@@ -200,6 +200,28 @@ def get_node_modules_fix_prefix() -> str:
     return _materialize_dotenv_local_command() + _install_deps_if_missing_command()
 
 
+def get_node_dependency_install_command(*, only_if_missing: bool = True) -> str:
+    """Return the platform's non-interactive Node dependency bootstrap.
+
+    Docker, Kubernetes and deployment builds must make the same pnpm choice:
+    a project container is isolated, so declared build scripts are allowed and
+    need no interactive ``pnpm approve-builds`` prompt.
+    """
+    condition = '[ -f "package.json" ]'
+    if only_if_missing:
+        condition += ' && [ ! -d "node_modules" ]'
+    return (
+        f"if {condition}; then "
+        '  echo "[TESSLATE] Installing dependencies..." && '
+        '  if [ -f "bun.lock" ] || [ -f "bun.lockb" ]; then bun install; '
+        '  elif [ -f "pnpm-lock.yaml" ]; then pnpm install --config.dangerouslyAllowAllBuilds=true; '
+        '  elif [ -f "yarn.lock" ]; then yarn install; '
+        "  else npm install; "
+        "  fi; "
+        "fi"
+    )
+
+
 def _install_deps_if_missing_command() -> str:
     """
     Generate a shell snippet that installs dependencies if node_modules is missing.
@@ -208,16 +230,7 @@ def _install_deps_if_missing_command() -> str:
     fresh inside the container to avoid broken symlinks and permission issues.
     This detects the lockfile to pick the right package manager.
     """
-    return (
-        'if [ -f "package.json" ] && [ ! -d "node_modules" ]; then '
-        '  echo "[TESSLATE] Installing dependencies..." && '
-        '  if [ -f "bun.lock" ] || [ -f "bun.lockb" ]; then bun install; '
-        '  elif [ -f "pnpm-lock.yaml" ]; then pnpm install --config.dangerouslyAllowAllBuilds=true; '
-        '  elif [ -f "yarn.lock" ]; then yarn install; '
-        "  else npm install; "
-        "  fi; "
-        "fi && "
-    )
+    return get_node_dependency_install_command(only_if_missing=True) + " && "
 
 
 def _materialize_dotenv_local_command() -> str:

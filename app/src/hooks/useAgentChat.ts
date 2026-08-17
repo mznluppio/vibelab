@@ -12,6 +12,7 @@ import type {
 import type { ChatAgent } from '../types/chat';
 import type { EditMode } from '../components/chat/EditModeStatus';
 import { nodeConfigEvents } from '../utils/nodeConfigEvents';
+import { getPreviewLifecycleStatus, isEventForAgentRun } from '../lib/agent-lifecycle';
 import type {
   ArchitectureNodeAddedEvent,
   ContainersRestartingEvent,
@@ -151,6 +152,7 @@ export function useAgentChat({
   const onProjectStartedRef = useRef(onProjectStarted);
   const onSessionNeededRef = useRef(onSessionNeeded);
   const projectStartedDuringTaskRef = useRef(false);
+  const previewReadyDuringTaskRef = useRef(false);
 
   useEffect(() => {
     editModeRef.current = editMode;
@@ -181,8 +183,23 @@ export function useAgentChat({
 
   // Active task reconnection EventSource ref
   const activeEventSourceRef = useRef<EventSource | null>(null);
-  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const prevChatIdRef = useRef<string | null>(null);
+
+  const handlePreviewLifecycle = useCallback((event: { type?: string; data?: Record<string, unknown> }) => {
+    const status = getPreviewLifecycleStatus(event);
+    if (status === 'starting') {
+      window.dispatchEvent(new CustomEvent('preview-starting', { detail: event.data }));
+      return;
+    }
+    if (status === 'failed') {
+      window.dispatchEvent(new CustomEvent('preview-failed', { detail: event.data }));
+      return;
+    }
+    if (status === 'ready' && !previewReadyDuringTaskRef.current) {
+      previewReadyDuringTaskRef.current = true;
+      onProjectStartedRef.current?.();
+    }
+  }, []);
 
   // Load chat history + reconnect to active agent task when chatId changes
   useEffect(() => {
@@ -198,10 +215,6 @@ export function useAgentChat({
       if (activeEventSourceRef.current) {
         activeEventSourceRef.current.close();
         activeEventSourceRef.current = null;
-      }
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current);
-        reconnectTimeoutRef.current = null;
       }
       // IMPORTANT: do NOT abort abortControllerRef — that would kill an
       // in-flight agent in the previous chat. The previous chat keeps its
@@ -319,6 +332,7 @@ export function useAgentChat({
         isExecutingRef.current = true;
         setIsExecuting(true);
         agentTaskIdRef.current = activeTask.task_id;
+        previewReadyDuringTaskRef.current = false;
 
         const thinkingId = `reconnect-${activeTask.task_id}`;
 
@@ -351,7 +365,6 @@ export function useAgentChat({
         activeEventSourceRef.current = eventSource;
 
         const cleanupReconnect = () => {
-          if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
           eventSource.close();
           activeEventSourceRef.current = null;
           if (!cancelled) {
@@ -361,29 +374,12 @@ export function useAgentChat({
           }
         };
 
-        // Safety timeout: if no events within 30s, task is likely stale
-        const resetSafetyTimeout = () => {
-          if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
-          reconnectTimeoutRef.current = setTimeout(() => {
-            cleanupReconnect();
-            if (!cancelled) {
-              setMessages((prev) =>
-                prev.map((m) =>
-                  m.id === thinkingId && m.agentData?.completion_reason === 'in_progress'
-                    ? { ...m, agentData: { ...m.agentData!, completion_reason: 'error' } }
-                    : m
-                )
-              );
-            }
-          }, 30000);
-        };
-        resetSafetyTimeout();
-
         eventSource.onmessage = (event) => {
           if (cancelled) return;
           try {
             const data = JSON.parse(event.data);
-            resetSafetyTimeout();
+            if (!isEventForAgentRun(data, chatId, activeTask.task_id)) return;
+            handlePreviewLifecycle(data);
 
             if (data.type === 'agent_step') {
               const transformedStep = {
@@ -560,10 +556,14 @@ export function useAgentChat({
         };
 
         eventSource.onerror = () => {
-          cleanupReconnect();
-          if (!cancelled) {
-            setMessages((prev) => prev.filter((m) => m.id !== thinkingId));
-          }
+          // EventSource reconnects itself. Confirm the task state instead of
+          // converting a quiet or temporarily disconnected run into an error.
+          void chatApi.getActiveTask('', chatId).then((stillActive) => {
+            if (!cancelled && !stillActive?.task_id) cleanupReconnect();
+          }).catch(() => {
+            // Keep the native EventSource retry alive while the status endpoint
+            // is temporarily unavailable.
+          });
         };
       } catch {
         // No active task — that's fine
@@ -577,7 +577,6 @@ export function useAgentChat({
 
     return () => {
       cancelled = true;
-      if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
       if (activeEventSourceRef.current) {
         activeEventSourceRef.current.close();
         activeEventSourceRef.current = null;
@@ -676,6 +675,7 @@ export function useAgentChat({
       isExecutingRef.current = true;
       setIsExecuting(true);
       projectStartedDuringTaskRef.current = false;
+      previewReadyDuringTaskRef.current = false;
 
       const controller = new AbortController();
       abortControllerRef.current = controller;
@@ -715,9 +715,11 @@ export function useAgentChat({
           (event) => {
             if (!isMountedRef.current) return;
 
-            if (event.data?.task_id) {
-              agentTaskIdRef.current = event.data.task_id as string;
-            }
+          if (event.data?.task_id) {
+            agentTaskIdRef.current = event.data.task_id as string;
+          }
+          if (!isEventForAgentRun(event, effectiveChatId, agentTaskIdRef.current)) return;
+          handlePreviewLifecycle(event);
 
             if (event.type === 'tool_call') {
               // Per-tool streaming — accumulate into ONE message per iteration
@@ -891,7 +893,7 @@ export function useAgentChat({
                 }
                 if (projectStartedDuringTaskRef.current) {
                   projectStartedDuringTaskRef.current = false;
-                  onProjectStartedRef.current?.();
+                  handlePreviewLifecycle({ type: 'complete', data: { project_started: true } });
                 }
               }
             } else if (event.type === 'chat_title') {
@@ -1051,7 +1053,7 @@ export function useAgentChat({
         );
       }
     },
-    [chatId, projectId, agent, isExecuting]
+    [chatId, projectId, agent, isExecuting, handlePreviewLifecycle]
   );
 
   const stopExecution = useCallback(async () => {

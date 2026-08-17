@@ -19,7 +19,7 @@ import logging
 import os
 import time
 from datetime import UTC, datetime
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from arq.connections import RedisSettings
 
@@ -53,6 +53,59 @@ _PROJECT_MUTATION_TOOLS = frozenset(
         "apply_setup_config",
     }
 )
+
+
+async def _persist_agent_step(
+    db,
+    *,
+    message_id: UUID,
+    chat_id: UUID,
+    step_index: int,
+    step_data: dict,
+) -> bool:
+    """Persist one progressive step without poisoning the worker session.
+
+    A chat or its in-progress assistant placeholder can be deleted while a
+    task is still unwinding (for example when the user starts over).  In that
+    case the FK target is gone and the task must stop cleanly instead of
+    leaving the shared SQLAlchemy session in ``PendingRollbackError`` for all
+    subsequent tools and finalisation work.
+
+    Returns ``False`` when the placeholder vanished.  Other integrity errors
+    remain real failures and are re-raised after restoring the transaction.
+    """
+    from sqlalchemy import select
+    from sqlalchemy.exc import IntegrityError
+
+    from .models import AgentStep, Message
+
+    placeholder_id = (
+        await db.execute(select(Message.id).where(Message.id == message_id))
+    ).scalar_one_or_none()
+    if placeholder_id is None:
+        return False
+
+    db.add(
+        AgentStep(
+            message_id=message_id,
+            chat_id=chat_id,
+            step_index=step_index,
+            step_data=step_data,
+        )
+    )
+    try:
+        await db.commit()
+    except IntegrityError:
+        # A concurrent delete can win between the SELECT and INSERT.  Always
+        # recover the session before inspecting the cause or propagating it.
+        await db.rollback()
+        placeholder_id = (
+            await db.execute(select(Message.id).where(Message.id == message_id))
+        ).scalar_one_or_none()
+        if placeholder_id is None:
+            return False
+        raise
+    return True
 
 
 def _derive_execution_profile(project, containers: list[dict], chat_history: list[dict]) -> str:
@@ -92,6 +145,12 @@ async def _start_project_after_agent_build(project, user_id: UUID, db) -> bool:
     from .models import Container, ContainerConnection
     from .services.orchestration import get_orchestrator
 
+    # Source-of-truth refresh: fold any edits to .tesslate/config.json into
+    # the Container graph before we can start anything.
+    from ..services.config_sync import ensure_config_synced
+
+    await ensure_config_synced(db, project, user_id)
+
     containers = list(
         (
             await db.execute(select(Container).where(Container.project_id == project.id))
@@ -112,6 +171,202 @@ async def _start_project_after_agent_build(project, user_id: UUID, db) -> bool:
         timeout=90,
     )
     return True
+
+
+async def start_project_preview_task(ctx: dict, preview: dict) -> None:
+    """Start or verify one project preview outside the agent loop.
+
+    This job owns runtime readiness after a confirmed project mutation.  It
+    shares the orchestration interface across Docker, Kubernetes and local
+    mode, and reports back to the originating agent stream without keeping a
+    model turn or chat lock alive.
+    """
+    from sqlalchemy import select
+
+    from .database import AsyncSessionLocal
+    from .models import Container, ContainerConnection, Project
+    from .services.orchestration import get_orchestrator
+
+    task_id = str(preview["agent_task_id"])
+    preview_task_id = str(preview["preview_task_id"])
+    project_id = UUID(str(preview["project_id"]))
+    user_id = UUID(str(preview["user_id"]))
+    restart_required = bool(preview.get("restart_required"))
+
+    from .services.pubsub import get_pubsub
+
+    pubsub = get_pubsub()
+    try:
+        async with AsyncSessionLocal() as db:
+            project = (
+                await db.execute(select(Project).where(Project.id == project_id))
+            ).scalar_one_or_none()
+            if project is None:
+                raise RuntimeError("Project no longer exists")
+
+            # Source-of-truth refresh: fold any edits to .tesslate/config.json
+            # into the Container graph before rendering manifests. This also
+            # materialises containers for projects whose setup did not sync.
+            from ..services.config_sync import ensure_config_synced
+
+            await ensure_config_synced(db, project, user_id)
+
+            containers = list(
+                (
+                    await db.execute(select(Container).where(Container.project_id == project.id))
+                ).scalars()
+            )
+            if not containers:
+                raise RuntimeError("Project has no configured application containers")
+            connections = list(
+                (
+                    await db.execute(
+                        select(ContainerConnection).where(
+                            ContainerConnection.project_id == project.id
+                        )
+                    )
+                ).scalars()
+            )
+            orchestrator = get_orchestrator()
+            application_containers = [
+                container
+                for container in containers
+                if getattr(container, "container_type", "base") != "service"
+            ]
+            if not application_containers:
+                application_containers = containers
+
+            # A source-compaction marker is never valid application code. This
+            # catches legacy projects as well as any future regression before
+            # we advertise a broken preview as ready.
+            for file_path in preview.get("mutation_paths", []) or []:
+                if not isinstance(file_path, str) or not file_path:
+                    continue
+                content = await orchestrator.read_file(
+                    user_id=user_id,
+                    project_id=str(project.id),
+                    container_name=application_containers[0].name,
+                    file_path=file_path,
+                    project_slug=project.slug,
+                    subdir=None,
+                )
+                if isinstance(content, str) and content.strip().startswith("[completed source omitted:"):
+                    settings = dict(project.settings or {})
+                    settings["agent_artifact_integrity"] = {
+                        "status": "repair_required",
+                        "file_path": file_path,
+                        "reason": "compacted_source_marker",
+                    }
+                    project.settings = settings
+                    await db.commit()
+                    raise RuntimeError(
+                        f"Project repair required: '{file_path}' contains a compacted source marker."
+                    )
+
+            status = await orchestrator.get_project_status(project.slug, project.id)
+            runtime = status.get("containers", {}) if isinstance(status, dict) else {}
+            running = any(
+                isinstance(info, dict) and info.get("running")
+                for info in runtime.values()
+            )
+            if not running:
+                await orchestrator.start_project(project, containers, connections, user_id, db)
+            elif restart_required:
+                await orchestrator.restart_project(project, containers, connections, user_id, db)
+
+            last_results: list[dict] = []
+            for _ in range(30):
+                last_results = [
+                    await orchestrator.probe_container_http(
+                        project.slug,
+                        project.id,
+                        container.id,
+                        container.name,
+                        container.effective_port,
+                    )
+                    for container in application_containers
+                ]
+                if last_results and all(result.get("healthy") for result in last_results):
+                    for container in application_containers:
+                        container.status = "running"
+                    project.environment_status = "active"
+                    await db.commit()
+                    if pubsub:
+                        await pubsub.publish_agent_event(
+                            task_id,
+                            {
+                                "type": "preview_ready",
+                                "data": {
+                                    "task_id": task_id,
+                                    "preview_task_id": preview_task_id,
+                                    "project_id": str(project.id),
+                                    "urls": [result.get("url") for result in last_results if result.get("url")],
+                                },
+                            },
+                        )
+                        await pubsub.publish_agent_event(
+                            task_id,
+                            {"type": "done", "data": {"task_id": task_id, "status": "completed"}},
+                        )
+                    await _update_task_status_redis(task_id, "completed")
+                    automation_run_id = preview.get("automation_run_id")
+                    if automation_run_id:
+                        await _finalize_automation_run(
+                            UUID(str(automation_run_id)),
+                            status="succeeded",
+                            raw_output={
+                                "task_id": task_id,
+                                "project_id": str(project.id),
+                                "preview_task_id": preview_task_id,
+                            },
+                        )
+                    return
+                await asyncio.sleep(2)
+
+            for container in application_containers:
+                container.status = "error"
+            project.environment_status = "error"
+            await db.commit()
+            raise RuntimeError(
+                "Preview did not become ready within 60 seconds: "
+                + "; ".join(str(result.get("error") or result.get("status_code")) for result in last_results)
+            )
+    except Exception as exc:
+        logger.warning("[PREVIEW] lifecycle failed for %s: %s", project_id, exc, exc_info=True)
+        if pubsub:
+            await pubsub.publish_agent_event(
+                task_id,
+                {
+                    "type": "preview_failed",
+                    "data": {
+                        "task_id": task_id,
+                        "preview_task_id": preview_task_id,
+                        "project_id": str(project_id),
+                        "message": str(exc),
+                    },
+                },
+            )
+            await pubsub.publish_agent_event(
+                task_id,
+                {
+                    "type": "done",
+                    "data": {"task_id": task_id, "status": "failed", "error": str(exc)},
+                },
+            )
+        await _update_task_status_redis(task_id, "failed", error=str(exc))
+        automation_run_id = preview.get("automation_run_id")
+        if automation_run_id:
+            with contextlib.suppress(Exception):
+                await _finalize_automation_run(
+                    UUID(str(automation_run_id)),
+                    status="failed",
+                    raw_output={
+                        "task_id": task_id,
+                        "project_id": str(project_id),
+                        "preview_task_id": preview_task_id,
+                        "error": str(exc)[:1000],
+                    },
+                )
 
 
 async def _write_worker_heartbeat() -> None:
@@ -329,6 +584,170 @@ async def _heartbeat_lock(pubsub, chat_id: str, task_id: str):
                 break
     except asyncio.CancelledError:
         pass
+
+
+_CHAT_LOCK_RETRY_DELAY_SECONDS = 2.0
+_CHAT_LOCK_MAX_WAIT_SECONDS = 600.0
+_WORKSPACE_SETUP_RETRY_DELAY_SECONDS = 2.0
+_WORKSPACE_SETUP_MAX_WAIT_SECONDS = 240.0
+
+
+async def _defer_agent_task_for_chat_lock(payload, pubsub, holding_task: str | None) -> bool:
+    """Requeue an overlapping chat turn without tying up a worker slot.
+
+    A previous turn can still own the chat lock while it persists its final
+    message or starts the preview.  Rejecting the next turn in that small
+    window used to leave its TaskManager entry stuck in ``running``.  Reusing
+    the same task id also keeps the existing SSE subscription valid.
+
+    Returns ``True`` when the task was deferred, or ``False`` after publishing
+    an explicit terminal failure once the global wait budget is exhausted.
+    """
+    retry_count = max(0, int(getattr(payload, "chat_lock_retry_count", 0) or 0))
+    waited_seconds = retry_count * _CHAT_LOCK_RETRY_DELAY_SECONDS
+    if waited_seconds >= _CHAT_LOCK_MAX_WAIT_SECONDS:
+        error = (
+            "This conversation is still busy with another agent task. "
+            "Please retry once that task has finished."
+        )
+        await _publish_error(pubsub, payload.task_id, error)
+        await _update_task_status_redis(payload.task_id, "failed", error=error)
+        logger.warning(
+            "[WORKER] Chat lock wait exhausted: task=%s chat=%s holder=%s",
+            payload.task_id,
+            payload.chat_id,
+            holding_task,
+        )
+        return False
+
+    from .services.task_queue import get_task_queue
+
+    payload.chat_lock_retry_count = retry_count + 1
+    await get_task_queue().enqueue(
+        "execute_agent_task",
+        payload.to_dict(),
+        _defer_by=_CHAT_LOCK_RETRY_DELAY_SECONDS,
+    )
+    logger.info(
+        "[WORKER] Deferred overlapping chat task: task=%s chat=%s holder=%s retry=%d",
+        payload.task_id,
+        payload.chat_id,
+        holding_task,
+        payload.chat_lock_retry_count,
+    )
+    return True
+
+
+async def _defer_agent_task_for_workspace_setup(payload, pubsub) -> bool:
+    """Yield the worker slot while a required Base is being materialised.
+
+    Returns ``True`` when the caller must return (deferred or terminal
+    failure), and ``False`` only when the project setup is complete.
+    """
+    setup_task_id = getattr(payload, "workspace_setup_task_id", None)
+    if not setup_task_id:
+        return False
+
+    from .services.task_manager import TaskStatus, get_task_manager
+
+    setup_task = await get_task_manager().get_task_async(setup_task_id)
+    if setup_task and setup_task.status == TaskStatus.COMPLETED:
+        payload.workspace_setup_task_id = None
+        return False
+
+    if setup_task and setup_task.status in {TaskStatus.FAILED, TaskStatus.CANCELLED}:
+        error = setup_task.error or "The required Base could not be prepared."
+        await _publish_error(pubsub, payload.task_id, error)
+        await _update_task_status_redis(payload.task_id, "failed", error=error)
+        return True
+
+    retry_count = max(0, int(getattr(payload, "workspace_setup_retry_count", 0) or 0))
+    if retry_count * _WORKSPACE_SETUP_RETRY_DELAY_SECONDS >= _WORKSPACE_SETUP_MAX_WAIT_SECONDS:
+        error = "Timed out while preparing the agent's required Base."
+        await _publish_error(pubsub, payload.task_id, error)
+        await _update_task_status_redis(payload.task_id, "failed", error=error)
+        return True
+
+    if pubsub:
+        await pubsub.publish_agent_event(
+            payload.task_id,
+            {
+                "type": "workspace_preparing",
+                "data": {
+                    "task_id": payload.task_id,
+                    "chat_id": payload.chat_id,
+                    "project_id": payload.project_id,
+                    "setup_task_id": setup_task_id,
+                },
+            },
+        )
+
+    from .services.task_queue import get_task_queue
+
+    payload.workspace_setup_retry_count = retry_count + 1
+    await get_task_queue().enqueue(
+        "execute_agent_task",
+        payload.to_dict(),
+        _defer_by=_WORKSPACE_SETUP_RETRY_DELAY_SECONDS,
+    )
+    return True
+
+
+async def _schedule_interrupted_agent_resume(payload, pubsub) -> bool:
+    """Queue one idempotent recovery after an infrastructure interruption.
+
+    A user cancellation is always terminal. For a worker timeout or eviction,
+    completed AgentStep rows and verified file hashes are already durable, so
+    the recovery starts from the real workspace rather than replaying writes.
+    """
+    if int(getattr(payload, "resume_attempt", 0) or 0) >= 1:
+        return False
+    # Ticket execution has its own checkout/approval state machine. Do not
+    # silently replay it with a ticket that may already be terminal.
+    if getattr(payload, "agent_task_id", None):
+        return False
+    if pubsub is not None and await pubsub.is_cancelled(payload.task_id):
+        return False
+
+    from .services.task_manager import get_task_manager
+    from .services.task_queue import get_task_queue
+
+    payload.resume_attempt = int(getattr(payload, "resume_attempt", 0) or 0) + 1
+    payload.resume_reason = "worker_interrupted"
+    # Force the resumed worker to reload the compact current history and
+    # workspace state; the original queued snapshot is stale after mutations.
+    payload.chat_history = []
+    payload.project_context = {}
+    payload.message = (
+        f"{payload.message}\n\n"
+        "[Platform recovery] The previous worker was interrupted after partial work. "
+        "Inspect the current project and AgentStep results, keep files whose current "
+        "contents are correct, repair only missing or invalid artifacts, validate the "
+        "application, then finish the original request."
+    )
+
+    await get_task_manager().reset_task_for_retry(
+        payload.task_id,
+        metadata_updates={
+            "resume_attempt": payload.resume_attempt,
+            "resume_reason": payload.resume_reason,
+        },
+    )
+    await get_task_queue().enqueue("execute_agent_task", payload.to_dict(), _defer_by=1)
+    if pubsub:
+        await pubsub.publish_agent_event(
+            payload.task_id,
+            {
+                "type": "resuming",
+                "data": {
+                    "task_id": payload.task_id,
+                    "attempt": payload.resume_attempt,
+                    "reason": payload.resume_reason,
+                },
+            },
+        )
+    logger.info("[WORKER] Scheduled recovery task=%s attempt=%s", payload.task_id, payload.resume_attempt)
+    return True
 
 
 async def _contract_gate_hook(tool_name, parameters, context, tool):
@@ -624,7 +1043,6 @@ async def execute_agent_task(ctx: dict, payload_dict: dict):
     from .config import get_settings
     from .database import AsyncSessionLocal
     from .models import (
-        AgentStep,
         Chat,
         Container,
         MarketplaceAgent,
@@ -645,6 +1063,23 @@ async def execute_agent_task(ctx: dict, payload_dict: dict):
 
     settings = get_settings()
     payload = AgentTaskPayload.from_dict(payload_dict)
+    # ARQ retries a job when the worker process itself disappears, a path that
+    # cannot run our CancelledError handler. Treat its single configured retry
+    # as the same idempotent recovery contract as a timeout-driven requeue.
+    try:
+        arq_attempt = int(ctx.get("job_try", 1) or 1)
+    except (TypeError, ValueError):
+        arq_attempt = 1
+    if arq_attempt > 1 and payload.resume_attempt == 0:
+        payload.resume_attempt = 1
+        payload.resume_reason = "worker_retry"
+        payload.chat_history = []
+        payload.project_context = {}
+        payload.message = (
+            f"{payload.message}\n\n"
+            "[Platform recovery] Resume from the actual workspace state after an interrupted "
+            "worker. Preserve correct files and repair only missing or invalid artifacts."
+        )
     pubsub = get_pubsub()
     task_id = payload.task_id
     project_id = payload.project_id
@@ -675,6 +1110,13 @@ async def execute_agent_task(ctx: dict, payload_dict: dict):
     chat = None
 
     logger.info(f"[WORKER] Starting agent task {task_id} for project {project_id}")
+
+    # Queued retries and external callers do not necessarily pass through the
+    # browser route that marks a task running. Make worker pickup authoritative.
+    with contextlib.suppress(Exception):
+        from .services.task_manager import TaskStatus, get_task_manager
+
+        await get_task_manager().update_task_status(task_id, TaskStatus.RUNNING)
 
     # Phase 1 traceability: log the automation context if the dispatcher
     # enqueued us. Phase 2 wires ContractGate enforcement; here we just
@@ -740,10 +1182,10 @@ async def execute_agent_task(ctx: dict, payload_dict: dict):
                 lock_acquired = await pubsub.acquire_chat_lock(chat_id, task_id)
                 if not lock_acquired:
                     holding_task = await pubsub.get_chat_lock(chat_id)
-                    await _publish_error(
+                    await _defer_agent_task_for_chat_lock(
+                        payload,
                         pubsub,
-                        task_id,
-                        f"Another agent is running in this session (task: {holding_task})",
+                        holding_task,
                     )
                     return
                 # Start heartbeat to extend lock every 10s
@@ -902,12 +1344,17 @@ async def execute_agent_task(ctx: dict, payload_dict: dict):
                     ensure_chat_project_for_required_base,
                 )
 
+                setup_just_completed = bool(payload.workspace_setup_task_id)
+                if await _defer_agent_task_for_workspace_setup(payload, pubsub):
+                    return
+
                 try:
                     required_workspace = await ensure_chat_project_for_required_base(
                         db,
                         user_id=UUID(payload.user_id),
                         chat_id=UUID(payload.chat_id),
                         required_base_config=required_base_config,
+                        wait_for_setup=False,
                     )
                 except RequiredBaseWorkspaceError as exc:
                     await _publish_error(pubsub, task_id, str(exc))
@@ -936,13 +1383,57 @@ async def execute_agent_task(ctx: dict, payload_dict: dict):
                     payload.container_name = None
                     payload.container_directory = None
                     payload.project_context = {}
+                    await _update_task_metadata_redis(
+                        task_id,
+                        {
+                            "project_id": str(project.id),
+                            "project_slug": project.slug,
+                        },
+                    )
 
-                    if required_workspace.created and pubsub:
+                    if required_workspace.setup_task_id:
+                        payload.workspace_setup_task_id = required_workspace.setup_task_id
+                        payload.workspace_setup_retry_count = 0
+                        if pubsub:
+                            await pubsub.publish_agent_event(
+                                task_id,
+                                {
+                                    "type": "workspace_preparing",
+                                    "data": {
+                                        "task_id": task_id,
+                                        "chat_id": str(payload.chat_id),
+                                        "project_id": str(project.id),
+                                        "project_name": project.name,
+                                        "project_slug": project.slug,
+                                        "required_base_name": required_workspace.base.name,
+                                        "setup_task_id": required_workspace.setup_task_id,
+                                        "automatic": True,
+                                    },
+                                },
+                            )
+                        await _defer_agent_task_for_workspace_setup(payload, pubsub)
+                        return
+
+                    if (required_workspace.created or setup_just_completed) and pubsub:
                         await pubsub.publish_agent_event(
                             task_id,
                             {
-                                # Reuse the established event contract so the
-                                # chat header updates without a new UI flow.
+                                "type": "workspace_ready",
+                                "data": {
+                                    "chat_id": str(payload.chat_id),
+                                    "project_id": str(project.id),
+                                    "project_name": project.name,
+                                    "project_slug": project.slug,
+                                    "required_base_name": required_workspace.base.name,
+                                    "automatic": True,
+                                },
+                            },
+                        )
+                        # Backward compatibility for existing consumers that
+                        # already know how to switch a chat's project.
+                        await pubsub.publish_agent_event(
+                            task_id,
+                            {
                                 "type": "workspace_attach_resumed",
                                 "data": {
                                     "chat_id": str(payload.chat_id),
@@ -1485,6 +1976,11 @@ async def execute_agent_task(ctx: dict, payload_dict: dict):
                 "container_directory": container_directory,
                 "chat_id": UUID(payload.chat_id),
                 "task_id": task_id,
+                "resume_attempt": payload.resume_attempt,
+                "resume_reason": payload.resume_reason,
+                "cancellation_check": (
+                    (lambda: pubsub.is_cancelled(task_id)) if pubsub is not None else (lambda: False)
+                ),
                 # The pubsub handle lets in-tool HITL paths
                 # (e.g., request_review) emit SSE events directly so the
                 # chat surface can render an interactive card while the
@@ -1634,10 +2130,11 @@ async def execute_agent_task(ctx: dict, payload_dict: dict):
             event_count = 0
             project_changed = False
             project_started_by_agent = False
+            preview_task_id: str | None = None
             agent_completed = False
             agent_succeeded = False
             terminal_error: str | None = None
-            auto_start_project = bool((agent_model.config or {}).get("auto_start_project"))
+            resume_scheduled = False
             credit_usage_events = 0
             credit_deduction_failures = 0
 
@@ -1658,15 +2155,17 @@ async def execute_agent_task(ctx: dict, payload_dict: dict):
                     return
                 step_data = event.get("data", {})
                 normalized = _build_step_dict(step_data, _convert_uuids_to_strings)
-                db.add(
-                    AgentStep(
-                        message_id=message_id,
-                        chat_id=UUID(payload.chat_id),
-                        step_index=_step_idx,
-                        step_data=normalized,
-                    )
+                persisted = await _persist_agent_step(
+                    db,
+                    message_id=message_id,
+                    chat_id=UUID(payload.chat_id),
+                    step_index=_step_idx,
+                    step_data=normalized,
                 )
-                await db.commit()
+                if not persisted:
+                    raise RuntimeError(
+                        "Agent output target was removed while the task was running"
+                    )
                 _step_idx += 1
 
             from .services.tesslate_agent_adapter import AgentAdapterContext
@@ -1994,25 +2493,62 @@ async def execute_agent_task(ctx: dict, payload_dict: dict):
                                 + (terminal_error or "No successful completion was received.")
                             )
 
+                        project_changed = bool(context.get("project_changed", project_changed))
                         if (
                             agent_succeeded
-                            and
-                            auto_start_project
                             and project_changed
-                            and not project_started_by_agent
                             and completion_reason != "cancelled"
                             and project is not None
                         ):
                             try:
-                                complete_data["project_started"] = await _start_project_after_agent_build(
-                                    project, UUID(payload.user_id), db
+                                preview_task_id = str(uuid4())
+                                complete_data["preview"] = {
+                                    "status": "starting",
+                                    "task_id": preview_task_id,
+                                }
+                                complete_data["project_started"] = False
+                                from .services.task_queue import get_task_queue
+
+                                await get_task_queue().enqueue(
+                                    "start_project_preview_task",
+                                    {
+                                        "agent_task_id": task_id,
+                                        "preview_task_id": preview_task_id,
+                                        "project_id": str(project.id),
+                                        "user_id": payload.user_id,
+                                        "restart_required": bool(
+                                            context.get("preview_restart_required")
+                                        ),
+                                        "mutation_paths": list(
+                                            context.get("project_mutation_paths", []) or []
+                                        ),
+                                        "automation_run_id": str(auto_run_id)
+                                        if auto_run_id is not None
+                                        else None,
+                                    },
                                 )
+                                if pubsub:
+                                    await pubsub.publish_agent_event(
+                                        task_id,
+                                        {
+                                            "type": "preview_starting",
+                                            "data": {
+                                                "task_id": task_id,
+                                                "preview_task_id": preview_task_id,
+                                                "project_id": str(project.id),
+                                                "restart_required": bool(
+                                                    context.get("preview_restart_required")
+                                                ),
+                                            },
+                                        },
+                                    )
                             except Exception as start_err:
                                 logger.warning(
-                                    "[WORKER] Auto-start after agent build failed for project %s: %s",
+                                    "[WORKER] Failed to enqueue preview lifecycle for project %s: %s",
                                     project.id,
                                     start_err,
                                 )
+                                preview_task_id = None
 
                     elif event_type == "model_usage":
                         # ``model_usage`` is an internal runner event, not a
@@ -2114,9 +2650,9 @@ async def execute_agent_task(ctx: dict, payload_dict: dict):
                             for tool_call in step_data.get("tool_calls", [])
                             if isinstance(tool_call, dict)
                         }
-                        project_changed = project_changed or bool(
-                            tool_names & _PROJECT_MUTATION_TOOLS
-                        )
+                        project_changed = bool(context.get("project_changed", project_changed))
+                        iterations = max(iterations, int(step_data.get("iteration") or 0))
+                        tool_calls_made += len(tool_names)
                         project_started_by_agent = project_started_by_agent or (
                             "project_start" in tool_names
                         )
@@ -2132,11 +2668,27 @@ async def execute_agent_task(ctx: dict, payload_dict: dict):
                     "The agent was interrupted before completion. Any changes already written "
                     "have been kept; you can continue from the current project state."
                 )
+                try:
+                    resume_scheduled = await asyncio.shield(
+                        _schedule_interrupted_agent_resume(payload, pubsub)
+                    )
+                except Exception:
+                    logger.exception("[WORKER] Failed to schedule interrupted-task recovery")
+                if resume_scheduled:
+                    final_response = (
+                        "The worker was interrupted after preserving completed changes. "
+                        "The platform is resuming this task once from the current workspace state."
+                    )
+                    terminal_error = None
                 if pubsub:
                     with contextlib.suppress(Exception):
-                        await _publish_error(pubsub, task_id, terminal_error)
+                        if not resume_scheduled:
+                            await _publish_error(pubsub, task_id, terminal_error)
                 with contextlib.suppress(Exception):
-                    await _update_task_status_redis(task_id, "failed", error=terminal_error)
+                    if not resume_scheduled:
+                        await _update_task_status_redis(task_id, "failed", error=terminal_error)
+                if resume_scheduled:
+                    return
                 raise
 
             finally:
@@ -2185,9 +2737,15 @@ async def execute_agent_task(ctx: dict, payload_dict: dict):
                         "agent_avatar_url": agent_model.avatar_url,
                         "iterations": iterations,
                         "tool_calls_made": tool_calls_made,
+                        "execution_profile": execution_profile,
                         "completion_reason": completion_reason,
                         "error": terminal_error,
                         "partial_work_preserved": bool(project_changed and not task_succeeded),
+                        "recovery": {
+                            "resume_attempt": payload.resume_attempt,
+                            "resume_scheduled": resume_scheduled,
+                            "resume_reason": payload.resume_reason,
+                        },
                         "last_completed_step": _step_idx - 1 if _step_idx else None,
                         "timings_ms": {
                             "total": int((time.monotonic() - task_started_at) * 1000),
@@ -2206,6 +2764,11 @@ async def execute_agent_task(ctx: dict, payload_dict: dict):
                         "executed_by": "worker",
                         "task_id": task_id,
                         "checkpoint_hash": checkpoint_hash,
+                        "preview": (
+                            {"status": "starting", "task_id": preview_task_id}
+                            if preview_task_id
+                            else {"status": "not_needed"}
+                        ),
                         "trajectory_path": (
                             f".tesslate/trajectories/trajectory_{session_id}.json"
                             if session_id
@@ -2216,6 +2779,11 @@ async def execute_agent_task(ctx: dict, payload_dict: dict):
                     }
                     stale_msg.message_metadata = final_metadata
                     db.add(stale_msg)
+
+                if project and project_changed:
+                    settings = dict(project.settings or {})
+                    settings["has_agent_mutations"] = True
+                    project.settings = settings
 
                 # Update chat status — but skip if our lock was stolen.
                 # The new owner already set status="running"; we must not
@@ -2269,7 +2837,9 @@ async def execute_agent_task(ctx: dict, payload_dict: dict):
             # 14. Publish a terminal status.  A runner that emitted an
             # unsuccessful ``complete`` event must not look successful to
             # clients, tickets, or automations.
-            if pubsub and completion_reason == "cancelled":
+            if pubsub and resume_scheduled:
+                pass
+            elif pubsub and completion_reason == "cancelled":
                 await pubsub.publish_agent_event(
                     task_id,
                     {"type": "done", "data": {"task_id": task_id, "status": "cancelled"}},
@@ -2280,13 +2850,14 @@ async def execute_agent_task(ctx: dict, payload_dict: dict):
                     task_id,
                     terminal_error or final_response or "Agent did not complete the request.",
                 )
-            elif pubsub:
+            elif pubsub and not preview_task_id:
                 await pubsub.publish_agent_event(
-                    task_id, {"type": "done", "data": {"task_id": task_id}}
+                    task_id,
+                    {"type": "done", "data": {"task_id": task_id, "status": "completed"}},
                 )
 
             # 14a. Gateway delivery — XADD to delivery stream if gateway-bound
-            if payload.gateway_deliver:
+            if payload.gateway_deliver and not resume_scheduled:
                 try:
                     from .services.cache_service import get_redis_client
                     from .services.gateway.envelope import (
@@ -2326,7 +2897,7 @@ async def execute_agent_task(ctx: dict, payload_dict: dict):
                     logger.warning("[WORKER] Gateway delivery XADD failed: %s", gw_err)
 
             # 14b. Enqueue webhook callback if configured
-            if payload.webhook_callback_url:
+            if payload.webhook_callback_url and not resume_scheduled:
                 try:
                     from .services.task_queue import get_task_queue
 
@@ -2367,14 +2938,18 @@ async def execute_agent_task(ctx: dict, payload_dict: dict):
                 if completion_reason == "cancelled"
                 else "failed"
             )
-            await _update_task_status_redis(
-                task_id,
-                terminal_task_status,
-                error=None if task_succeeded else terminal_error or final_response,
-            )
+            # A preview job still owns the terminal outcome after a successful
+            # mutation. Keeping this task RUNNING prevents a failed readiness
+            # check from being overwritten by the model completion.
+            if not preview_task_id and not resume_scheduled:
+                await _update_task_status_redis(
+                    task_id,
+                    terminal_task_status,
+                    error=None if task_succeeded else terminal_error or final_response,
+                )
 
             # Mark the AgentTask ticket as completed / cancelled.
-            if claimed_ticket_id is not None:
+            if claimed_ticket_id is not None and not resume_scheduled:
                 terminal = "completed" if task_succeeded else terminal_task_status
                 with contextlib.suppress(Exception):
                     from .services.agent_tickets import finish_ticket
@@ -2387,7 +2962,7 @@ async def execute_agent_task(ctx: dict, payload_dict: dict):
             # crash after dispatch would still leave the run looking
             # successful. The WHERE-clause guard inside _finalize lets a
             # racing user-cancellation or contract-breach pause win.
-            if auto_run_id is not None:
+            if auto_run_id is not None and not preview_task_id and not resume_scheduled:
                 final_status = "succeeded" if task_succeeded else terminal_task_status
                 await _finalize_automation_run(
                     auto_run_id,
@@ -2410,6 +2985,12 @@ async def execute_agent_task(ctx: dict, payload_dict: dict):
             import traceback
 
             from .services.agent_approval import ApprovalRequired
+
+            # Any persistence failure may have left the transaction aborted.
+            # Restore it before ticket/message/chat cleanup so every task ends
+            # in a truthful terminal state and releases its lock.
+            with contextlib.suppress(Exception):
+                await db.rollback()
 
             if isinstance(e, ApprovalRequired):
                 # Tool hit an approval gate: ticket is already flipped to
@@ -2717,6 +3298,29 @@ async def _update_task_status_redis(task_id: str, status: str, error: str | None
         logger.debug(f"[WORKER] Failed to update task status in Redis (non-blocking): {e}")
 
 
+async def _update_task_metadata_redis(task_id: str, updates: dict[str, object]) -> None:
+    """Merge task metadata from a worker-owned lifecycle transition."""
+    try:
+        from .services.cache_service import get_redis_client
+
+        redis = await get_redis_client()
+        if not redis:
+            return
+        task_key = f"tesslate:task:{task_id}"
+        raw = await redis.get(task_key)
+        if not raw:
+            return
+        import json
+
+        data = json.loads(raw)
+        metadata = data.get("metadata") if isinstance(data.get("metadata"), dict) else {}
+        metadata.update(updates)
+        data["metadata"] = metadata
+        await redis.setex(task_key, 86400, json.dumps(data))
+    except Exception as exc:
+        logger.debug("[WORKER] Failed to update task metadata for %s: %s", task_id, exc)
+
+
 async def _publish_error(pubsub, task_id: str, message: str):
     """Publish an error event to Redis."""
     if pubsub:
@@ -2727,7 +3331,10 @@ async def _publish_error(pubsub, task_id: str, message: str):
         # Also publish done so the API pod stops listening
         await pubsub.publish_agent_event(
             task_id,
-            {"type": "done", "data": {"task_id": task_id, "error": message}},
+            {
+                "type": "done",
+                "data": {"task_id": task_id, "status": "failed", "error": message},
+            },
         )
 
 
@@ -3270,6 +3877,7 @@ class WorkerSettings:
 
     functions = [
         execute_agent_task,
+        start_project_preview_task,
         dispatch_automation_task,
         resume_automation_run,
         send_webhook_callback,

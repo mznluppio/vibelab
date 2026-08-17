@@ -101,11 +101,9 @@ class DeploymentBuilder:
                 work_dir = "/app"
 
             # Install deps safety net (only if node_modules is missing)
-            install_cmd = (
-                "if [ -f bun.lock ] || [ -f bun.lockb ]; then bun install --frozen-lockfile; "
-                "elif [ -f pnpm-lock.yaml ]; then pnpm install --frozen-lockfile; "
-                "else npm install --prefer-offline --no-audit; fi"
-            )
+            from ..base_config_parser import get_node_dependency_install_command
+
+            install_cmd = get_node_dependency_install_command(only_if_missing=False)
 
             from ..orchestration import get_orchestrator, is_kubernetes_mode
 

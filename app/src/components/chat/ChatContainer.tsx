@@ -13,6 +13,7 @@ import { WorkspaceAttachCard } from './WorkspaceAttachCard';
 import { ChatSessionPopover } from './ChatSessionPopover';
 import { ToolDebugModal } from './ToolDebugModal';
 import { createWebSocket, chatApi, marketplaceApi } from '../../lib/api';
+import { getPreviewLifecycleStatus, isEventForAgentRun } from '../../lib/agent-lifecycle';
 import { useAuth } from '../../contexts/AuthContext';
 import { useAgentRuns } from '../../contexts/useAgentRuns';
 import toast from 'react-hot-toast';
@@ -310,10 +311,30 @@ export function ChatContainer({
   const isMountedRef = useRef(true);
   const agentTaskIdRef = useRef<string | null>(null);
   const projectStartedDuringTaskRef = useRef(false);
+  const previewReadyDuringTaskRef = useRef(false);
   const currentChatIdRef = useRef<string | null>(currentChatId);
   useEffect(() => {
     currentChatIdRef.current = currentChatId;
   }, [currentChatId]);
+
+  const handlePreviewLifecycle = useCallback(
+    (event: { type?: string; data?: Record<string, unknown> }) => {
+      const status = getPreviewLifecycleStatus(event);
+      if (status === 'starting') {
+        window.dispatchEvent(new CustomEvent('preview-starting', { detail: event.data }));
+        return;
+      }
+      if (status === 'failed') {
+        window.dispatchEvent(new CustomEvent('preview-failed', { detail: event.data }));
+        return;
+      }
+      if (status === 'ready' && !previewReadyDuringTaskRef.current) {
+        previewReadyDuringTaskRef.current = true;
+        onProjectStarted?.();
+      }
+    },
+    [onProjectStarted]
+  );
 
   // Sidebar deep-link reactor: when the user clicks a different project
   // chat in the sidebar while this builder is already mounted, the parent
@@ -347,7 +368,6 @@ export function ChatContainer({
   useEffect(() => {
     let cancelled = false;
     let activeEventSource: EventSource | null = null;
-    let reconnectTimeoutId: ReturnType<typeof setTimeout> | null = null;
 
     // Reset agent state when project/session changes
     setAgentExecuting(false);
@@ -490,6 +510,7 @@ export function ChatContainer({
         setReconnecting(true);
         setAgentExecuting(true);
         agentTaskIdRef.current = activeTask.task_id;
+        previewReadyDuringTaskRef.current = false;
 
         const thinkingId = `reconnect-${activeTask.task_id}`;
 
@@ -518,7 +539,6 @@ export function ChatContainer({
         activeEventSource = eventSource;
 
         const cleanupReconnect = () => {
-          if (reconnectTimeoutId) clearTimeout(reconnectTimeoutId);
           eventSource.close();
           activeEventSource = null;
           if (!cancelled) {
@@ -528,29 +548,12 @@ export function ChatContainer({
           }
         };
 
-        // Safety timeout: if no events arrive within 30s, task is likely stale
-        const resetSafetyTimeout = () => {
-          if (reconnectTimeoutId) clearTimeout(reconnectTimeoutId);
-          reconnectTimeoutId = setTimeout(() => {
-            cleanupReconnect();
-            if (!cancelled) {
-              setMessages((prev) =>
-                prev.map((m) =>
-                  m.id === thinkingId && m.agentData?.completion_reason === 'in_progress'
-                    ? { ...m, agentData: { ...m.agentData!, completion_reason: 'error' } }
-                    : m
-                )
-              );
-            }
-          }, 30000);
-        };
-        resetSafetyTimeout();
-
         eventSource.onmessage = (event) => {
           if (cancelled) return;
           try {
             const data = JSON.parse(event.data);
-            resetSafetyTimeout(); // Got data, reset the silence timeout
+            if (!isEventForAgentRun(data, currentChatIdRef.current, activeTask.task_id)) return;
+            handlePreviewLifecycle(data);
             if (data.type === 'agent_step') {
               // Notify panels when a kanban tool call succeeds
               const toolCalls = data.data?.tool_calls || [];
@@ -639,35 +642,17 @@ export function ChatContainer({
           }
         };
         eventSource.onerror = () => {
-          eventSource.close();
-          activeEventSource = null;
           if (cancelled) return;
-
-          // SSE failed but the task may still be running.
-          // Poll getActiveTask every 3s — keep thinking indicator until
-          // the task finishes, then clean up.
-          const pollId = setInterval(async () => {
-            if (cancelled) {
-              clearInterval(pollId);
-              return;
-            }
-            try {
-              const still = await chatApi.getActiveTask(
-                projectId.toString(),
-                currentChatId || undefined
-              );
-              if (!still?.task_id) {
-                clearInterval(pollId);
-                cleanupReconnect();
-                setMessages((prev) => prev.filter((m) => m.id !== thinkingId));
-              }
-            } catch {
-              // Task endpoint failed — assume task is gone
-              clearInterval(pollId);
-              cleanupReconnect();
-              setMessages((prev) => prev.filter((m) => m.id !== thinkingId));
-            }
-          }, 3000);
+          // Native EventSource retry remains active. Consult task state only
+          // to clean up a truly terminal run; an SSE blip is not a failure.
+          void chatApi
+            .getActiveTask(projectId.toString(), currentChatIdRef.current || undefined)
+            .then((stillActive) => {
+              if (!cancelled && !stillActive?.task_id) cleanupReconnect();
+            })
+            .catch(() => {
+              // The stream will keep retrying while the status endpoint is down.
+            });
         };
       } catch (err) {
         // No active task — expected when nothing is running
@@ -683,7 +668,6 @@ export function ChatContainer({
     // Cleanup on unmount or dependency change
     return () => {
       cancelled = true;
-      if (reconnectTimeoutId) clearTimeout(reconnectTimeoutId);
       if (activeEventSource) {
         activeEventSource.close();
         activeEventSource = null;
@@ -694,7 +678,7 @@ export function ChatContainer({
         abortControllerRef.current = null;
       }
     };
-  }, [projectId, initialAgents, currentChatId]);
+  }, [projectId, initialAgents, currentChatId, handlePreviewLifecycle]);
 
   // Load chat sessions for multi-session support
   useEffect(() => {
@@ -1173,7 +1157,10 @@ export function ChatContainer({
   };
 
   const sendStreamMessage = (message: string) => {
-    if (!message.trim() || !wsRef.current || isStreaming) return;
+    if (!message.trim() || !wsRef.current || isStreaming || !currentAgent.backendId) {
+      if (!currentAgent.backendId) toast.error('The selected agent is still loading. Please wait.');
+      return;
+    }
 
     const userMessage: Message = {
       id: `msg-${Date.now()}`,
@@ -1269,7 +1256,14 @@ export function ChatContainer({
     attachments?: SerializedAttachment[],
     mentions?: ChatMention[]
   ) => {
-    if ((!message.trim() && (!attachments || attachments.length === 0)) || agentExecuting) return;
+    if (
+      (!message.trim() && (!attachments || attachments.length === 0)) ||
+      agentExecuting ||
+      !currentAgent.backendId
+    ) {
+      if (!currentAgent.backendId) toast.error('The selected agent is still loading. Please wait.');
+      return;
+    }
 
     const userMessage: Message = {
       id: `msg-${Date.now()}`,
@@ -1281,6 +1275,7 @@ export function ChatContainer({
     setMessages((prev) => [...prev, userMessage]);
     setAgentExecuting(true);
     projectStartedDuringTaskRef.current = false;
+    previewReadyDuringTaskRef.current = false;
 
     // Create abort controller
     const controller = new AbortController();
@@ -1334,6 +1329,8 @@ export function ChatContainer({
               agentRuns.register(currentChatIdRef.current, event.data.task_id as string);
             }
           }
+          if (!isEventForAgentRun(event, currentChatIdRef.current, agentTaskIdRef.current)) return;
+          handlePreviewLifecycle(event);
 
           if (event.type === 'text_delta') {
             // Stream LLM text into a visible message, not the thinking indicator
@@ -1598,11 +1595,11 @@ export function ChatContainer({
 
               toast.success('Task completed successfully');
               if (event.data.project_started === true) {
-                onProjectStarted?.();
+                handlePreviewLifecycle({ type: 'complete', data: { project_started: true } });
               }
               if (projectStartedDuringTaskRef.current) {
                 projectStartedDuringTaskRef.current = false;
-                onProjectStarted?.();
+                handlePreviewLifecycle({ type: 'complete', data: { project_started: true } });
               }
             }
           } else if (event.type === 'credits_used') {
@@ -1849,6 +1846,10 @@ export function ChatContainer({
     // Use agent's mode to determine stream vs agent execution. Mentions
     // only make sense for the agent path — stream mode bypasses the
     // worker / payload pipeline entirely, so we drop them silently.
+    if (!currentAgent.backendId) {
+      toast.error('The selected agent is still loading. Please wait.');
+      return;
+    }
     if (currentAgent.mode === 'agent') {
       sendAgentMessage(message, attachments, mentions);
     } else {
@@ -2724,7 +2725,7 @@ export function ChatContainer({
             onSendMessage={handleSendMessage}
             slug={projectSlug}
             projectName={projectName}
-            disabled={isStreaming || agentExecuting || disabledProp}
+            disabled={isStreaming || agentExecuting || disabledProp || !currentAgent.backendId}
             viewerMode={!!disabledProp}
             isExecuting={agentExecuting}
             onStop={stopAgentExecution}

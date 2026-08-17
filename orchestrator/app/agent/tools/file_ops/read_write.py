@@ -148,6 +148,7 @@ async def write_file_tool(params: dict[str, Any], context: dict[str, Any]) -> di
 
     from ....services.orchestration import get_orchestrator
     from ._write_fence import fence_file
+    from .integrity import verify_file_content
 
     try:
         orchestrator = get_orchestrator()
@@ -166,6 +167,29 @@ async def write_file_tool(params: dict[str, Any], context: dict[str, Any]) -> di
             )
 
         if success:
+            verified, integrity = await verify_file_content(
+                orchestrator,
+                user_id=user_id,
+                project_id=project_id,
+                container_name=container_name,
+                file_path=file_path,
+                expected_content=content,
+                project_slug=project_slug,
+                subdir=container_directory,
+                volume_id=context.get("volume_id"),
+                cache_node=context.get("cache_node"),
+            )
+            if not verified:
+                context["project_mutation_integrity_failure"] = {
+                    "file_path": file_path,
+                    "integrity": integrity,
+                }
+                return error_output(
+                    message=f"Write verification failed for '{file_path}'",
+                    suggestion="Read the file, compare its contents, and retry the write before continuing.",
+                    file_path=file_path,
+                    details={"integrity": integrity},
+                )
             if file_path.rstrip("/").endswith(".tesslate/config.json"):
                 logger.info(
                     "[WRITE-FILE] .tesslate/config.json written — "
@@ -183,7 +207,11 @@ async def write_file_tool(params: dict[str, Any], context: dict[str, Any]) -> di
                 message=f"Wrote {pluralize(len(lines), 'line')} ({format_file_size(len(content))}) to '{file_path}'",
                 file_path=file_path,
                 preview=preview,
-                details={"size_bytes": len(content), "line_count": len(lines)},
+                details={
+                    "size_bytes": len(content),
+                    "line_count": len(lines),
+                    "integrity": integrity,
+                },
             )
 
     except Exception as e:
@@ -261,6 +289,7 @@ def register_read_write_tools(registry):
             state_serializable=True,
             # Atomic write through container backend; no persistent handle held.
             holds_external_state=False,
+            mutates_project=True,
             examples=[
                 '{"tool_name": "write_file", "parameters": {"file_path": "src/NewComponent.jsx", "content": "import React from \'react\'..."}}'
             ],

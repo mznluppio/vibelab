@@ -50,6 +50,12 @@ async def _project_start_executor(
             suggestion="Wait for setup to complete, then try again",
         )
 
+    # Source-of-truth refresh: fold any edits to .tesslate/config.json into
+    # the Container graph before rendering manifests.
+    from ....services.config_sync import ensure_config_synced
+
+    await ensure_config_synced(db, project, user_id)
+
     containers = await fetch_all_containers(db, project_id)
     if not containers:
         return error_output(
@@ -151,6 +157,12 @@ async def _project_restart_executor(
             message="Project is still being provisioned",
             suggestion="Wait for setup to complete, then try again",
         )
+
+    # Source-of-truth refresh: fold any edits to .tesslate/config.json into
+    # the Container graph before rendering manifests.
+    from ....services.config_sync import ensure_config_synced
+
+    await ensure_config_synced(db, project, user_id)
 
     containers = await fetch_all_containers(db, project_id)
     if not containers:
