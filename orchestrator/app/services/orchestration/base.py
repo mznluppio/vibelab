@@ -15,6 +15,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from .deployment_mode import DeploymentMode
 
 
+def is_preview_http_response_ready(status_code: int | None) -> bool:
+    """Return whether an HTTP response proves a preview route is usable.
+
+    A process-level healthcheck (or an early Traefik 404) only proves that
+    infrastructure is alive; it does not prove the application route is
+    registered and serving traffic.  Authentication responses still prove the
+    app is available, while a 404 at the preview root must remain a failed
+    readiness probe.
+    """
+    return status_code is not None and (
+        200 <= status_code < 400 or status_code in {401, 403}
+    )
+
+
 class BaseOrchestrator(ABC):
     """
     Abstract base class for container orchestration.

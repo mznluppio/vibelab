@@ -39,7 +39,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .base import BaseOrchestrator
+from .base import BaseOrchestrator, is_preview_http_response_ready
 from .deployment_mode import DeploymentMode
 
 logger = logging.getLogger(__name__)
@@ -1602,7 +1602,11 @@ class LocalOrchestrator(BaseOrchestrator):
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
                 response = await client.get(url)
-            return {"healthy": response.status_code < 500, "status_code": response.status_code, "url": url}
+            return {
+                "healthy": is_preview_http_response_ready(response.status_code),
+                "status_code": response.status_code,
+                "url": url,
+            }
         except httpx.HTTPError as exc:
             return {"healthy": False, "status_code": None, "url": url, "error": str(exc)}
 

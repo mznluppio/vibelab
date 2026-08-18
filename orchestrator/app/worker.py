@@ -28,6 +28,7 @@ from .services import (
 )
 from .services.apps.app_invocations import invoke_app_instance_task
 from .services.apps.settlement_worker import settle_spend_batch as settle_spend_batch_cron
+from .services.config_sync import ensure_config_synced
 from .services.marketplace_sync import (
     marketplace_sync_periodic_cron,
     marketplace_yanks_fast_cron,
@@ -147,8 +148,6 @@ async def _start_project_after_agent_build(project, user_id: UUID, db) -> bool:
 
     # Source-of-truth refresh: fold any edits to .tesslate/config.json into
     # the Container graph before we can start anything.
-    from ..services.config_sync import ensure_config_synced
-
     await ensure_config_synced(db, project, user_id)
 
     containers = list(
@@ -207,8 +206,6 @@ async def start_project_preview_task(ctx: dict, preview: dict) -> None:
             # Source-of-truth refresh: fold any edits to .tesslate/config.json
             # into the Container graph before rendering manifests. This also
             # materialises containers for projects whose setup did not sync.
-            from ..services.config_sync import ensure_config_synced
-
             await ensure_config_synced(db, project, user_id)
 
             containers = list(

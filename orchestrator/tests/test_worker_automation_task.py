@@ -34,6 +34,20 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+
+@pytest.mark.unit
+def test_worker_imports_preview_config_sync_at_module_load() -> None:
+    """Preview startup must use a valid package-relative config-sync import.
+
+    Preview work runs from ``app.worker`` (not a nested package), so a
+    ``..services`` import fails only after an agent finishes its work. Keeping
+    this dependency module-level lets normal worker import validation catch the
+    regression before a project is left without a running preview.
+    """
+    import app.worker as worker
+
+    assert callable(worker.ensure_config_synced)
+
 # ---------------------------------------------------------------------------
 # AgentTaskPayload field plumbing
 # ---------------------------------------------------------------------------

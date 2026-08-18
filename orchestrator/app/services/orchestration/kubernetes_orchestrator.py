@@ -49,7 +49,7 @@ if TYPE_CHECKING:
 
 from ..snapshot_manager import get_snapshot_manager
 from ..volume_manager import VolumeRestoringError, VolumeUnavailableError
-from .base import BaseOrchestrator
+from .base import BaseOrchestrator, is_preview_http_response_ready
 from .deployment_mode import DeploymentMode
 from .kubernetes.client import KubernetesClient, get_k8s_client
 from .kubernetes.helpers import (
@@ -1813,7 +1813,7 @@ find /app -maxdepth 2 -name 'package.json' 2>/dev/null | head -1
             async with httpx.AsyncClient(timeout=5.0) as client:
                 response = await client.get(target_url)
             return {
-                "healthy": response.status_code < 500,
+                "healthy": is_preview_http_response_ready(response.status_code),
                 "status_code": response.status_code,
                 "url": public_url or target_url,
             }
