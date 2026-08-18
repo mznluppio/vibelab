@@ -284,11 +284,75 @@ async def start_project_preview_task(ctx: dict, preview: dict) -> None:
                     for container in application_containers
                 ]
                 if last_results and all(result.get("healthy") for result in last_results):
+                    from .services.preview_validation import run_preview_validation
+
+                    validation_results = []
+                    for container in application_containers:
+                        validation = await run_preview_validation(
+                            orchestrator,
+                            user_id=user_id,
+                            project_id=project.id,
+                            project_slug=project.slug,
+                            container_name=container.name,
+                        )
+                        validation_results.append(
+                            {
+                                "container": container.name,
+                                "status": validation.status,
+                                "command": validation.command,
+                                "output": validation.output,
+                            }
+                        )
+
+                    failed_validation = next(
+                        (
+                            result
+                            for result in validation_results
+                            if result["status"] == "failed"
+                        ),
+                        None,
+                    )
+                    validation_status = (
+                        "failed"
+                        if failed_validation
+                        else (
+                            "passed"
+                            if any(result["status"] == "passed" for result in validation_results)
+                            else "skipped"
+                        )
+                    )
+                    settings = dict(project.settings or {})
+                    settings["preview_validation"] = {
+                        "status": validation_status,
+                        "results": validation_results,
+                    }
+                    project.settings = settings
+                    if failed_validation:
+                        await db.commit()
+                        raise RuntimeError(
+                            "Post-preview UI validation failed for "
+                            f"{failed_validation['container']}: "
+                            f"{failed_validation['output'] or 'check:ui failed'}"
+                        )
+
                     for container in application_containers:
                         container.status = "running"
                     project.environment_status = "active"
                     await db.commit()
                     if pubsub:
+                        if any(result["status"] != "skipped" for result in validation_results):
+                            await pubsub.publish_agent_event(
+                                task_id,
+                                {
+                                    "type": "preview_validation",
+                                    "data": {
+                                        "task_id": task_id,
+                                        "preview_task_id": preview_task_id,
+                                        "project_id": str(project.id),
+                                        "results": validation_results,
+                                    },
+                                },
+                            )
                         await pubsub.publish_agent_event(
                             task_id,
                             {
