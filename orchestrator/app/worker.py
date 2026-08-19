@@ -380,6 +380,11 @@ async def start_project_preview_task(ctx: dict, preview: dict) -> None:
                             {"type": "done", "data": {"task_id": task_id, "status": "completed"}},
                         )
                     await _update_task_status_redis(task_id, "completed")
+                    await _persist_preview_message_status(
+                        preview,
+                        status="ready",
+                        urls=[result.get("url") for result in last_results if result.get("url")],
+                    )
                     automation_run_id = preview.get("automation_run_id")
                     if automation_run_id:
                         await _finalize_automation_run(
@@ -404,6 +409,7 @@ async def start_project_preview_task(ctx: dict, preview: dict) -> None:
             )
     except Exception as exc:
         logger.warning("[PREVIEW] lifecycle failed for %s: %s", project_id, exc, exc_info=True)
+        await _persist_preview_message_status(preview, status="failed", error=str(exc))
         if pubsub:
             await pubsub.publish_agent_event(
                 task_id,
@@ -438,6 +444,60 @@ async def start_project_preview_task(ctx: dict, preview: dict) -> None:
                         "error": str(exc)[:1000],
                     },
                 )
+
+
+async def _persist_preview_message_status(
+    preview: dict,
+    *,
+    status: str,
+    urls: list[str] | None = None,
+    error: str | None = None,
+) -> None:
+    """Persist the terminal preview outcome for a reloaded chat.
+
+    Preview startup is deliberately asynchronous, so the assistant message is
+    finalized before the runtime is ready. Without this follow-up write a
+    reopened conversation can be left with a permanent ``starting`` state even
+    though the container has finished starting (or has failed).
+    """
+    raw_message_id = preview.get("message_id")
+    if not isinstance(raw_message_id, str):
+        return
+
+    try:
+        message_id = UUID(raw_message_id)
+    except ValueError:
+        logger.warning("[PREVIEW] Ignoring invalid message id for preview status: %r", raw_message_id)
+        return
+
+    from .database import AsyncSessionLocal
+    from .models import Message
+    from sqlalchemy import select
+
+    try:
+        async with AsyncSessionLocal() as db:
+            message = (
+                await db.execute(select(Message).where(Message.id == message_id))
+            ).scalar_one_or_none()
+            if message is None:
+                return
+
+            metadata = dict(message.message_metadata or {})
+            preview_metadata: dict[str, Any] = {
+                "status": status,
+                "task_id": str(preview.get("preview_task_id") or ""),
+            }
+            if urls:
+                preview_metadata["urls"] = urls
+            if error:
+                preview_metadata["error"] = error[:1000]
+            metadata["preview"] = preview_metadata
+            message.message_metadata = metadata
+            await db.commit()
+    except Exception:
+        # Preview availability must never depend on an informational status
+        # update; the lifecycle already reports the source-of-truth event.
+        logger.warning("[PREVIEW] Could not persist preview status", exc_info=True)
 
 
 async def _write_worker_heartbeat() -> None:
@@ -2596,6 +2656,7 @@ async def execute_agent_task(ctx: dict, payload_dict: dict):
                                     {
                                         "agent_task_id": task_id,
                                         "preview_task_id": preview_task_id,
+                                        "message_id": str(message_id) if message_id else None,
                                         "project_id": str(project.id),
                                         "user_id": payload.user_id,
                                         "restart_required": bool(

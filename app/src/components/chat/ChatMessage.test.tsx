@@ -95,4 +95,23 @@ describe('ChatMessage Markdown', () => {
     expect(bubble?.className).not.toContain('to-[#ff8533]');
     expect(container.querySelector('.w-fit')).toBeInTheDocument();
   });
+
+  it('shows an attachment-only user request without rendering an empty bubble', () => {
+    const { container } = render(
+      <ChatMessage
+        type="user"
+        content=""
+        attachments={[
+          {
+            type: 'pasted_text',
+            content: 'A business brief supplied as pasted text.',
+            label: 'Pasted text (1 line)',
+          },
+        ]}
+      />
+    );
+
+    expect(screen.getByRole('button', { name: 'Pasted text +1 lines' })).toBeInTheDocument();
+    expect(container.querySelector('.message-bubble')).toBeNull();
+  });
 });

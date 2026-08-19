@@ -245,15 +245,21 @@ export function useAgentChat({
         const expandedMessages: ChatMessage[] = [];
         (dbMessages as DBMessage[]).forEach((msg: DBMessage, idx: number) => {
           const messageType = msg.role === 'assistant' ? 'ai' : 'user';
+          const attachments = msg.message_metadata?.attachments as
+            | SerializedAttachment[]
+            | undefined;
+          // A pasted prompt or an image is a real user message even when the
+          // text input is empty. Keeping it in history makes a reopened chat
+          // faithfully show the request that produced the agent response.
+          const hasVisibleUserRequest =
+            messageType === 'user' && (msg.content?.trim().length > 0 || !!attachments?.length);
           if (messageType === 'user' || !msg.message_metadata?.agent_mode) {
-            if (msg.content && msg.content.trim()) {
+            if ((msg.content && msg.content.trim()) || hasVisibleUserRequest) {
               expandedMessages.push({
                 id: `msg-${idx}`,
                 type: messageType,
                 content: msg.content,
-                attachments: msg.message_metadata?.attachments as
-                  | SerializedAttachment[]
-                  | undefined,
+                attachments,
               });
             }
             return;

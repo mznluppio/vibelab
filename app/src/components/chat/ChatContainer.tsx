@@ -386,19 +386,25 @@ export function ChatContainer({
         dbMessages.forEach((msg, idx) => {
           // Map 'assistant' role to 'ai' type for frontend
           const messageType = msg.role === 'assistant' ? 'ai' : 'user';
+          const attachments = msg.message_metadata?.attachments as
+            | SerializedAttachment[]
+            | undefined;
+          // Preserve attachment-only user prompts after a page refresh. They
+          // are commonly used by non-technical users to submit a brief, and
+          // were previously saved but filtered out of the rendered history.
+          const hasVisibleUserRequest =
+            messageType === 'user' && (msg.content?.trim().length > 0 || !!attachments?.length);
 
           // For user messages or non-agent assistant messages, add as-is
-          // Skip messages with empty content to prevent empty chat bubbles
+          // Skip truly empty messages, but never an attachment-only request.
           if (messageType === 'user' || !msg.message_metadata?.agent_mode) {
-            if (msg.content && msg.content.trim()) {
+            if ((msg.content && msg.content.trim()) || hasVisibleUserRequest) {
               expandedMessages.push({
                 id: `msg-${idx}`,
                 type: messageType,
                 content: msg.content,
                 timestamp: msg.created_at,
-                attachments: msg.message_metadata?.attachments as
-                  | SerializedAttachment[]
-                  | undefined,
+                attachments,
               });
             }
             return;

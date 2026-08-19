@@ -43,6 +43,7 @@ export function ChatMessage({
   isStreaming = false,
 }: ChatMessageProps) {
   const isUser = type === 'user';
+  const hasTextContent = typeof content !== 'string' || content.trim().length > 0;
   const { user } = useAuth();
   const [copied, setCopied] = useState(false);
   const [userAvatarFailed, setUserAvatarFailed] = useState(false);
@@ -123,18 +124,19 @@ export function ChatMessage({
             ))}
           </div>
         )}
-        <div
-          className={`
-            message-bubble px-4 py-3 rounded-2xl text-sm leading-relaxed
-            ${
-              isUser
-                ? 'user-message-bubble text-[var(--text)]'
-                : 'bg-[var(--surface)] text-[var(--text)] border-2 border-[var(--border-color)]'
-            }
-          `}
-        >
-          {typeof content === 'string' ? (
-            <div>
+        {hasTextContent && (
+          <div
+            className={`
+              message-bubble px-4 py-3 rounded-2xl text-sm leading-relaxed
+              ${
+                isUser
+                  ? 'user-message-bubble text-[var(--text)]'
+                  : 'bg-[var(--surface)] text-[var(--text)] border-2 border-[var(--border-color)]'
+              }
+            `}
+          >
+            {typeof content === 'string' ? (
+              <div>
               <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
                 components={{
@@ -207,11 +209,12 @@ export function ChatMessage({
               >
                 {content}
               </ReactMarkdown>
-            </div>
-          ) : (
-            content
-          )}
-        </div>
+              </div>
+            ) : (
+              content
+            )}
+          </div>
+        )}
 
         {/* Message footer: timestamp + hover actions (Claude-style) */}
         <div
