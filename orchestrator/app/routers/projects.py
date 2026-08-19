@@ -2549,59 +2549,33 @@ async def _perform_project_deletion(
     try:
         logger.info(f"[DELETE] Starting deletion of project {project_id} for user {user_id}")
         task.update_progress(0, 100, "Stopping containers...")
+        settings = get_settings()
+        runtime_cleanup_completed = False
 
         # 1. Stop and remove containers using unified orchestrator
-        try:
-            orchestrator = get_orchestrator()
+        orchestrator = get_orchestrator()
 
-            # Get project to access slug
-            project_result = await db.execute(select(Project).where(Project.id == project_id))
-            project = project_result.scalar_one_or_none()
-            # Capture volume_id now — project row is deleted later in step 3
-            volume_id: str | None = getattr(project, "volume_id", None) if project else None
+        # Get project to access slug. Capture volume_id now because the row is
+        # deleted after runtime cleanup.
+        project_result = await db.execute(select(Project).where(Project.id == project_id))
+        project = project_result.scalar_one_or_none()
+        volume_id: str | None = getattr(project, "volume_id", None) if project else None
 
-            if project:
-                try:
-                    # Stop the entire project (all containers)
-                    await orchestrator.stop_project(project.slug, project_id, user_id)
-                    logger.info(f"[DELETE] Stopped all containers for project {project.slug}")
-                except Exception as e:
-                    logger.warning(f"[DELETE] Error stopping project containers: {e}")
-
-                try:
-                    # Disconnect main Traefik from project network and remove network
-                    network_name = f"tesslate-{project.slug}"
-
-                    logger.info(f"[DELETE] Disconnecting tesslate-traefik from {network_name}")
-                    process = await asyncio.create_subprocess_exec(
-                        "docker",
-                        "network",
-                        "disconnect",
-                        network_name,
-                        "tesslate-traefik",
-                        stdout=asyncio.subprocess.PIPE,
-                        stderr=asyncio.subprocess.PIPE,
-                    )
-                    await process.communicate()
-
-                    # Remove project network
-                    logger.info(f"[DELETE] Removing network {network_name}")
-                    process = await asyncio.create_subprocess_exec(
-                        "docker",
-                        "network",
-                        "rm",
-                        network_name,
-                        stdout=asyncio.subprocess.PIPE,
-                        stderr=asyncio.subprocess.PIPE,
-                    )
-                    await process.communicate()
-
-                    logger.info(f"[DELETE] Cleaned up networks for project {project.slug}")
-                except Exception as e:
-                    logger.warning(f"[DELETE] Error cleaning up networks: {e}")
-
-        except Exception as e:
-            logger.warning(f"[DELETE] Error stopping containers: {e}")
+        if project and settings.deployment_mode == "docker":
+            # A stopped Compose project still owns containers and its network.
+            # Tear it down while its slug is still available; waiting until the
+            # DB row is gone made the old cleanup path unable to resolve it.
+            await orchestrator.delete_project_namespace(
+                project_id=project_id,
+                user_id=user_id,
+                project_slug=project.slug,
+            )
+            runtime_cleanup_completed = True
+            logger.info("[DELETE] Removed Docker runtime for project %s", project.slug)
+        elif project:
+            # Kubernetes retains its established namespace deletion path below.
+            await orchestrator.stop_project(project.slug, project_id, user_id)
+            logger.info(f"[DELETE] Stopped all containers for project {project.slug}")
 
         # Clean up btrfs volume and CAS data via Hub (fire-and-forget).
         # If Hub is unreachable, the GC collector will clean up eventually.
@@ -2639,8 +2613,6 @@ async def _perform_project_deletion(
             .values(status="closed", closed_at=func.now())
         )
         await db.commit()
-
-        settings = get_settings()
 
         # 2c. K8s mode only: soft-delete snapshots BEFORE the project row is
         #     deleted. The snapshots relationship uses passive_deletes=True, so
@@ -2682,7 +2654,7 @@ async def _perform_project_deletion(
         from ..services.project_fs import get_project_fs_path
 
         fs_path = get_project_fs_path(project) if project else None
-        if settings.deployment_mode == "docker" and project:
+        if settings.deployment_mode == "docker" and project and not runtime_cleanup_completed:
             try:
                 await orchestrator.delete_project_directory(project.slug)
                 logger.info(f"[DELETE] Deleted project directory: /projects/{project.slug}")

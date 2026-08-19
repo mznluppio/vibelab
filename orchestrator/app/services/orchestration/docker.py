@@ -368,47 +368,118 @@ class DockerOrchestrator(BaseOrchestrator):
             logger.error(f"[DOCKER] Error stopping project: {e}", exc_info=True)
             raise
 
-    async def delete_project_namespace(self, project_id: UUID, user_id: UUID) -> None:
+    async def delete_project_namespace(
+        self, project_id: UUID, user_id: UUID, project_slug: str | None = None
+    ) -> None:
         """Docker analogue of the K8s namespace delete: full teardown.
 
-        Called on uninstall. Runs ``docker compose down`` (removes
-        containers + network) and deletes the project directory. No-op if
-        the project slug can't be resolved (caller handles via best-effort
-        try/except).
+        Runs ``docker compose down`` (removes containers + network), removes
+        any labelled orphan that Compose no longer knows about, then removes
+        the generated Compose file and project directory. ``project_slug`` is
+        accepted for delete flows so cleanup can run *before* their database
+        row disappears.
         """
         _ = user_id  # interface parity with K8s orchestrator
-        project_slug = await self._get_project_slug(project_id)
+        project_slug = project_slug or await self._get_project_slug(project_id)
         if project_slug is None:
-            logger.warning("[DOCKER] delete_project_namespace: no slug for project %s", project_id)
-            return
+            raise RuntimeError(f"Cannot tear down Docker project {project_id}: project slug unavailable")
 
         compose_file_path = self._get_compose_file_path(project_slug)
-        if os.path.exists(compose_file_path):
-            try:
-                process = await asyncio.create_subprocess_exec(
-                    "docker",
-                    "compose",
-                    "-f",
-                    compose_file_path,
-                    "-p",
-                    project_slug,
-                    "down",
-                    "--remove-orphans",
-                    "--volumes",
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                )
-                await process.communicate()
-            except Exception:
-                logger.exception("[DOCKER] compose down failed for %s (continuing)", project_slug)
+        network_name = f"tesslate-{project_slug}"
 
-        try:
-            await self.delete_project_directory(project_slug)
-        except Exception:
-            logger.exception(
-                "[DOCKER] delete_project_directory failed for %s (continuing)",
+        # Traefik is attached externally to every project network. Disconnect
+        # it first so ``docker compose down`` can remove the network instead
+        # of returning a partial-success error after it has stopped services.
+        process = await asyncio.create_subprocess_exec(
+            "docker",
+            "network",
+            "disconnect",
+            "-f",
+            network_name,
+            self.settings.traefik_container_name,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        _stdout, stderr = await process.communicate()
+        if process.returncode != 0:
+            error = stderr.decode().strip() if stderr else "unknown Docker error"
+            normalized_error = error.lower()
+            if not any(marker in normalized_error for marker in ("no such network", "not found", "not connected")):
+                raise RuntimeError(
+                    f"Could not disconnect Traefik from Docker network {network_name}: {error}"
+                )
+
+        if os.path.exists(compose_file_path):
+            process = await asyncio.create_subprocess_exec(
+                "docker",
+                "compose",
+                "-f",
+                compose_file_path,
+                "-p",
                 project_slug,
+                "down",
+                "--remove-orphans",
+                "--volumes",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
             )
+            _stdout, stderr = await process.communicate()
+            if process.returncode != 0:
+                error = stderr.decode().strip() if stderr else "unknown Docker Compose error"
+                raise RuntimeError(f"Docker Compose teardown failed for {project_slug}: {error}")
+
+        # ``compose down`` cannot remove a container when its generated
+        # Compose file was lost or changed. Every project container is tagged
+        # at creation, so remove only exact project-labelled leftovers.
+        process = await asyncio.create_subprocess_exec(
+            "docker",
+            "ps",
+            "-aq",
+            "--filter",
+            f"label=com.tesslate.project={project_slug}",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await process.communicate()
+        if process.returncode != 0:
+            error = stderr.decode().strip() if stderr else "unknown Docker error"
+            raise RuntimeError(f"Could not list Docker containers for {project_slug}: {error}")
+
+        container_ids = stdout.decode().split()
+        if container_ids:
+            process = await asyncio.create_subprocess_exec(
+                "docker",
+                "rm",
+                "-f",
+                *container_ids,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            _stdout, stderr = await process.communicate()
+            if process.returncode != 0:
+                error = stderr.decode().strip() if stderr else "unknown Docker error"
+                raise RuntimeError(f"Could not remove Docker containers for {project_slug}: {error}")
+
+        # Compose normally removes its network. A missing/legacy Compose file
+        # does not, so make the scoped network cleanup idempotent.
+        process = await asyncio.create_subprocess_exec(
+            "docker",
+            "network",
+            "rm",
+            network_name,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        _stdout, stderr = await process.communicate()
+        if process.returncode != 0:
+            error = stderr.decode().strip() if stderr else "unknown Docker error"
+            if not any(marker in error.lower() for marker in ("no such network", "not found")):
+                raise RuntimeError(f"Could not remove Docker network {network_name}: {error}")
+
+        await asyncio.to_thread(Path(compose_file_path).unlink, missing_ok=True)
+        project_path = self.get_project_path(project_slug)
+        if project_path.exists():
+            await self.delete_project_directory(project_slug)
 
     async def restart_project(
         self, project, containers: list, connections: list, user_id: UUID, db: AsyncSession
