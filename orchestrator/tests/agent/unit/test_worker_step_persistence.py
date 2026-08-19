@@ -8,9 +8,23 @@ from app.services.agent_task import AgentTaskPayload
 from app.worker import (
     _defer_agent_task_for_chat_lock,
     _persist_agent_step,
+    _reported_incomplete_delivery,
     _schedule_preview_validation_repair,
     _schedule_interrupted_agent_resume,
 )
+
+
+@pytest.mark.parametrize(
+    "response, expected",
+    [
+        ("L'outil est terminé.", False),
+        ("Un champ dédié devra encore être ajouté avant de pouvoir refuser.", True),
+        ("Il reste à faire le parcours de validation demandé.", True),
+        ("The requested approval flow is not yet implemented.", True),
+    ],
+)
+def test_explicit_incomplete_delivery_admission_is_detected(response, expected):
+    assert (_reported_incomplete_delivery(response) is not None) is expected
 
 
 def _scalar_result(value):
@@ -182,7 +196,7 @@ async def test_preview_validation_failure_resumes_task_once_with_diagnostic(monk
     assert queued_payload["preview_repair_attempt"] == 1
     assert queued_payload["chat_history"] == []
     assert queued_payload["project_context"] == {}
-    assert "Platform validation repair" in queued_payload["message"]
+    assert "Platform delivery repair" in queued_payload["message"]
     assert "class selector missing" in queued_payload["message"]
     assert queue.enqueue.await_args.kwargs["_defer_by"] == 1
 

@@ -43,3 +43,15 @@ export function getPreviewLifecycleStatus(event: AgentEventLike): PreviewLifecyc
   // be opened. New worker events use preview_ready instead.
   return event.data?.project_started === true ? 'ready' : null;
 }
+
+/**
+ * A model completion can precede platform-owned preview work. Consumers must
+ * keep their SSE stream open in that case or they will miss `preview_ready`.
+ */
+export function shouldKeepAgentStreamOpenAfterComplete(
+  data?: Record<string, unknown>
+): boolean {
+  const preview = data?.preview as Record<string, unknown> | undefined;
+  const deliveryRepair = data?.delivery_repair as Record<string, unknown> | undefined;
+  return preview?.status === 'starting' || deliveryRepair?.status === 'running';
+}

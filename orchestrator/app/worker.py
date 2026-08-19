@@ -17,6 +17,7 @@ import asyncio
 import contextlib
 import logging
 import os
+import re
 import time
 from datetime import UTC, datetime
 from typing import Any
@@ -187,8 +188,38 @@ def _is_repairable_preview_failure(error: Exception) -> bool:
     )
 
 
+_INCOMPLETE_DELIVERY_RE = re.compile(
+    r"(?:\b(?:reste|restent)\s+(?:à|a)\s+(?:faire|ajouter|implémenter|mettre en œuvre)\b|"
+    r"\bdevra(?:ient|it|ont)?\s+(?:encore\s+)?être\s+(?:ajouté|ajoutée|implémenté|implémentée|fait|faite)\b|"
+    r"\bn['’]est\s+pas\s+(?:encore\s+)?(?:implémenté|fonctionnel)\b|"
+    r"\b(?:not|isn't)\s+(?:yet\s+)?(?:implemented|functional)\b|"
+    r"\b(?:still|remaining)\s+(?:needs|to be)\s+(?:implemented|added)\b)",
+    re.IGNORECASE,
+)
+
+
+def _reported_incomplete_delivery(final_response: str) -> str | None:
+    """Return an explicit unresolved-delivery admission made by the agent.
+
+    This is deliberately narrow: it is a last line of defence for generated
+    applications after the model has already changed project files. It does
+    not retry ordinary advice or optional future ideas, and it only receives
+    one repair attempt through the existing bounded retry mechanism.
+    """
+    if not final_response:
+        return None
+
+    match = _INCOMPLETE_DELIVERY_RE.search(final_response)
+    if match is None:
+        return None
+
+    start = max(0, match.start() - 240)
+    end = min(len(final_response), match.end() + 640)
+    return final_response[start:end].strip()
+
+
 async def _schedule_preview_validation_repair(preview: dict, diagnostic: str) -> bool:
-    """Resume the originating task once with a deterministic validation error.
+    """Resume the originating task once with a deterministic delivery error.
 
     Reusing the task id keeps the existing SSE stream, cancellation target and
     chat lock intact.  The original model response is preserved; the resumed
@@ -209,18 +240,19 @@ async def _schedule_preview_validation_repair(preview: dict, diagnostic: str) ->
     payload.project_context = {}
     payload.message = (
         f"{payload.message}\n\n"
-        "[Platform validation repair — required]\n"
-        "The previous implementation is running but failed a deterministic project check. "
-        "Inspect the current files, repair only the reported defects, start the project at most "
-        "once if needed, run the failed validation again, and do not claim completion until it passes.\n\n"
-        f"Validation diagnostic:\n{diagnostic[:4000]}"
+        "[Platform delivery repair — required]\n"
+        "The previous implementation is running but the platform found an unresolved delivery "
+        "requirement. Inspect the current files, repair only the reported defect, start the project "
+        "at most once if needed, run the relevant validation again, and do not claim completion "
+        "until the requested workflow is actually complete.\n\n"
+        f"Platform diagnostic:\n{diagnostic[:4000]}"
     )
 
     reset = await get_task_manager().reset_task_for_retry(
         payload.task_id,
         metadata_updates={
             "preview_repair_attempt": payload.preview_repair_attempt,
-            "preview_repair_reason": "declared_validation_failed",
+            "preview_repair_reason": "delivery_requirement_unresolved",
         },
     )
     if reset is None:
@@ -229,7 +261,7 @@ async def _schedule_preview_validation_repair(preview: dict, diagnostic: str) ->
 
     await get_task_queue().enqueue("execute_agent_task", payload.to_dict(), _defer_by=1)
     logger.info(
-        "[PREVIEW] Scheduled validation repair task=%s attempt=%s",
+        "[PREVIEW] Scheduled delivery repair task=%s attempt=%s",
         payload.task_id,
         payload.preview_repair_attempt,
     )
@@ -2426,6 +2458,7 @@ async def execute_agent_task(ctx: dict, payload_dict: dict):
             agent_succeeded = False
             terminal_error: str | None = None
             resume_scheduled = False
+            delivery_repair_scheduled = False
             credit_usage_events = 0
             credit_deduction_failures = 0
 
@@ -2785,11 +2818,31 @@ async def execute_agent_task(ctx: dict, payload_dict: dict):
                             )
 
                         project_changed = bool(context.get("project_changed", project_changed))
+                        unresolved_delivery = (
+                            _reported_incomplete_delivery(final_response)
+                            if agent_succeeded and project_changed and project is not None
+                            else None
+                        )
+                        if unresolved_delivery:
+                            delivery_repair_scheduled = await _schedule_preview_validation_repair(
+                                {
+                                    "agent_payload": payload.to_dict(),
+                                    "preview_repair_attempt": int(
+                                        getattr(payload, "preview_repair_attempt", 0) or 0
+                                    ),
+                                },
+                                "The agent's final response explicitly says that a requested "
+                                "workflow remains incomplete:\n"
+                                f"{unresolved_delivery}",
+                            )
+                            if delivery_repair_scheduled:
+                                complete_data["delivery_repair"] = {"status": "running"}
                         if (
                             agent_succeeded
                             and project_changed
                             and completion_reason != "cancelled"
                             and project is not None
+                            and not delivery_repair_scheduled
                         ):
                             try:
                                 preview_task_id = str(uuid4())
@@ -3116,7 +3169,7 @@ async def execute_agent_task(ctx: dict, payload_dict: dict):
 
             # 13. Auto-generate chat title on first message (non-blocking)
             # Skip if our lock was stolen — the live owner will handle titling.
-            if task_succeeded and not lock_stolen:
+            if task_succeeded and not lock_stolen and not delivery_repair_scheduled:
                 await _auto_title_chat(
                     chat,
                     model_adapter,
@@ -3141,7 +3194,7 @@ async def execute_agent_task(ctx: dict, payload_dict: dict):
             # 14. Publish a terminal status.  A runner that emitted an
             # unsuccessful ``complete`` event must not look successful to
             # clients, tickets, or automations.
-            if pubsub and resume_scheduled:
+            if pubsub and (resume_scheduled or delivery_repair_scheduled):
                 pass
             elif pubsub and completion_reason == "cancelled":
                 await pubsub.publish_agent_event(
@@ -3161,7 +3214,7 @@ async def execute_agent_task(ctx: dict, payload_dict: dict):
                 )
 
             # 14a. Gateway delivery — XADD to delivery stream if gateway-bound
-            if payload.gateway_deliver and not resume_scheduled:
+            if payload.gateway_deliver and not (resume_scheduled or delivery_repair_scheduled):
                 try:
                     from .services.cache_service import get_redis_client
                     from .services.gateway.envelope import (
@@ -3201,7 +3254,7 @@ async def execute_agent_task(ctx: dict, payload_dict: dict):
                     logger.warning("[WORKER] Gateway delivery XADD failed: %s", gw_err)
 
             # 14b. Enqueue webhook callback if configured
-            if payload.webhook_callback_url and not resume_scheduled:
+            if payload.webhook_callback_url and not (resume_scheduled or delivery_repair_scheduled):
                 try:
                     from .services.task_queue import get_task_queue
 
@@ -3245,7 +3298,7 @@ async def execute_agent_task(ctx: dict, payload_dict: dict):
             # A preview job still owns the terminal outcome after a successful
             # mutation. Keeping this task RUNNING prevents a failed readiness
             # check from being overwritten by the model completion.
-            if not preview_task_id and not resume_scheduled:
+            if not preview_task_id and not (resume_scheduled or delivery_repair_scheduled):
                 await _update_task_status_redis(
                     task_id,
                     terminal_task_status,
@@ -3253,7 +3306,7 @@ async def execute_agent_task(ctx: dict, payload_dict: dict):
                 )
 
             # Mark the AgentTask ticket as completed / cancelled.
-            if claimed_ticket_id is not None and not resume_scheduled:
+            if claimed_ticket_id is not None and not (resume_scheduled or delivery_repair_scheduled):
                 terminal = "completed" if task_succeeded else terminal_task_status
                 with contextlib.suppress(Exception):
                     from .services.agent_tickets import finish_ticket
@@ -3266,7 +3319,11 @@ async def execute_agent_task(ctx: dict, payload_dict: dict):
             # crash after dispatch would still leave the run looking
             # successful. The WHERE-clause guard inside _finalize lets a
             # racing user-cancellation or contract-breach pause win.
-            if auto_run_id is not None and not preview_task_id and not resume_scheduled:
+            if (
+                auto_run_id is not None
+                and not preview_task_id
+                and not (resume_scheduled or delivery_repair_scheduled)
+            ):
                 final_status = "succeeded" if task_succeeded else terminal_task_status
                 await _finalize_automation_run(
                     auto_run_id,

@@ -12,7 +12,11 @@ import type {
 import type { ChatAgent } from '../types/chat';
 import type { EditMode } from '../components/chat/EditModeStatus';
 import { nodeConfigEvents } from '../utils/nodeConfigEvents';
-import { getPreviewLifecycleStatus, isEventForAgentRun } from '../lib/agent-lifecycle';
+import {
+  getPreviewLifecycleStatus,
+  isEventForAgentRun,
+  shouldKeepAgentStreamOpenAfterComplete,
+} from '../lib/agent-lifecycle';
 import type {
   ArchitectureNodeAddedEvent,
   ContainersRestartingEvent,
@@ -543,7 +547,13 @@ export function useAgentChat({
                   ];
                 });
               }
-              cleanupReconnect();
+              // A project-changing agent turn completes before the platform
+              // finishes starting and checking its preview. Keep this stream
+              // alive for that second lifecycle so `preview_ready` can open
+              // the builder instead of leaving the user to press Start.
+              if (!shouldKeepAgentStreamOpenAfterComplete(completeData)) {
+                cleanupReconnect();
+              }
             } else if (data.type === 'error') {
               const errorMsg = data.data?.message || 'Agent execution failed';
               setMessages((prev) => {

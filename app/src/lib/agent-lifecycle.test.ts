@@ -3,6 +3,7 @@ import {
   getAgentEventTaskId,
   getPreviewLifecycleStatus,
   isEventForAgentRun,
+  shouldKeepAgentStreamOpenAfterComplete,
 } from './agent-lifecycle';
 
 describe('agent lifecycle event helpers', () => {
@@ -31,5 +32,14 @@ describe('agent lifecycle event helpers', () => {
   it('finds a task id in either public event location', () => {
     expect(getAgentEventTaskId({ task_id: 'task-a', data: {} })).toBe('task-a');
     expect(getAgentEventTaskId({ data: { task_id: 'task-b' } })).toBe('task-b');
+  });
+
+  it('keeps the stream open while platform preview or repair work is pending', () => {
+    expect(shouldKeepAgentStreamOpenAfterComplete({ preview: { status: 'starting' } })).toBe(true);
+    expect(shouldKeepAgentStreamOpenAfterComplete({ delivery_repair: { status: 'running' } })).toBe(
+      true
+    );
+    expect(shouldKeepAgentStreamOpenAfterComplete({ preview: { status: 'ready' } })).toBe(false);
+    expect(shouldKeepAgentStreamOpenAfterComplete()).toBe(false);
   });
 });
