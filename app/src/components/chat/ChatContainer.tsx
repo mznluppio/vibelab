@@ -13,7 +13,11 @@ import { WorkspaceAttachCard } from './WorkspaceAttachCard';
 import { ChatSessionPopover } from './ChatSessionPopover';
 import { ToolDebugModal } from './ToolDebugModal';
 import { createWebSocket, chatApi, marketplaceApi } from '../../lib/api';
-import { getPreviewLifecycleStatus, isEventForAgentRun } from '../../lib/agent-lifecycle';
+import {
+  getPreviewLifecycleStatus,
+  getPreviewProjectSlug,
+  isEventForAgentRun,
+} from '../../lib/agent-lifecycle';
 import { useAuth } from '../../contexts/AuthContext';
 import { useAgentRuns } from '../../contexts/useAgentRuns';
 import toast from 'react-hot-toast';
@@ -108,7 +112,7 @@ interface ChatContainerProps {
   onEnvironmentStopped?: (reason: string) => void;
   onVolumeReady?: () => void;
   /** Opens Preview after this task has successfully started the project. */
-  onProjectStarted?: () => void;
+  onProjectStarted?: (projectSlug?: string) => void;
   disabled?: boolean;
   /**
    * Deep-link target session. When set on mount, seeds `currentChatId` so
@@ -344,7 +348,7 @@ export function ChatContainer({
         previewReadyDuringTaskRef.current = true;
         toast.success('Prévisualisation prête.', { id: previewToastIdRef.current || undefined });
         previewToastIdRef.current = null;
-        onProjectStarted?.();
+        onProjectStarted?.(getPreviewProjectSlug(event));
       }
     },
     [onProjectStarted]

@@ -516,6 +516,7 @@ async def start_project_preview_task(ctx: dict, preview: dict) -> None:
                                         "task_id": task_id,
                                         "preview_task_id": preview_task_id,
                                         "project_id": str(project.id),
+                                        "project_slug": project.slug,
                                         "status": validation_status,
                                         "results": validation_results,
                                     },
@@ -529,6 +530,7 @@ async def start_project_preview_task(ctx: dict, preview: dict) -> None:
                                     "task_id": task_id,
                                     "preview_task_id": preview_task_id,
                                     "project_id": str(project.id),
+                                    "project_slug": project.slug,
                                     "validation_status": validation_status,
                                     "urls": [result.get("url") for result in last_results if result.get("url")],
                                 },
@@ -584,6 +586,7 @@ async def start_project_preview_task(ctx: dict, preview: dict) -> None:
                             "task_id": task_id,
                             "preview_task_id": preview_task_id,
                             "project_id": str(project_id),
+                            "project_slug": preview.get("project_slug"),
                             "attempt": int(preview.get("preview_repair_attempt", 0) or 0) + 1,
                         },
                     },
@@ -599,6 +602,7 @@ async def start_project_preview_task(ctx: dict, preview: dict) -> None:
                         "task_id": task_id,
                         "preview_task_id": preview_task_id,
                         "project_id": str(project_id),
+                        "project_slug": preview.get("project_slug"),
                         "message": str(exc),
                     },
                 },
@@ -2860,6 +2864,7 @@ async def execute_agent_task(ctx: dict, payload_dict: dict):
                                         "preview_task_id": preview_task_id,
                                         "message_id": str(message_id) if message_id else None,
                                         "project_id": str(project.id),
+                                        "project_slug": project.slug,
                                         "user_id": payload.user_id,
                                         "restart_required": bool(
                                             context.get("preview_restart_required")
@@ -2891,6 +2896,7 @@ async def execute_agent_task(ctx: dict, payload_dict: dict):
                                                 "task_id": task_id,
                                                 "preview_task_id": preview_task_id,
                                                 "project_id": str(project.id),
+                                                "project_slug": project.slug,
                                                 "restart_required": bool(
                                                     context.get("preview_restart_required")
                                                 ),

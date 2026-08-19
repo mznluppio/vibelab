@@ -45,6 +45,16 @@ export function getPreviewLifecycleStatus(event: AgentEventLike): PreviewLifecyc
 }
 
 /**
+ * Preview events may be replayed after a chat reconnect. Carry the workspace
+ * destination in the lifecycle event so navigation is not tied to transient
+ * chat component state.
+ */
+export function getPreviewProjectSlug(event: AgentEventLike): string | undefined {
+  const projectSlug = event.data?.project_slug;
+  return typeof projectSlug === 'string' && projectSlug.length > 0 ? projectSlug : undefined;
+}
+
+/**
  * A model completion can precede platform-owned preview work. Consumers must
  * keep their SSE stream open in that case or they will miss `preview_ready`.
  */

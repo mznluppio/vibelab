@@ -67,6 +67,19 @@ def test_preview_waits_for_runtime_readiness_before_running_build_preflight() ->
         "run_preview_preflight("
     )
 
+
+@pytest.mark.unit
+def test_preview_events_include_the_project_slug_for_deterministic_navigation() -> None:
+    """The client can open the ready workspace even after chat state changes."""
+    import inspect
+
+    import app.worker as worker
+
+    source = inspect.getsource(worker.start_project_preview_task)
+
+    assert '"type": "preview_ready"' in source
+    assert '"project_slug": project.slug' in source
+
 # ---------------------------------------------------------------------------
 # AgentTaskPayload field plumbing
 # ---------------------------------------------------------------------------

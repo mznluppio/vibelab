@@ -151,8 +151,8 @@ export default function Chat() {
       },
       [updateSessionProject]
     ),
-    onProjectStarted: useCallback(() => {
-      const projectSlug = attachedProjectSlugRef.current;
+    onProjectStarted: useCallback((previewProjectSlug?: string) => {
+      const projectSlug = previewProjectSlug ?? attachedProjectSlugRef.current;
       if (projectSlug) navigate(`/project/${projectSlug}/builder`);
     }, [navigate]),
     onSessionNeeded: createSession,

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   getAgentEventTaskId,
   getPreviewLifecycleStatus,
+  getPreviewProjectSlug,
   isEventForAgentRun,
   shouldKeepAgentStreamOpenAfterComplete,
 } from './agent-lifecycle';
@@ -32,6 +33,13 @@ describe('agent lifecycle event helpers', () => {
   it('finds a task id in either public event location', () => {
     expect(getAgentEventTaskId({ task_id: 'task-a', data: {} })).toBe('task-a');
     expect(getAgentEventTaskId({ data: { task_id: 'task-b' } })).toBe('task-b');
+  });
+
+  it('keeps the preview destination in the replayable lifecycle event', () => {
+    expect(
+      getPreviewProjectSlug({ type: 'preview_ready', data: { project_slug: 'my-workspace' } })
+    ).toBe('my-workspace');
+    expect(getPreviewProjectSlug({ type: 'preview_ready', data: {} })).toBeUndefined();
   });
 
   it('keeps the stream open while platform preview or repair work is pending', () => {

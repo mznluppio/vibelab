@@ -14,6 +14,7 @@ import type { EditMode } from '../components/chat/EditModeStatus';
 import { nodeConfigEvents } from '../utils/nodeConfigEvents';
 import {
   getPreviewLifecycleStatus,
+  getPreviewProjectSlug,
   isEventForAgentRun,
   shouldKeepAgentStreamOpenAfterComplete,
 } from '../lib/agent-lifecycle';
@@ -128,7 +129,7 @@ interface UseAgentChatOptions {
     projectName: string;
     projectSlug: string;
   }) => void;
-  onProjectStarted?: () => void;
+  onProjectStarted?: (projectSlug?: string) => void;
   /** Called when sendMessage needs a session but chatId is null. Must return the new chat ID or null on failure. */
   onSessionNeeded?: () => Promise<string | null>;
 }
@@ -215,7 +216,7 @@ export function useAgentChat({
       previewReadyDuringTaskRef.current = true;
       toast.success('Prévisualisation prête.', { id: previewToastIdRef.current || undefined });
       previewToastIdRef.current = null;
-      onProjectStartedRef.current?.();
+      onProjectStartedRef.current?.(getPreviewProjectSlug(event));
     }
   }, []);
 
