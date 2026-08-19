@@ -48,6 +48,25 @@ def test_worker_imports_preview_config_sync_at_module_load() -> None:
 
     assert callable(worker.ensure_config_synced)
 
+
+@pytest.mark.unit
+def test_preview_waits_for_runtime_readiness_before_running_build_preflight() -> None:
+    """A fresh Docker container installs dependencies before its dev server is ready.
+
+    Running ``bun run build`` immediately after ``docker compose up`` races that
+    installation and produces a false ``next: command not found`` failure. Keep
+    the readiness probe ahead of the preflight call in the lifecycle sequence.
+    """
+    import inspect
+
+    import app.worker as worker
+
+    source = inspect.getsource(worker.start_project_preview_task)
+
+    assert source.index("await orchestrator.probe_container_http") < source.index(
+        "run_preview_preflight("
+    )
+
 # ---------------------------------------------------------------------------
 # AgentTaskPayload field plumbing
 # ---------------------------------------------------------------------------

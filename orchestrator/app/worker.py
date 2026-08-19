@@ -272,52 +272,6 @@ async def start_project_preview_task(ctx: dict, preview: dict) -> None:
             elif restart_required:
                 await orchestrator.restart_project(project, containers, connections, user_id, db)
 
-            # A dev-server process can stay alive while every page returns a
-            # compiler error. Run the base's explicit production build before
-            # the readiness probe so generated syntax/type/build failures
-            # become a fast, actionable preview failure rather than a
-            # 60-second 500. UI-contract checks deliberately run later as
-            # non-blocking quality warnings once the preview is healthy.
-            # This is opt-in per package manifest, preserving custom and
-            # non-web bases that do not declare it.
-            from .services.preview_validation import run_preview_preflight
-
-            preflight_results = []
-            for container in application_containers:
-                preflight = await run_preview_preflight(
-                    orchestrator,
-                    user_id=user_id,
-                    project_id=project.id,
-                    project_slug=project.slug,
-                    container_name=container.name,
-                )
-                preflight_results.append(
-                    {
-                        "container": container.name,
-                        "status": preflight.status,
-                        "command": preflight.command,
-                        "output": preflight.output,
-                    }
-                )
-
-            failed_preflight = next(
-                (result for result in preflight_results if result["status"] == "failed"),
-                None,
-            )
-            if failed_preflight:
-                settings = dict(project.settings or {})
-                settings["preview_validation"] = {
-                    "status": "failed",
-                    "results": preflight_results,
-                }
-                project.settings = settings
-                await db.commit()
-                raise RuntimeError(
-                    "Generated application did not pass its declared "
-                    f"{failed_preflight['command']} validation: "
-                    f"{(failed_preflight['output'] or 'no diagnostic returned')[:1000]}"
-                )
-
             last_results: list[dict] = []
             for _ in range(30):
                 last_results = [
@@ -331,7 +285,57 @@ async def start_project_preview_task(ctx: dict, preview: dict) -> None:
                     for container in application_containers
                 ]
                 if last_results and all(result.get("healthy") for result in last_results):
-                    from .services.preview_validation import run_preview_validation
+                    # Docker project containers may install dependencies in their
+                    # entrypoint before the dev server starts. A Compose "up"
+                    # result only means the process was created, not that its
+                    # package scripts can run. Wait for the public application
+                    # probe before executing the opt-in production build, so a
+                    # fresh project cannot be falsely reported as failed while
+                    # node_modules is still being installed.
+                    from .services.preview_validation import (
+                        run_preview_preflight,
+                        run_preview_validation,
+                    )
+
+                    preflight_results = []
+                    for container in application_containers:
+                        preflight = await run_preview_preflight(
+                            orchestrator,
+                            user_id=user_id,
+                            project_id=project.id,
+                            project_slug=project.slug,
+                            container_name=container.name,
+                        )
+                        preflight_results.append(
+                            {
+                                "container": container.name,
+                                "status": preflight.status,
+                                "command": preflight.command,
+                                "output": preflight.output,
+                            }
+                        )
+
+                    failed_preflight = next(
+                        (
+                            result
+                            for result in preflight_results
+                            if result["status"] == "failed"
+                        ),
+                        None,
+                    )
+                    if failed_preflight:
+                        settings = dict(project.settings or {})
+                        settings["preview_validation"] = {
+                            "status": "failed",
+                            "results": preflight_results,
+                        }
+                        project.settings = settings
+                        await db.commit()
+                        raise RuntimeError(
+                            "Generated application did not pass its declared "
+                            f"{failed_preflight['command']} validation: "
+                            f"{(failed_preflight['output'] or 'no diagnostic returned')[:1000]}"
+                        )
 
                     validation_results = []
                     for container in application_containers:
