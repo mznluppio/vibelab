@@ -38,7 +38,6 @@ def _package_script_command(script: str) -> list[str]:
 
 
 _UI_CHECK_COMMAND = _package_script_command("check:ui")
-_PROJECT_CHECK_COMMAND = _package_script_command("check")
 
 
 def _has_declared_script(package_content: str | None, script: str) -> bool:
@@ -108,13 +107,15 @@ async def run_preview_preflight(
     project_slug: str,
     container_name: str,
 ) -> PreviewValidationResult:
-    """Run a template-declared full project check before advertising a preview.
+    """Run a template-declared production build before advertising a preview.
 
     A healthy container only proves that the process started.  For web apps a
     dev server can stay alive while every route returns a compiler error, so a
-    package's explicit ``check`` script is the opt-in contract for a usable
-    preview.  We do not infer a command for custom bases: projects without the
-    script retain their existing lifecycle and simply return ``skipped``.
+    package's explicit ``build`` script is the opt-in contract for a usable
+    preview. UI-contract checks stay separate: they are reported after a
+    healthy preview exists, but must not hide a working app from its user.
+    We do not infer a command for custom bases: projects without the script
+    retain their existing lifecycle and simply return ``skipped``.
     """
     return await _run_declared_check(
         orchestrator,
@@ -122,8 +123,8 @@ async def run_preview_preflight(
         project_id=project_id,
         project_slug=project_slug,
         container_name=container_name,
-        script="check",
-        command=_PROJECT_CHECK_COMMAND,
+        script="build",
+        command=_package_script_command("build"),
         timeout=90,
     )
 

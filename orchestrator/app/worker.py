@@ -272,10 +272,12 @@ async def start_project_preview_task(ctx: dict, preview: dict) -> None:
                 await orchestrator.restart_project(project, containers, connections, user_id, db)
 
             # A dev-server process can stay alive while every page returns a
-            # compiler error.  Run the base's explicit full check before the
-            # readiness probe so generated syntax/type/build failures become
-            # a fast, actionable preview failure rather than a 60-second 500.
-            # The check is opt-in per package manifest, preserving custom and
+            # compiler error. Run the base's explicit production build before
+            # the readiness probe so generated syntax/type/build failures
+            # become a fast, actionable preview failure rather than a
+            # 60-second 500. UI-contract checks deliberately run later as
+            # non-blocking quality warnings once the preview is healthy.
+            # This is opt-in per package manifest, preserving custom and
             # non-web bases that do not declare it.
             from .services.preview_validation import run_preview_preflight
 

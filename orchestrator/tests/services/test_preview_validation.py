@@ -45,8 +45,8 @@ async def test_runs_declared_ui_check_in_preview_container() -> None:
 
 
 @pytest.mark.asyncio
-async def test_runs_declared_full_check_before_preview_is_advertised() -> None:
-    orchestrator = _Orchestrator(json.dumps({"scripts": {"check": "bun run build"}}))
+async def test_runs_declared_production_build_before_preview_is_advertised() -> None:
+    orchestrator = _Orchestrator(json.dumps({"scripts": {"build": "next build"}}))
 
     result = await run_preview_preflight(
         orchestrator,
@@ -57,20 +57,20 @@ async def test_runs_declared_full_check_before_preview_is_advertised() -> None:
     )
 
     assert result.status == "passed"
-    assert result.command == "check"
+    assert result.command == "build"
     assert orchestrator.commands == [[
         "sh",
         "-lc",
-        "if command -v bun >/dev/null 2>&1; then bun run check; "
-        "elif command -v pnpm >/dev/null 2>&1; then pnpm run check; "
-        "elif command -v yarn >/dev/null 2>&1; then yarn run check; "
-        "else npm run check; fi",
+        "if command -v bun >/dev/null 2>&1; then bun run build; "
+        "elif command -v pnpm >/dev/null 2>&1; then pnpm run build; "
+        "elif command -v yarn >/dev/null 2>&1; then yarn run build; "
+        "else npm run build; fi",
     ]]
 
 
 @pytest.mark.asyncio
 async def test_skips_preflight_when_the_base_has_not_opted_in() -> None:
-    orchestrator = _Orchestrator(json.dumps({"scripts": {"build": "next build"}}))
+    orchestrator = _Orchestrator(json.dumps({"scripts": {"check:ui": "node check.mjs"}}))
 
     result = await run_preview_preflight(
         orchestrator,
