@@ -10,6 +10,7 @@ import json
 import logging
 import os
 import shutil
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import quote, urlparse, urlunparse
@@ -26,7 +27,8 @@ logger = logging.getLogger(__name__)
 
 
 CACHE_METADATA_FILENAME = ".vibelab-base-cache.json"
-CACHE_METADATA_SCHEMA_VERSION = 1
+CACHE_METADATA_SCHEMA_VERSION = 2
+REMOTE_HEAD_CACHE_SECONDS = 300
 
 
 def _node_install_command(directory: Path) -> str:
@@ -58,6 +60,8 @@ class BaseCacheManager:
         self._initialized = False
         self._docker_client: docker.DockerClient | None = None
         self.dev_server_image = "tesslate-devserver:latest"
+        self._remote_heads: dict[tuple[str, str], tuple[str | None, float]] = {}
+        self._refreshing_base_ids: set[str] = set()
 
     @property
     def docker_client(self) -> "docker.DockerClient":
@@ -123,7 +127,10 @@ class BaseCacheManager:
         """
         base_path = self.cache_dir / base.slug
 
-        if self._is_valid_cache(base_path) and self._cache_matches_base(base_path, base):
+        remote_commit = await self._get_remote_commit(base)
+        if self._is_valid_cache(base_path) and self._cache_matches_base(
+            base_path, base, remote_commit=remote_commit
+        ):
             logger.info(f"[BASE-CACHE] ✓ {base.name} already cached at {base_path}")
             return
 
@@ -142,7 +149,11 @@ class BaseCacheManager:
             await self._clone_repository(base.git_repo_url, base.default_branch, staging_path)
 
             await self._install_dependencies(staging_path, base.name)
-            self._write_cache_metadata(staging_path, base)
+            self._write_cache_metadata(
+                staging_path,
+                base,
+                commit_sha=await self._get_checked_out_commit(staging_path),
+            )
             await asyncio.to_thread(self._publish_cache, staging_path, base_path)
 
             logger.info(f"[BASE-CACHE] ✅ {base.name} cached successfully!")
@@ -165,21 +176,35 @@ class BaseCacheManager:
     def _metadata_path(base_path: Path) -> Path:
         return base_path / CACHE_METADATA_FILENAME
 
-    def _cache_matches_base(self, base_path: Path, base: MarketplaceBase) -> bool:
+    def _cache_matches_base(
+        self,
+        base_path: Path,
+        base: MarketplaceBase,
+        *,
+        remote_commit: str | None = None,
+    ) -> bool:
         """Check cache provenance without ever serving a stale source."""
         try:
             metadata = json.loads(self._metadata_path(base_path).read_text())
         except (OSError, json.JSONDecodeError):
             return False
 
-        return (
+        matches_identity = (
             metadata.get("schema_version") == CACHE_METADATA_SCHEMA_VERSION
             and metadata.get("base_id") == str(base.id)
             and metadata.get("git_repo_url") == base.git_repo_url
             and metadata.get("default_branch") == (base.default_branch or "main")
         )
+        # A failed remote lookup must not turn a healthy cached base into an
+        # outage. When Git is reachable, however, never serve a cache from a
+        # previous commit of the configured branch.
+        return matches_identity and (
+            remote_commit is None or metadata.get("commit_sha") == remote_commit
+        )
 
-    def _write_cache_metadata(self, base_path: Path, base: MarketplaceBase) -> None:
+    def _write_cache_metadata(
+        self, base_path: Path, base: MarketplaceBase, *, commit_sha: str | None
+    ) -> None:
         """Write the provenance manifest before atomically publishing a cache."""
         metadata = {
             "schema_version": CACHE_METADATA_SCHEMA_VERSION,
@@ -188,9 +213,70 @@ class BaseCacheManager:
             # runtime clone credentials to the durable cache manifest.
             "git_repo_url": base.git_repo_url,
             "default_branch": base.default_branch or "main",
+            "commit_sha": commit_sha,
             "built_at": datetime.now(UTC).isoformat(),
         }
         self._metadata_path(base_path).write_text(json.dumps(metadata, indent=2) + "\n")
+
+    async def _get_checked_out_commit(self, directory: Path) -> str | None:
+        """Read the exact revision staged in a freshly cloned cache."""
+        process = await asyncio.create_subprocess_exec(
+            "git",
+            "-C",
+            str(directory),
+            "rev-parse",
+            "HEAD",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        stdout, _ = await process.communicate()
+        if process.returncode != 0:
+            return None
+        commit = stdout.decode().strip()
+        return commit if commit else None
+
+    async def _get_remote_commit(self, base: MarketplaceBase) -> str | None:
+        """Return the branch head with a bounded, shared freshness lookup."""
+        branch = base.default_branch or "main"
+        key = (base.git_repo_url, branch)
+        now = time.monotonic()
+        cached = self._remote_heads.get(key)
+        if cached and now - cached[1] < REMOTE_HEAD_CACHE_SECONDS:
+            return cached[0]
+
+        try:
+            process = await asyncio.create_subprocess_exec(
+                "git",
+                "ls-remote",
+                "--exit-code",
+                self._get_cache_clone_url(base.git_repo_url),
+                f"refs/heads/{branch}",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
+            stdout, _ = await asyncio.wait_for(process.communicate(), timeout=10)
+            commit = stdout.decode().split(maxsplit=1)[0] if process.returncode == 0 else None
+            if commit and len(commit) != 40:
+                commit = None
+        except (OSError, asyncio.TimeoutError):
+            commit = None
+        self._remote_heads[key] = (commit, now)
+        return commit
+
+    def _refresh_cache_in_background(self, base: MarketplaceBase) -> None:
+        """Warm a newer cache without delaying the project creation fallback."""
+        base_id = str(base.id)
+        if base_id in self._refreshing_base_ids:
+            return
+        self._refreshing_base_ids.add(base_id)
+
+        async def refresh() -> None:
+            try:
+                await self._process_base(base)
+            finally:
+                self._refreshing_base_ids.discard(base_id)
+
+        asyncio.create_task(refresh())
 
     @staticmethod
     def _publish_cache(staging_path: Path, base_path: Path) -> None:
@@ -400,10 +486,16 @@ class BaseCacheManager:
             return None
 
         base_path = self.cache_dir / base_slug
+        remote_commit = (
+            await self._get_remote_commit(expected_base) if expected_base is not None else None
+        )
         if self._is_valid_cache(base_path) and (
-            expected_base is None or self._cache_matches_base(base_path, expected_base)
+            expected_base is None
+            or self._cache_matches_base(base_path, expected_base, remote_commit=remote_commit)
         ):
             return base_path
+        if expected_base is not None:
+            self._refresh_cache_in_background(expected_base)
         return None
 
     def is_base_cached(self, base_slug: str) -> bool:
