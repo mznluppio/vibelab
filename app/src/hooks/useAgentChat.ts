@@ -153,6 +153,7 @@ export function useAgentChat({
   const onSessionNeededRef = useRef(onSessionNeeded);
   const projectStartedDuringTaskRef = useRef(false);
   const previewReadyDuringTaskRef = useRef(false);
+  const previewToastIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     editModeRef.current = editMode;
@@ -188,15 +189,28 @@ export function useAgentChat({
   const handlePreviewLifecycle = useCallback((event: { type?: string; data?: Record<string, unknown> }) => {
     const status = getPreviewLifecycleStatus(event);
     if (status === 'starting') {
+      const previewId = event.data?.preview_task_id || event.data?.task_id || crypto.randomUUID();
+      previewToastIdRef.current = `preview-${previewId}`;
+      toast.loading('Prévisualisation en cours de démarrage…', {
+        id: previewToastIdRef.current,
+      });
       window.dispatchEvent(new CustomEvent('preview-starting', { detail: event.data }));
       return;
     }
     if (status === 'failed') {
+      const message =
+        typeof event.data?.message === 'string'
+          ? `Prévisualisation indisponible : ${event.data.message}`
+          : 'La prévisualisation n’a pas pu démarrer.';
+      toast.error(message, { id: previewToastIdRef.current || undefined });
+      previewToastIdRef.current = null;
       window.dispatchEvent(new CustomEvent('preview-failed', { detail: event.data }));
       return;
     }
     if (status === 'ready' && !previewReadyDuringTaskRef.current) {
       previewReadyDuringTaskRef.current = true;
+      toast.success('Prévisualisation prête.', { id: previewToastIdRef.current || undefined });
+      previewToastIdRef.current = null;
       onProjectStartedRef.current?.();
     }
   }, []);
@@ -922,7 +936,18 @@ export function useAgentChat({
               // Non-fatal: a single tool call failed but the agent continues.
               // Surface as a warning toast so the user knows without breaking
               // the session or the message stream.
-              const toolErr = event.data as { tool_name?: string; error?: string };
+              const toolErr = event.data as {
+                tool_name?: string;
+                error?: string;
+                error_code?: string;
+              };
+              if (toolErr.error_code === 'preview_deferred') {
+                previewToastIdRef.current = `preview-${agentTaskIdRef.current || crypto.randomUUID()}`;
+                toast.loading('Prévisualisation programmée automatiquement…', {
+                  id: previewToastIdRef.current,
+                });
+                return;
+              }
               const toolLabel = toolErr.tool_name ? `[${toolErr.tool_name}] ` : '';
               const errMsg = toolErr.error || 'Tool call failed';
               toast.error(`${toolLabel}${errMsg}`, {
