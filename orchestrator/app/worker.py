@@ -19,6 +19,7 @@ import logging
 import os
 import time
 from datetime import UTC, datetime
+from typing import Any
 from uuid import UUID, uuid4
 
 from arq.connections import RedisSettings
@@ -374,19 +375,32 @@ async def start_project_preview_task(ctx: dict, preview: dict) -> None:
                     }
                     project.settings = settings
                     if failed_validation:
-                        # A template-declared UI contract is a quality signal,
-                        # not proof that the already-healthy preview is
-                        # unusable.  Treating it as a lifecycle failure hid a
-                        # running application from the user (and prevented the
-                        # agent from receiving a useful follow-up).  Persist
-                        # and publish the warning, but always make a healthy
-                        # preview available.  Runtime/build failures remain
-                        # terminal because they do not reach this branch.
+                        # Keep the container running for a follow-up repair,
+                        # but never advertise a preview that failed its
+                        # template-declared UI contract. A running dev server
+                        # only proves that a process is alive; it cannot turn
+                        # missing styles, colliding layouts, or inert primary
+                        # actions into an acceptable user-facing result.
+                        #
+                        # The exception is handled by the lifecycle task below
+                        # and emitted as preview_failed, so the client does not
+                        # auto-open a visibly broken result. The next agent run
+                        # can validate in the now-running container and repair
+                        # the exact deterministic diagnostic.
+                        for container in application_containers:
+                            container.status = "running"
+                        project.environment_status = "active"
+                        await db.commit()
+                        diagnostic = failed_validation["output"] or "check:ui failed"
                         logger.warning(
                             "[PREVIEW] UI validation failed for project=%s container=%s: %s",
                             project.id,
                             failed_validation["container"],
-                            failed_validation["output"] or "check:ui failed",
+                            diagnostic,
+                        )
+                        raise RuntimeError(
+                            "Generated interface did not pass the required UI quality check: "
+                            f"{diagnostic[:1000]}"
                         )
 
                     for container in application_containers:
@@ -516,9 +530,10 @@ async def _persist_preview_message_status(
         logger.warning("[PREVIEW] Ignoring invalid message id for preview status: %r", raw_message_id)
         return
 
+    from sqlalchemy import select
+
     from .database import AsyncSessionLocal
     from .models import Message
-    from sqlalchemy import select
 
     try:
         async with AsyncSessionLocal() as db:
