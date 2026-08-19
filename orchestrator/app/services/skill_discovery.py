@@ -99,6 +99,78 @@ async def discover_skills(
     return skills
 
 
+async def preload_skill_guidance(
+    skills: list[SkillCatalogEntry],
+    db: AsyncSession,
+    *,
+    max_skills: int = 8,
+    max_characters: int = 16_000,
+) -> str | None:
+    """Return bounded instructions for the skills enabled on an agent.
+
+    A catalog plus the ``load_skill`` tool supports progressive disclosure,
+    but it leaves quality-critical guidance to a model deciding to call a
+    tool.  For explicitly assigned marketplace skills we preload their small
+    instruction bodies into the run context.  This is best-effort and never
+    blocks a build when a marketplace row is unavailable.
+
+    File-based skills remain on-demand: reading arbitrary project files here
+    would require a running container and would break new-project creation.
+    """
+    if not skills:
+        return None
+
+    from ..models import MarketplaceAgent
+
+    entries_by_id = {
+        entry.skill_id: entry
+        for entry in skills
+        if entry.source in {"builtin", "db"} and entry.skill_id is not None
+    }
+    if not entries_by_id:
+        return None
+
+    try:
+        result = await db.execute(
+            select(
+                MarketplaceAgent.id,
+                MarketplaceAgent.name,
+                MarketplaceAgent.slug,
+                MarketplaceAgent.skill_body,
+                MarketplaceAgent.is_builtin,
+            ).where(
+                MarketplaceAgent.id.in_(entries_by_id),
+                MarketplaceAgent.is_active.is_(True),
+            )
+        )
+        rows_by_id = {row.id: row for row in result.all()}
+    except Exception as exc:  # pragma: no cover - defensive integration boundary
+        logger.warning("Failed to preload assigned skill guidance: %s", exc)
+        return None
+
+    blocks: list[str] = []
+    remaining = max_characters
+    for entry in skills:
+        if len(blocks) >= max_skills or entry.skill_id not in entries_by_id:
+            continue
+        row = rows_by_id.get(entry.skill_id)
+        if row is None or not isinstance(row.skill_body, str) or not row.skill_body.strip():
+            continue
+        body = row.skill_body.strip()
+        if row.is_builtin:
+            from .skill_markers import get_rendered_body
+
+            body = get_rendered_body(f"skill:{row.id}", body)
+        header = f"=== PRELOADED SKILL: {row.name} ({row.slug}) ===\n"
+        block = header + body
+        if len(block) > remaining:
+            break
+        blocks.append(block)
+        remaining -= len(block)
+
+    return "\n\n".join(blocks) or None
+
+
 async def _discover_builtin_skills(db: AsyncSession) -> list[SkillCatalogEntry]:
     """Discover every skill seeded with ``is_builtin=True``.
 

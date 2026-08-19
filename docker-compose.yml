@@ -229,6 +229,10 @@ services:
       - "${BACKEND_PORT:-8000}:8000"
     volumes:
       - ./orchestrator/app:/app/app
+      # The agent runner is installed editable in the image. Mount its source
+      # in local Compose so agent-quality fixes take effect after a targeted
+      # service restart rather than requiring a full image rebuild.
+      - ./packages/tesslate-agent:/app/packages/tesslate-agent
       - ./orchestrator/alembic:/app/alembic
       - ./orchestrator/alembic.ini:/app/alembic.ini
       - ./orchestrator/pyproject.toml:/app/pyproject.toml
@@ -401,6 +405,8 @@ services:
     command: ["arq", "app.worker.WorkerSettings"]
     volumes:
       - ./orchestrator/app:/app/app
+      # Keep the worker and API on the same live agent-runner source.
+      - ./packages/tesslate-agent:/app/packages/tesslate-agent
       - ./orchestrator/alembic:/app/alembic
       - ./orchestrator/alembic.ini:/app/alembic.ini
       - ./orchestrator/pyproject.toml:/app/pyproject.toml

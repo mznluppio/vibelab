@@ -10,6 +10,7 @@ while deliberately never replacing a user-selected project.
 from __future__ import annotations
 
 import asyncio
+import re
 from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
@@ -20,6 +21,100 @@ from ..models import PROJECT_KIND_WORKSPACE, Chat, Container, MarketplaceBase, P
 
 DEFAULT_CHAT_WORKSPACE_NAME = "~workspace~"
 _SETUP_WAIT_SECONDS = 240
+_MAX_SUGGESTED_WORKSPACE_NAME_LENGTH = 72
+
+
+def suggest_workspace_name_from_request(
+    user_message: str | None,
+    attachments: list[Any] | None = None,
+) -> str | None:
+    """Return a short, user-facing workspace name from the first request.
+
+    Required-base workspaces are created before the build agent starts.  This
+    helper deliberately stays local and deterministic: it must never add an
+    LLM request or delay project setup just to choose a name.  A title can
+    still be refined later by the existing, non-blocking chat-title flow.
+
+    The function is intentionally conservative.  If it cannot extract a
+    useful phrase, callers keep the established Base-derived fallback name.
+    """
+    source = (user_message or "").strip()
+    if not source:
+        for attachment in attachments or []:
+            if isinstance(attachment, dict):
+                attachment_type = attachment.get("type")
+                attachment_content = attachment.get("content")
+            else:
+                attachment_type = getattr(attachment, "type", None)
+                attachment_content = getattr(attachment, "content", None)
+            if attachment_type == "pasted_text":
+                source = str(attachment_content or "").strip()
+                if source:
+                    break
+
+    if not source:
+        return None
+
+    # Prefer the first meaningful line.  Structured briefs often begin with
+    # headings such as AS-IS / TO-BE, which are not useful workspace names.
+    lines = [re.sub(r"\s+", " ", line).strip(" -•\t") for line in source.splitlines()]
+    candidate = next(
+        (
+            line
+            for line in lines
+            if len(line) >= 4
+            and line.casefold().rstrip(":") not in {"as-is", "to-be", "contexte", "besoin"}
+        ),
+        "",
+    )
+    if not candidate:
+        return None
+
+    # Keep the first request, not all its acceptance criteria or questions.
+    candidate = re.split(r"[.!?;]|\s+[—–-]\s+", candidate, maxsplit=1)[0].strip()
+    candidate = re.sub(
+        r"^(?:bonjour|salut)[^.!?]*[.!?]\s*", "", candidate, flags=re.IGNORECASE
+    )
+    candidate = re.sub(
+        r"^(?:peux-tu|pourrais-tu|est-ce que tu peux|j['’]aimerais|je voudrais|je souhaite|je veux)\s+",
+        "",
+        candidate,
+        flags=re.IGNORECASE,
+    )
+    candidate = re.sub(
+        r"^(?:créer|creer|construire|faire|lancer|mettre en place)\s+(?:moi\s+)?",
+        "",
+        candidate,
+        flags=re.IGNORECASE,
+    )
+
+    # "un outil pour suivre les interventions" becomes the substantially
+    # clearer "Suivi des interventions".  Fall back to the cleaned request
+    # for requests that do not fit one of these common business formulations.
+    purpose = re.search(
+        r"\b(?:un(?:e)?\s+)?(?:outil|application|app|plateforme|tableau de bord|dashboard)\s+"
+        r"(?:interne\s+)?(?:de|pour)\s+(.+)",
+        candidate,
+        flags=re.IGNORECASE,
+    )
+    if purpose:
+        candidate = purpose.group(1).strip()
+        transformations = (
+            (r"^suivre\s+(?:les?\s+)?", "Suivi des "),
+            (r"^gérer\s+(?:les?\s+)?", "Gestion des "),
+            (r"^gerer\s+(?:les?\s+)?", "Gestion des "),
+            (r"^planifier\s+(?:les?\s+)?", "Planning des "),
+        )
+        for pattern, replacement in transformations:
+            if re.match(pattern, candidate, flags=re.IGNORECASE):
+                candidate = re.sub(pattern, replacement, candidate, flags=re.IGNORECASE)
+                break
+
+    candidate = re.sub(r"\s+", " ", candidate).strip(" :,-")
+    if len(candidate) < 3:
+        return None
+    candidate = candidate[:_MAX_SUGGESTED_WORKSPACE_NAME_LENGTH].rstrip(" ,:;.-")
+    return candidate[:1].upper() + candidate[1:]
 
 
 class RequiredBaseWorkspaceError(RuntimeError):

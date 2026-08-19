@@ -328,11 +328,19 @@ async def start_project_preview_task(ctx: dict, preview: dict) -> None:
                     }
                     project.settings = settings
                     if failed_validation:
-                        await db.commit()
-                        raise RuntimeError(
-                            "Post-preview UI validation failed for "
-                            f"{failed_validation['container']}: "
-                            f"{failed_validation['output'] or 'check:ui failed'}"
+                        # A template-declared UI contract is a quality signal,
+                        # not proof that the already-healthy preview is
+                        # unusable.  Treating it as a lifecycle failure hid a
+                        # running application from the user (and prevented the
+                        # agent from receiving a useful follow-up).  Persist
+                        # and publish the warning, but always make a healthy
+                        # preview available.  Runtime/build failures remain
+                        # terminal because they do not reach this branch.
+                        logger.warning(
+                            "[PREVIEW] UI validation failed for project=%s container=%s: %s",
+                            project.id,
+                            failed_validation["container"],
+                            failed_validation["output"] or "check:ui failed",
                         )
 
                     for container in application_containers:
@@ -349,6 +357,7 @@ async def start_project_preview_task(ctx: dict, preview: dict) -> None:
                                         "task_id": task_id,
                                         "preview_task_id": preview_task_id,
                                         "project_id": str(project.id),
+                                        "status": validation_status,
                                         "results": validation_results,
                                     },
                                 },
@@ -361,6 +370,7 @@ async def start_project_preview_task(ctx: dict, preview: dict) -> None:
                                     "task_id": task_id,
                                     "preview_task_id": preview_task_id,
                                     "project_id": str(project.id),
+                                    "validation_status": validation_status,
                                     "urls": [result.get("url") for result in last_results if result.get("url")],
                                 },
                             },
@@ -1403,6 +1413,7 @@ async def execute_agent_task(ctx: dict, payload_dict: dict):
                 from .services.agent_required_base_workspace import (
                     RequiredBaseWorkspaceError,
                     ensure_chat_project_for_required_base,
+                    suggest_workspace_name_from_request,
                 )
 
                 setup_just_completed = bool(payload.workspace_setup_task_id)
@@ -1415,6 +1426,10 @@ async def execute_agent_task(ctx: dict, payload_dict: dict):
                         user_id=UUID(payload.user_id),
                         chat_id=UUID(payload.chat_id),
                         required_base_config=required_base_config,
+                        project_name=suggest_workspace_name_from_request(
+                            payload.message,
+                            payload.attachments,
+                        ),
                         wait_for_setup=False,
                     )
                 except RequiredBaseWorkspaceError as exc:
@@ -1922,7 +1937,10 @@ async def execute_agent_task(ctx: dict, payload_dict: dict):
                         container_directory = container.directory
 
             # Discover available skills for this agent (progressive disclosure)
-            from .services.skill_discovery import discover_skills
+            from .services.skill_discovery import (
+                discover_skills,
+                preload_skill_guidance,
+            )
 
             available_skills = await discover_skills(
                 agent_id=agent_model.id if agent_model else None,
@@ -1947,6 +1965,9 @@ async def execute_agent_task(ctx: dict, payload_dict: dict):
             # Add available skills to project_context (for prompt injection)
             if available_skills:
                 project_context["available_skills"] = available_skills
+                skill_guidance = await preload_skill_guidance(available_skills, db)
+                if skill_guidance:
+                    project_context["skill_guidance"] = skill_guidance
 
             # Add MCP resource/prompt catalogs to project_context for prompt injection
             if mcp_context:

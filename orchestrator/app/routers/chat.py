@@ -1264,6 +1264,7 @@ async def agent_chat(
             from ..services.agent_required_base_workspace import (
                 RequiredBaseWorkspaceError,
                 ensure_chat_project_for_required_base,
+                suggest_workspace_name_from_request,
             )
 
             try:
@@ -1272,6 +1273,10 @@ async def agent_chat(
                     user_id=current_user.id,
                     chat_id=chat.id,
                     required_base_config=required_base_config,
+                    project_name=suggest_workspace_name_from_request(
+                        request.message,
+                        request.attachments,
+                    ),
                 )
             except RequiredBaseWorkspaceError as exc:
                 raise HTTPException(status_code=409, detail=str(exc)) from exc
@@ -1899,6 +1904,7 @@ async def agent_chat_stream(
                 from ..services.agent_required_base_workspace import (
                     RequiredBaseWorkspaceError,
                     ensure_chat_project_for_required_base,
+                    suggest_workspace_name_from_request,
                 )
 
                 try:
@@ -1907,6 +1913,10 @@ async def agent_chat_stream(
                         user_id=current_user.id,
                         chat_id=chat.id,
                         required_base_config=required_base_config,
+                        project_name=suggest_workspace_name_from_request(
+                            request.message,
+                            request.attachments,
+                        ),
                     )
                 except RequiredBaseWorkspaceError as exc:
                     error_event = {"type": "error", "data": {"message": str(exc)}}
