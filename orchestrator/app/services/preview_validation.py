@@ -25,18 +25,24 @@ class PreviewValidationResult:
     output: str | None = None
 
 
-_UI_CHECK_COMMAND = [
-    "sh",
-    "-lc",
-    "if command -v bun >/dev/null 2>&1; then bun run check:ui; "
-    "elif command -v pnpm >/dev/null 2>&1; then pnpm run check:ui; "
-    "elif command -v yarn >/dev/null 2>&1; then yarn run check:ui; "
-    "else npm run check:ui; fi",
-]
+def _package_script_command(script: str) -> list[str]:
+    """Return a package-manager-neutral command for one declared script."""
+    return [
+        "sh",
+        "-lc",
+        f"if command -v bun >/dev/null 2>&1; then bun run {script}; "
+        f"elif command -v pnpm >/dev/null 2>&1; then pnpm run {script}; "
+        f"elif command -v yarn >/dev/null 2>&1; then yarn run {script}; "
+        f"else npm run {script}; fi",
+    ]
 
 
-def _has_ui_check(package_content: str | None) -> bool:
-    """Return whether a package manifest explicitly declares ``check:ui``."""
+_UI_CHECK_COMMAND = _package_script_command("check:ui")
+_PROJECT_CHECK_COMMAND = _package_script_command("check")
+
+
+def _has_declared_script(package_content: str | None, script: str) -> bool:
+    """Return whether a package manifest explicitly declares ``script``."""
     if not package_content:
         return False
     try:
@@ -44,7 +50,82 @@ def _has_ui_check(package_content: str | None) -> bool:
     except (TypeError, json.JSONDecodeError):
         return False
     scripts = package.get("scripts") if isinstance(package, dict) else None
-    return isinstance(scripts, dict) and isinstance(scripts.get("check:ui"), str)
+    return isinstance(scripts, dict) and isinstance(scripts.get(script), str)
+
+
+async def _run_declared_check(
+    orchestrator: Any,
+    *,
+    user_id: UUID,
+    project_id: UUID,
+    project_slug: str,
+    container_name: str,
+    script: str,
+    command: list[str],
+    timeout: int,
+) -> PreviewValidationResult:
+    """Run one opt-in package script in an already started project container."""
+    package_content = await orchestrator.read_file(
+        user_id=user_id,
+        project_id=project_id,
+        container_name=container_name,
+        file_path="package.json",
+        project_slug=project_slug,
+    )
+    if not _has_declared_script(package_content, script):
+        return PreviewValidationResult(status="skipped")
+
+    try:
+        output = await asyncio.wait_for(
+            orchestrator.execute_command(
+                user_id=user_id,
+                project_id=project_id,
+                container_name=container_name,
+                command=command,
+                timeout=timeout,
+            ),
+            timeout=timeout + 5,
+        )
+    except Exception as exc:
+        return PreviewValidationResult(
+            status="failed",
+            command=script,
+            output=str(exc)[:4000],
+        )
+
+    return PreviewValidationResult(
+        status="passed",
+        command=script,
+        output=output[-4000:] if output else None,
+    )
+
+
+async def run_preview_preflight(
+    orchestrator: Any,
+    *,
+    user_id: UUID,
+    project_id: UUID,
+    project_slug: str,
+    container_name: str,
+) -> PreviewValidationResult:
+    """Run a template-declared full project check before advertising a preview.
+
+    A healthy container only proves that the process started.  For web apps a
+    dev server can stay alive while every route returns a compiler error, so a
+    package's explicit ``check`` script is the opt-in contract for a usable
+    preview.  We do not infer a command for custom bases: projects without the
+    script retain their existing lifecycle and simply return ``skipped``.
+    """
+    return await _run_declared_check(
+        orchestrator,
+        user_id=user_id,
+        project_id=project_id,
+        project_slug=project_slug,
+        container_name=container_name,
+        script="check",
+        command=_PROJECT_CHECK_COMMAND,
+        timeout=90,
+    )
 
 
 async def run_preview_validation(
@@ -61,36 +142,13 @@ async def run_preview_validation(
     project container. This avoids assuming Bun in Kubernetes or custom
     templates while retaining the same behaviour across orchestrators.
     """
-    package_content = await orchestrator.read_file(
+    return await _run_declared_check(
+        orchestrator,
         user_id=user_id,
         project_id=project_id,
-        container_name=container_name,
-        file_path="package.json",
         project_slug=project_slug,
-    )
-    if not _has_ui_check(package_content):
-        return PreviewValidationResult(status="skipped")
-
-    try:
-        output = await asyncio.wait_for(
-            orchestrator.execute_command(
-                user_id=user_id,
-                project_id=project_id,
-                container_name=container_name,
-                command=_UI_CHECK_COMMAND,
-                timeout=90,
-            ),
-            timeout=95,
-        )
-    except Exception as exc:
-        return PreviewValidationResult(
-            status="failed",
-            command="check:ui",
-            output=str(exc)[:4000],
-        )
-
-    return PreviewValidationResult(
-        status="passed",
-        command="check:ui",
-        output=output[-4000:] if output else None,
+        container_name=container_name,
+        script="check:ui",
+        command=_UI_CHECK_COMMAND,
+        timeout=90,
     )
