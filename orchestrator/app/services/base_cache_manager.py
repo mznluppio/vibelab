@@ -190,16 +190,22 @@ class BaseCacheManager:
             return False
 
         matches_identity = (
-            metadata.get("schema_version") == CACHE_METADATA_SCHEMA_VERSION
-            and metadata.get("base_id") == str(base.id)
+            metadata.get("base_id") == str(base.id)
             and metadata.get("git_repo_url") == base.git_repo_url
             and metadata.get("default_branch") == (base.default_branch or "main")
         )
-        # A failed remote lookup must not turn a healthy cached base into an
-        # outage. When Git is reachable, however, never serve a cache from a
-        # previous commit of the configured branch.
-        return matches_identity and (
-            remote_commit is None or metadata.get("commit_sha") == remote_commit
+        if not matches_identity:
+            return False
+        # A failed remote lookup must not turn a healthy cache into a project
+        # creation outage. This deliberately supports the pre-commit manifest
+        # format during its one-time migration, but only while Git is
+        # unavailable. As soon as Git is reachable, the current immutable
+        # schema and exact branch head are required.
+        if remote_commit is None:
+            return True
+        return (
+            metadata.get("schema_version") == CACHE_METADATA_SCHEMA_VERSION
+            and metadata.get("commit_sha") == remote_commit
         )
 
     def _write_cache_metadata(
