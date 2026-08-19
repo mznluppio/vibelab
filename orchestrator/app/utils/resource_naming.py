@@ -14,7 +14,50 @@ Uses UUIDs to ensure:
 - URL-safe
 """
 
+import hashlib
+import re
 from uuid import UUID
+
+# RFC 1035 limits each DNS hostname label to 63 octets. Preview hosts use one
+# label before APP_DOMAIN, so user-facing workspace slugs must be bounded here
+# even when the readable workspace name is much longer.
+MAX_DNS_LABEL_LENGTH = 63
+_DNS_SAFE_CHARS = re.compile(r"[^a-z0-9-]+")
+_REPEATED_HYPHENS = re.compile(r"-+")
+
+
+def get_dns_safe_label(value: str, *, max_length: int = MAX_DNS_LABEL_LENGTH) -> str:
+    """Return a stable, DNS-label-safe form of ``value``.
+
+    Short values are deliberately left unchanged.  Long values retain a
+    readable prefix and gain a hash of the complete original value, preventing
+    two long workspace names with the same prefix from sharing a preview URL.
+    """
+    if max_length < 3:
+        raise ValueError("max_length must allow at least one character and a hash suffix")
+
+    normalized = _REPEATED_HYPHENS.sub("-", _DNS_SAFE_CHARS.sub("-", value.lower())).strip("-")
+    if not normalized:
+        normalized = "preview"
+    if len(normalized) <= max_length:
+        return normalized
+
+    digest = hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:10]
+    prefix_length = max_length - len(digest) - 1
+    prefix = normalized[:prefix_length].rstrip("-") or "preview"
+    return f"{prefix}-{digest}"
+
+
+def get_container_hostname(project_slug: str, container_name: str, base_domain: str) -> str:
+    """Build the public DNS hostname for a project container.
+
+    This is the single hostname contract for Docker Traefik routes and
+    Kubernetes ingress routes.  It intentionally does not alter the project
+    slug or Docker/Kubernetes resource names; only the externally resolvable
+    DNS label is shortened when necessary.
+    """
+    label = get_dns_safe_label(f"{project_slug}-{container_name}")
+    return f"{label}.{base_domain.strip('.')}"
 
 
 def get_project_path(user_id: UUID | str, project_id: UUID | str) -> str:

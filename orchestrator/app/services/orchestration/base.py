@@ -12,6 +12,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ...utils.resource_naming import get_container_hostname
 from .deployment_mode import DeploymentMode
 
 
@@ -497,12 +498,7 @@ class BaseOrchestrator(ABC):
 
         settings = get_settings()
 
-        # Sanitize container name for URL
-        safe_name = container_name.lower().replace(" ", "-").replace("_", "-")
-        safe_name = "".join(c for c in safe_name if c.isalnum() or c == "-")
-
-        # Build hostname
-        hostname = f"{project_slug}-{safe_name}.{settings.app_domain}"
+        hostname = get_container_hostname(project_slug, container_name, settings.app_domain)
 
         # Protocol based on deployment mode
         protocol = "https" if self.deployment_mode.is_kubernetes else "http"

@@ -15,6 +15,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
+from ....utils.resource_naming import get_container_hostname
 from ..output_formatter import error_output, success_output
 from ..registry import Tool, ToolCategory
 from ._helpers import (
@@ -123,7 +124,7 @@ async def _container_start_executor(
             )
             sanitized = "".join(c for c in sanitized if c.isalnum() or c == "-")
             sanitized = re.sub(r"-+", "-", sanitized).strip("-")
-            url = f"http://{project.slug}-{sanitized}.{settings.app_domain}"
+            url = f"http://{get_container_hostname(project.slug, sanitized, settings.app_domain)}"
             return success_output(
                 message=f"Container '{container_name}' already running",
                 container_name=container_name,

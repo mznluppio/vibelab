@@ -14,6 +14,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from ...utils.resource_naming import get_container_hostname
+
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -40,7 +42,7 @@ def container_url(
     created — typically ``Container.directory`` for user projects, which
     falls back to ``Container.name`` for app-installed services.
     """
-    hostname = f"{project_slug}-{container_dir_or_name}.{app_domain}"
+    hostname = get_container_hostname(project_slug, container_dir_or_name, app_domain)
     return f"{protocol}://{hostname}"
 
 
@@ -64,9 +66,11 @@ def app_container_url(
     inputs.
     """
     if only_primary:
-        hostname = f"{app_handle}-{creator_handle}.{app_domain}"
+        hostname = get_container_hostname(app_handle, creator_handle, app_domain)
     else:
-        hostname = f"{container_dir}-{app_handle}-{creator_handle}.{app_domain}"
+        hostname = get_container_hostname(
+            f"{container_dir}-{app_handle}", creator_handle, app_domain
+        )
     return f"{protocol}://{hostname}"
 
 

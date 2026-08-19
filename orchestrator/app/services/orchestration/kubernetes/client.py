@@ -18,6 +18,8 @@ from kubernetes import client, config
 from kubernetes.client.rest import ApiException
 from kubernetes.stream import stream
 
+from ....utils.resource_naming import get_container_hostname
+
 logger = logging.getLogger(__name__)
 
 
@@ -420,7 +422,9 @@ class KubernetesClient:
             project_slug = f"{user_short}-{project_short}"
 
         if container_name:
-            hostname = f"{project_slug}-{safe_container}.{self.settings.app_domain}"
+            hostname = get_container_hostname(
+                project_slug, safe_container, self.settings.app_domain
+            )
         else:
             hostname = f"{project_slug}.{self.settings.app_domain}"
 

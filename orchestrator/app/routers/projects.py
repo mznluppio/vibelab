@@ -27,7 +27,8 @@ from fastapi import (
     status,
 )
 from fastapi.responses import FileResponse, JSONResponse
-from sqlalchemy import and_, delete as sql_delete, func, or_, select
+from sqlalchemy import and_, func, or_, select
+from sqlalchemy import delete as sql_delete
 from sqlalchemy import update as sql_update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -82,7 +83,7 @@ from ..services.service_definitions import get_service
 from ..services.task_manager import Task, get_task_manager
 from ..users import current_optional_user
 from ..utils.async_fileio import makedirs_async, read_file_async, walk_directory_async
-from ..utils.resource_naming import get_project_path
+from ..utils.resource_naming import get_container_hostname, get_project_path
 from ..utils.slug_generator import generate_project_slug
 
 logger = logging.getLogger(__name__)
@@ -6735,7 +6736,9 @@ async def start_single_container(
             )
             sanitized_name = "".join(c for c in sanitized_name if c.isalnum() or c == "-")
             sanitized_name = re.sub(r"-+", "-", sanitized_name).strip("-")
-            container_url = f"http://{project.slug}-{sanitized_name}.{settings.app_domain}"
+            container_url = (
+                f"http://{get_container_hostname(project.slug, sanitized_name, settings.app_domain)}"
+            )
 
             logger.info(
                 f"[COMPOSE] Container {container.name} already running, returning fast path"
@@ -6895,7 +6898,8 @@ async def _check_container_http_health(project: Project, container: Container) -
         return {"healthy": True, "url": external_url, "mode": "local"}
     elif settings.deployment_mode == "kubernetes":
         # External URL for frontend display (what users access via browser)
-        external_url = f"{settings.k8s_container_url_protocol}://{project.slug}-{container_dir}.{settings.app_domain}"
+        hostname = get_container_hostname(project.slug, container_dir, settings.app_domain)
+        external_url = f"{settings.k8s_container_url_protocol}://{hostname}"
         # Internal URL for health check (always reachable from within cluster)
         # Service naming: dev-{container_dir} in namespace proj-{project.id}
         # When readiness_port is set (stashed in resources JSON), the K8s
@@ -6908,10 +6912,11 @@ async def _check_container_http_health(project: Project, container: Container) -
         )
     else:
         # Docker URL pattern: {project_slug}-{container}.localhost
-        external_url = f"http://{project.slug}-{container_dir}.{settings.app_domain}"
+        hostname = get_container_hostname(project.slug, container_dir, settings.app_domain)
+        external_url = f"http://{hostname}"
         # Health check through Traefik (orchestrator can't reach container directly)
         health_check_url = "http://traefik"
-        health_check_headers = {"Host": f"{project.slug}-{container_dir}.{settings.app_domain}"}
+        health_check_headers = {"Host": hostname}
 
     try:
         async with httpx.AsyncClient(timeout=5.0, verify=False) as client:
@@ -6926,7 +6931,7 @@ async def _check_container_http_health(project: Project, container: Container) -
             # For K8s: verify external path through NGINX Ingress is also routable.
             # The Ingress Controller may take 1-5s to sync after Service endpoints update.
             if is_healthy and settings.deployment_mode == "kubernetes":
-                ingress_host = f"{project.slug}-{container_dir}.{settings.app_domain}"
+                ingress_host = hostname
                 ingress_svc = "http://ingress-nginx-controller.ingress-nginx.svc.cluster.local"
                 try:
                     ingress_resp = await client.get(
@@ -7171,12 +7176,13 @@ async def _restart_container_background_task(
             )
             if settings.deployment_mode == "docker":
                 # Docker mode always uses HTTP on localhost
-                container_url = f"http://{project.slug}-{sanitized_name}.{settings.app_domain}"
+                container_url = (
+                    f"http://{get_container_hostname(project.slug, sanitized_name, settings.app_domain)}"
+                )
             else:
                 protocol = settings.k8s_container_url_protocol
-                container_url = (
-                    f"{protocol}://{project.slug}-{sanitized_name}.{settings.app_domain}"
-                )
+                hostname = get_container_hostname(project.slug, sanitized_name, settings.app_domain)
+                container_url = f"{protocol}://{hostname}"
 
         task.update_progress(100, 100, "Container restarted successfully")
         logger.info(f"[COMPOSE] Successfully restarted container {container.name}")

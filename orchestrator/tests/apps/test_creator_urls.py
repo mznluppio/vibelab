@@ -118,3 +118,16 @@ def test_legacy_container_url_unchanged_https() -> None:
         protocol="https",
     )
     assert url == "https://cool-thing-abc123-api.your-domain.com"
+
+
+def test_legacy_container_url_shortens_an_overlong_dns_label() -> None:
+    url = container_url(
+        project_slug="organiser-les-reservations-de-salles-de-reunion-dq89ej",
+        container_dir_or_name="nextjs-16-base",
+        app_domain="localhost",
+        protocol="http",
+    )
+
+    hostname = url.removeprefix("http://")
+    assert len(hostname.split(".", 1)[0]) <= 63
+    assert hostname.endswith(".localhost")

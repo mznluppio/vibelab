@@ -47,6 +47,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 if TYPE_CHECKING:
     from ..fileops_client import FileOpsClient
 
+from ...utils.resource_naming import get_container_hostname
 from ..snapshot_manager import get_snapshot_manager
 from ..volume_manager import VolumeRestoringError, VolumeUnavailableError
 from .base import BaseOrchestrator, is_preview_http_response_ready
@@ -1117,7 +1118,8 @@ fi
                 elif container_dir:
                     is_ready = self.k8s_client.is_pod_ready(pod)
                     # Generate URL for this container
-                    url = f"{protocol}://{project_slug}-{container_dir}.{app_domain}"
+                    hostname = get_container_hostname(project_slug, container_dir, app_domain)
+                    url = f"{protocol}://{hostname}"
                     container_statuses[container_dir] = {
                         "phase": pod.status.phase,
                         "ready": is_ready,
