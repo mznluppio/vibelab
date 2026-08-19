@@ -424,15 +424,25 @@ class ToolRegistry:
             and tool_name in _LIFECYCLE_TOOLS
             and not context.get("allow_lifecycle_after_mutation", False)
         ):
-            return {
-                "success": False,
-                "tool": tool_name,
-                "error": (
-                    "Project files were already changed in this turn. The platform will "
-                    "perform one bounded preview lifecycle after the response; continue "
-                    "with validation that does not restart containers."
-                ),
-            }
+            # A generated application needs one real runtime validation before
+            # the agent can honestly report it as complete.  Permit a single
+            # post-mutation project start for that purpose; repeated starts,
+            # restarts and stops remain platform-owned to avoid churn.
+            if tool_name == "project_start" and not context.get(
+                "post_mutation_project_start_used", False
+            ):
+                context["post_mutation_project_start_used"] = True
+            else:
+                return {
+                    "success": False,
+                    "tool": tool_name,
+                    "error": (
+                        "A single post-change project start is allowed for runtime validation. "
+                        "The platform will perform any remaining preview lifecycle after the response; "
+                        "do not retry lifecycle commands."
+                    ),
+                    "error_code": "preview_lifecycle_limited",
+                }
 
         # ============================================================================
         # API Key Scope Enforcement — block tools the key doesn't permit

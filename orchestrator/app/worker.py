@@ -173,6 +173,69 @@ async def _start_project_after_agent_build(project, user_id: UUID, db) -> bool:
     return True
 
 
+def _is_repairable_preview_failure(error: Exception) -> bool:
+    """Return whether a completed agent run can safely repair this failure.
+
+    Only deterministic, source-level validation failures get an automatic
+    second agent pass.  Infrastructure failures (routing, orchestration,
+    unavailable containers) retain their normal error path instead of being
+    hidden behind an expensive and ineffective model retry.
+    """
+    message = str(error)
+    return message.startswith("Generated application did not pass its declared ") or message.startswith(
+        "Generated interface did not pass the required UI quality check:"
+    )
+
+
+async def _schedule_preview_validation_repair(preview: dict, diagnostic: str) -> bool:
+    """Resume the originating task once with a deterministic validation error.
+
+    Reusing the task id keeps the existing SSE stream, cancellation target and
+    chat lock intact.  The original model response is preserved; the resumed
+    run creates a follow-up assistant message with the repair result.
+    """
+    raw_payload = preview.get("agent_payload")
+    attempt = int(preview.get("preview_repair_attempt", 0) or 0)
+    if attempt >= 1 or not isinstance(raw_payload, dict):
+        return False
+
+    from .services.agent_task import AgentTaskPayload
+    from .services.task_manager import get_task_manager
+    from .services.task_queue import get_task_queue
+
+    payload = AgentTaskPayload.from_dict(raw_payload)
+    payload.preview_repair_attempt = attempt + 1
+    payload.chat_history = []
+    payload.project_context = {}
+    payload.message = (
+        f"{payload.message}\n\n"
+        "[Platform validation repair — required]\n"
+        "The previous implementation is running but failed a deterministic project check. "
+        "Inspect the current files, repair only the reported defects, start the project at most "
+        "once if needed, run the failed validation again, and do not claim completion until it passes.\n\n"
+        f"Validation diagnostic:\n{diagnostic[:4000]}"
+    )
+
+    reset = await get_task_manager().reset_task_for_retry(
+        payload.task_id,
+        metadata_updates={
+            "preview_repair_attempt": payload.preview_repair_attempt,
+            "preview_repair_reason": "declared_validation_failed",
+        },
+    )
+    if reset is None:
+        logger.warning("[PREVIEW] Cannot schedule repair; task %s no longer exists", payload.task_id)
+        return False
+
+    await get_task_queue().enqueue("execute_agent_task", payload.to_dict(), _defer_by=1)
+    logger.info(
+        "[PREVIEW] Scheduled validation repair task=%s attempt=%s",
+        payload.task_id,
+        payload.preview_repair_attempt,
+    )
+    return True
+
+
 async def start_project_preview_task(ctx: dict, preview: dict) -> None:
     """Start or verify one project preview outside the agent loop.
 
@@ -473,6 +536,27 @@ async def start_project_preview_task(ctx: dict, preview: dict) -> None:
             )
     except Exception as exc:
         logger.warning("[PREVIEW] lifecycle failed for %s: %s", project_id, exc, exc_info=True)
+        if _is_repairable_preview_failure(exc) and await _schedule_preview_validation_repair(
+            preview, str(exc)
+        ):
+            # Keep the original preview record truthful across a reload while
+            # the resumed agent repairs the same project.  Do not publish a
+            # terminal failure: its task id is being reused for the repair.
+            await _persist_preview_message_status(preview, status="repairing", error=str(exc))
+            if pubsub:
+                await pubsub.publish_agent_event(
+                    task_id,
+                    {
+                        "type": "preview_repairing",
+                        "data": {
+                            "task_id": task_id,
+                            "preview_task_id": preview_task_id,
+                            "project_id": str(project_id),
+                            "attempt": int(preview.get("preview_repair_attempt", 0) or 0) + 1,
+                        },
+                    },
+                )
+            return
         await _persist_preview_message_status(preview, status="failed", error=str(exc))
         if pubsub:
             await pubsub.publish_agent_event(
@@ -2733,6 +2817,16 @@ async def execute_agent_task(ctx: dict, payload_dict: dict):
                                         "automation_run_id": str(auto_run_id)
                                         if auto_run_id is not None
                                         else None,
+                                        # A declared build/UI check is a
+                                        # deterministic source diagnostic.
+                                        # Preserve the original invocation so
+                                        # the preview lifecycle can resume it
+                                        # once with that diagnostic instead of
+                                        # publishing a dead preview.
+                                        "agent_payload": payload.to_dict(),
+                                        "preview_repair_attempt": int(
+                                            getattr(payload, "preview_repair_attempt", 0) or 0
+                                        ),
                                     },
                                 )
                                 if pubsub:

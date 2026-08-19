@@ -8,6 +8,7 @@ from app.services.agent_task import AgentTaskPayload
 from app.worker import (
     _defer_agent_task_for_chat_lock,
     _persist_agent_step,
+    _schedule_preview_validation_repair,
     _schedule_interrupted_agent_resume,
 )
 
@@ -146,3 +147,44 @@ async def test_interrupted_task_is_resumed_once_from_fresh_workspace_state(monke
     assert queue.enqueue.await_args.kwargs["_defer_by"] == 1
 
     assert await _schedule_interrupted_agent_resume(payload, pubsub) is False
+
+
+@pytest.mark.asyncio
+async def test_preview_validation_failure_resumes_task_once_with_diagnostic(monkeypatch):
+    queue = MagicMock()
+    queue.enqueue = AsyncMock(return_value="job-id")
+    manager = MagicMock()
+    manager.reset_task_for_retry = AsyncMock(return_value=MagicMock())
+    monkeypatch.setattr("app.services.task_queue.get_task_queue", lambda: queue)
+    monkeypatch.setattr("app.services.task_manager.get_task_manager", lambda: manager)
+
+    payload = AgentTaskPayload(
+        task_id="task-validation-repair",
+        user_id=str(uuid4()),
+        chat_id=str(uuid4()),
+        message="Build the equipment lending tool",
+        chat_history=[{"role": "user", "content": "stale"}],
+        project_context={"stale": True},
+    )
+    preview = {
+        "agent_payload": payload.to_dict(),
+        "preview_repair_attempt": 0,
+    }
+
+    scheduled = await _schedule_preview_validation_repair(
+        preview, "bun run check:ui failed: class selector missing"
+    )
+
+    assert scheduled is True
+    manager.reset_task_for_retry.assert_awaited_once()
+    queued_payload = queue.enqueue.await_args.args[1]
+    assert queued_payload["task_id"] == payload.task_id
+    assert queued_payload["preview_repair_attempt"] == 1
+    assert queued_payload["chat_history"] == []
+    assert queued_payload["project_context"] == {}
+    assert "Platform validation repair" in queued_payload["message"]
+    assert "class selector missing" in queued_payload["message"]
+    assert queue.enqueue.await_args.kwargs["_defer_by"] == 1
+
+    preview["preview_repair_attempt"] = 1
+    assert await _schedule_preview_validation_repair(preview, "still failing") is False

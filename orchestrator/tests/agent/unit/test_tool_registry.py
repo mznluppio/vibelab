@@ -175,6 +175,30 @@ class TestToolRegistry:
         assert "Processed test_data" in result["result"]["output"]
 
     @pytest.mark.asyncio
+    async def test_allows_one_post_mutation_project_start_for_validation(self, registry):
+        executor = AsyncMock(return_value={"success": True})
+        registry.register(
+            Tool(
+                name="project_start",
+                description="Start project",
+                parameters={"type": "object", "properties": {}, "required": []},
+                executor=executor,
+                category=ToolCategory.PROJECT,
+                state_serializable=True,
+                holds_external_state=False,
+            )
+        )
+        context = {"project_changed": True}
+
+        first = await registry.execute("project_start", {}, context)
+        second = await registry.execute("project_start", {}, context)
+
+        assert first["success"] is True
+        assert second["success"] is False
+        assert second["error_code"] == "preview_lifecycle_limited"
+        executor.assert_awaited_once()
+
+    @pytest.mark.asyncio
     async def test_execute_tool_not_found(self, registry):
         """Test executing a non-existent tool."""
         result = await registry.execute(tool_name="nonexistent_tool", parameters={}, context={})

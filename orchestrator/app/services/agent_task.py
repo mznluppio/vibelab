@@ -141,6 +141,12 @@ class AgentTaskPayload:
     resume_attempt: int = 0
     resume_reason: str | None = None
 
+    # A completed generation can still fail a deterministic template-declared
+    # validation once its preview is running.  The worker may resume the same
+    # task once with that diagnostic so the agent can repair the real project
+    # state.  This is deliberately separate from interruption recovery.
+    preview_repair_attempt: int = 0
+
     def to_dict(self) -> dict:
         """Serialize to dict for ARQ job dispatch."""
         return asdict(self)
